@@ -3,10 +3,10 @@
 
    Following the release of native vertical tabs for Firefox, add the ability to adopt a tree structure automatically.
 
-<img width="228" height="450" alt="light" src="https://github.com/user-attachments/assets/be94570d-1f5a-4f4d-9715-af2078db748b" />
-<img width="228" height="450" alt="dark" src="https://github.com/user-attachments/assets/4f7acdee-6ab8-4c63-997a-97af827b606c" />
-<img width="228" height="450" alt="colors" src="https://github.com/user-attachments/assets/966ebff1-02d9-4f66-b9aa-e225e61ff930" />
-<img width="228" height="450" alt="hover" src="https://github.com/user-attachments/assets/5b81d95f-b24c-4118-8cb3-8161ac19e633" />
+<img width="170" height="336" alt="light" src="https://github.com/user-attachments/assets/be94570d-1f5a-4f4d-9715-af2078db748b" />
+<img width="170" height="336" alt="dark" src="https://github.com/user-attachments/assets/4f7acdee-6ab8-4c63-997a-97af827b606c" />
+<img width="170" height="336" alt="colors" src="https://github.com/user-attachments/assets/966ebff1-02d9-4f66-b9aa-e225e61ff930" />
+<img width="170" height="336" alt="hover" src="https://github.com/user-attachments/assets/5b81d95f-b24c-4118-8cb3-8161ac19e633" />
 
 
 ## Features
