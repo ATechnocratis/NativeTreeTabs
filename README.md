@@ -36,6 +36,7 @@ Domain based tab color, add you custom rules in the end of the CSS style in the 
 
 
 ## Installation
+- Turn on Vertical Tabs in Firefox
 - Install a userchrome.js loader
   - An updated one is [fx-autoconfig by MrOtherGuy](https://github.com/MrOtherGuy/fx-autoconfig)
 - Download the NativeTreeTabs.uc.js file from this repo
