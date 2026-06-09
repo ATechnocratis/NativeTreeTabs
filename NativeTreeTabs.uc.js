@@ -901,8 +901,7 @@ window.nativeTreeTabs = {
 
   observe: function(subject, topic, name) {
     if (topic == "nsPref:changed") {
-      let pref = getPref(name);
-      if (pref === "browser.tabs.insertRelatedAfterCurrent") {
+      if (name === "browser.tabs.insertRelatedAfterCurrent") {
         nativeTreeTabs.moveNewTabsDirectlyUnderParent = Services.prefs.getBoolPref("browser.tabs.insertRelatedAfterCurrent");
         return;
       }
@@ -1147,20 +1146,6 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
   return true;
 }
 //_________________
-
-function getPref(name) {
-  const type = Services.prefs.getPrefType(name);
-  switch (type) {
-    case Services.prefs.PREF_STRING:
-      return Services.prefs.getCharPref(name);
-    case Services.prefs.PREF_INT:
-      return Services.prefs.getIntPref(name);
-    case Services.prefs.PREF_BOOL:
-      return Services.prefs.getBoolPref(name);
-    default:
-      throw new Error("Unknown type");
-  }
-}
 
 loadNTTstyle = function() {
   let rootTabTopMargin = "10";
