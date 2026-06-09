@@ -9,8 +9,16 @@ window.nativeTreeTabs = {
   originalPinTab: null,
   originalAddTabSplitView: null,
   originalAddToMultiSelectedTabs: null,
+  moveNewTabsDirectlyUnderParent: true,
+  customStyle: null,
 
   init: function() {
+
+    if (Services.prefs.getBoolPref("browser.tabs.insertRelatedAfterCurrent") === false) {
+      this.moveNewTabsDirectlyUnderParent = false;
+    }
+    Services.prefs.addObserver("browser.tabs.insertRelatedAfterCurrent", this);
+
     //add pref
     Services.prefs.setBoolPref("browser.tabs.selectOwnerOnClose", true);
     Services.prefs.setBoolPref("browser.tabs.dragDrop.createGroup.enabled", false);
@@ -76,7 +84,13 @@ window.nativeTreeTabs = {
       nativeTreeTabs.originalAddToMultiSelectedTabs.apply(this, arguments);
     };
 
-    loadNTTstyle();
+
+    this.customStyle = loadNTTstyle();
+    Services.prefs.addObserver("treeTabs.rootTabTopMargin", this);
+    Services.prefs.addObserver("treeTabs.branchTabTopMargin", this);
+    Services.prefs.addObserver("treeTabs.tabHeight", this);
+    Services.prefs.addObserver("treeTabs.labelFontSize", this);
+
     //-------------------
     console.log("Native Tree Tabs loaded.");
   },
@@ -851,16 +865,20 @@ window.nativeTreeTabs = {
         rootTab = currentTab;
       }
     }
+
     let treeDepth = 0;
-    //Move new tabs directly under parent
     if (rootTab != null && !rootTab.pinned && !rootTab.splitview) {
       let parentDepth = rootTab.getAttribute("tree-depth");
       if (parentDepth != null) {
         treeDepth = parseInt(parentDepth) + 1;
         let newPos = getPositionUnderRoot(rootTab);
         aTab.setAttribute("skipMoveForced", true);
-        // gBrowser.moveTabTo(aTab, { tabIndex: newPos });
-        gBrowser.moveTabAfter(aTab, rootTab);
+        //Move new tabs directly under parent
+        if (this.moveNewTabsDirectlyUnderParent) {
+          gBrowser.moveTabAfter(aTab, rootTab);
+        } else {
+          gBrowser.moveTabAfter(aTab, getLastInTree(rootTab));
+        }
         aTab.removeAttribute("skipMoveForced");
       }
     }
@@ -879,6 +897,21 @@ window.nativeTreeTabs = {
       this.toggleTwist(rootTab);
     }
     return treeDepth;
+  },
+
+  observe: function(subject, topic, name) {
+    if (topic == "nsPref:changed") {
+      let pref = getPref(name);
+      if (pref === "browser.tabs.insertRelatedAfterCurrent") {
+        nativeTreeTabs.moveNewTabsDirectlyUnderParent = Services.prefs.getBoolPref("browser.tabs.insertRelatedAfterCurrent");
+        return;
+      }
+      let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
+        Ci.nsIStyleSheetService
+      );
+      styleSvc.unregisterSheet(nativeTreeTabs.customStyle, styleSvc.AUTHOR_SHEET);
+      nativeTreeTabs.customStyle = loadNTTstyle();
+    }
   },
 
   observeTab: function(target, nTT) {
@@ -1018,7 +1051,7 @@ getPositionUnderRoot = function(rootTab) {
 
 getClosestZeroDepthTab = function(aTab, direction) {
   let getFollowingTab = getNextTab;
-  if (direction == "up") getFollowingTab = getPreviousTab
+  if (direction == "up") getFollowingTab = getPreviousTab;
   let followingTab = getFollowingTab(aTab);
   while (followingTab) {
     followingTabTreeDepth = followingTab.getAttribute("tree-depth");
@@ -1041,6 +1074,21 @@ getRootTab = function(aTab, prevPosition) {
     previousTab = previousTab.previousSibling;
   }
   return null;
+}
+
+getLastInTree = function(aTab) {
+  let aTabDepth = parseInt(aTab.getAttribute("tree-depth"));
+  let nextTab = aTab.nextSibling;
+  let toReturn = nextTab;
+  while (isTab(nextTab)) {
+    if (parseInt(nextTab.getAttribute("tree-depth")) > aTabDepth) {
+      toReturn = nextTab;
+      nextTab = nextTab.nextSibling;
+    } else {
+      break;
+    }
+  }
+  return toReturn;
 }
 
 removeTreeOutline = function(index, aTab) {
@@ -1098,18 +1146,58 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
   }
   return true;
 }
+//_________________
+
+function getPref(name) {
+  const type = Services.prefs.getPrefType(name);
+  switch (type) {
+    case Services.prefs.PREF_STRING:
+      return Services.prefs.getCharPref(name);
+    case Services.prefs.PREF_INT:
+      return Services.prefs.getIntPref(name);
+    case Services.prefs.PREF_BOOL:
+      return Services.prefs.getBoolPref(name);
+    default:
+      throw new Error("Unknown type");
+  }
+}
 
 loadNTTstyle = function() {
+  let rootTabTopMargin = "10";
+  if (Services.prefs.getPrefType("treeTabs.rootTabTopMargin") != 32) {
+    Services.prefs.setStringPref("treeTabs.rootTabTopMargin", rootTabTopMargin);
+  } else {
+    rootTabTopMargin = Services.prefs.getStringPref("treeTabs.rootTabTopMargin");
+  }
+  let branchTabTopMargin = "10";
+  if (Services.prefs.getPrefType("treeTabs.branchTabTopMargin") != 32) {
+    Services.prefs.setStringPref("treeTabs.branchTabTopMargin", branchTabTopMargin);
+  } else {
+    branchTabTopMargin = Services.prefs.getStringPref("treeTabs.branchTabTopMargin");
+  }
+  let tabHeight = "31";
+  if (Services.prefs.getPrefType("treeTabs.tabHeight") != 32) {
+    Services.prefs.setStringPref("treeTabs.tabHeight", tabHeight);
+  } else {
+    tabHeight = Services.prefs.getStringPref("treeTabs.tabHeight");
+  }
+  let labelFontSize = "13.4";
+  if (Services.prefs.getPrefType("treeTabs.labelFontSize") != 32) {
+    Services.prefs.setStringPref("treeTabs.labelFontSize", labelFontSize);
+  } else {
+    labelFontSize = Services.prefs.getStringPref("treeTabs.labelFontSize");
+  }
+
+
   let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
     Ci.nsIStyleSheetService
   );
   let toolboxCSS = `
 :root {
-    --root-tab-top-margin: 10px;
-    --branch-tab-top-margin: 2px;
-    --tab-top-margin: 10px;
-    --tab-height: 31px;
-    --label-font-size: 13.4px;
+    --root-tab-top-margin: ` + rootTabTopMargin + `px;
+    --branch-tab-top-margin:  ` + branchTabTopMargin + `px;
+    --tab-height: ` + tabHeight + `px;
+    --label-font-size: ` + labelFontSize + `px;
     --tab-close-button-padding-custom: 4px;
 }
 #vertical-tabs tab[tree-depth="0"] { --tab-indent: 0; }
@@ -1342,11 +1430,9 @@ tab[soundplaying] .tab-background {
         margin-inline-start: var(--tab-icon-start);
     }
 }
-
 /* Add custom tab colors based on domain, uncomment and add your sites and color */
 
 /*
-
 #vertical-tabs tab[domain^="example.com"] { --tree-domain-color: rgb(60,55,60);--tree-domain-border-color: rgb(150,0,0); }
 #vertical-tabs tab[domain^="youtube.com"] { --tree-domain-color: rgb(240,0,0);  --tree-domain-border-color: rgb(250,10,30);}
 #vertical-tabs tab[domain^="reddit.com"] { --tree-domain-color: rgb(80,120,150); }
@@ -1366,4 +1452,5 @@ tab[soundplaying] .tab-background {
   if (!styleSvc.sheetRegistered(styleURI, styleSvc.AUTHOR_SHEET)) {
     styleSvc.loadAndRegisterSheet(styleURI, styleSvc.AUTHOR_SHEET);
   }
+  return styleURI;
 }
