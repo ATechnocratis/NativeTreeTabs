@@ -14,12 +14,12 @@ window.nativeTreeTabs = {
 
   init: function() {
 
+    //add pref
     if (Services.prefs.getBoolPref("browser.tabs.insertRelatedAfterCurrent") === false) {
       this.moveNewTabsDirectlyUnderParent = false;
     }
     Services.prefs.addObserver("browser.tabs.insertRelatedAfterCurrent", this);
 
-    //add pref
     Services.prefs.setBoolPref("browser.tabs.selectOwnerOnClose", true);
     Services.prefs.setBoolPref("browser.tabs.dragDrop.createGroup.enabled", false);
     Services.prefs.setBoolPref("browser.tabs.groups.smart.enabled", false);
@@ -39,7 +39,8 @@ window.nativeTreeTabs = {
     // before the default function executes
 
     //Focus on previous (upper) tab when a tab closes
-    //  make use of browser.tabs.selectOwnerOnClose
+    // if no children exist.
+    //  Makes use of browser.tabs.selectOwnerOnClose
     // Wrapper is used because the selected tab changes
     //  before the closing tab is full closed
     this.originalRemoveTab = gBrowser.removeTab;
@@ -48,10 +49,13 @@ window.nativeTreeTabs = {
       if (aTab.selected && previousTab) {
         let tabDepth = aTab.getAttribute("tree-depth");
         let nextTab = getNextTab(aTab);
-        let rootNext = (nextTab && parseInt(nextTab.getAttribute("tree-depth")) >= parseInt(tabDepth) &&
-            (parseInt(nextTab.getAttribute("tree-depth")) > parseInt(previousTab.getAttribute("tree-depth")))) ?
-          false : true;
-        if (tabDepth != "0" && rootNext) aTab.owner = getPreviousTab(aTab);
+        let focusNext = (nextTab && parseInt(nextTab.getAttribute("tree-depth")) >= parseInt(tabDepth)) ?
+          true : false;
+        if (focusNext) {
+          aTab.owner = nextTab;
+        } else if (tabDepth != "0") {
+          aTab.owner = previousTab;
+        }
       }
       nativeTreeTabs.originalRemoveTab.apply(this, arguments);
     };
@@ -104,6 +108,11 @@ window.nativeTreeTabs = {
     gBrowser.pinTab = this.originalPinTab;
     gBrowser.addTabSplitView = this.originalAddTabSplitView;
     gBrowser.addToMultiSelectedTabs = this.originalAddToMultiSelectedTabs;
+
+    let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
+      Ci.nsIStyleSheetService
+    );
+    styleSvc.unregisterSheet(this.customStyle, styleSvc.AUTHOR_SHEET);
   },
 
   onLocationChange(browser, webProgress, request, locationURI, flags) {
@@ -1146,6 +1155,20 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
   return true;
 }
 //_________________
+
+function getPref(name) {
+  const type = Services.prefs.getPrefType(name);
+  switch (type) {
+    case Services.prefs.PREF_STRING:
+      return Services.prefs.getCharPref(name);
+    case Services.prefs.PREF_INT:
+      return Services.prefs.getIntPref(name);
+    case Services.prefs.PREF_BOOL:
+      return Services.prefs.getBoolPref(name);
+    default:
+      throw new Error("Unknown type");
+  }
+}
 
 loadNTTstyle = function() {
   let rootTabTopMargin = "10";
