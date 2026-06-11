@@ -1087,7 +1087,7 @@ getRootTab = function(aTab, prevPosition) {
 getLastInTree = function(aTab) {
   let aTabDepth = parseInt(aTab.getAttribute("tree-depth"));
   let nextTab = aTab.nextSibling;
-  let toReturn = nextTab;
+  let toReturn = aTab;
   while (isTab(nextTab)) {
     if (parseInt(nextTab.getAttribute("tree-depth")) > aTabDepth) {
       toReturn = nextTab;
