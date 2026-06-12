@@ -65,6 +65,7 @@ window.nativeTreeTabs = {
     gBrowser.pinTab = function(aTab, aOptions) {
       removeTreeOutline(aTab._tPos, aTab);
       nativeTreeTabs.tabClose(aTab);
+      setTreeDepth(aTab, 0);
       if (aTab._tPos != 0) {
         aTab.setAttribute("skipMoveForced", true);
       }
