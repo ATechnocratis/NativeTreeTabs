@@ -1178,7 +1178,7 @@ loadNTTstyle = function() {
   } else {
     rootTabTopMargin = Services.prefs.getStringPref("treeTabs.rootTabTopMargin");
   }
-  let branchTabTopMargin = "10";
+  let branchTabTopMargin = "2";
   if (Services.prefs.getPrefType("treeTabs.branchTabTopMargin") != 32) {
     Services.prefs.setStringPref("treeTabs.branchTabTopMargin", branchTabTopMargin);
   } else {
