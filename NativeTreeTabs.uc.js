@@ -288,8 +288,18 @@ window.nativeTreeTabs = {
       selectedIds.set(sTab.getAttribute("tree-id"), sTab)
     }, this);
     selectedTabs.forEach(function(sTab) {
-      let depthFix = newDepth;
-      copyOpener(sTab, aTab);
+      let depthFix;
+      let oldAncestorId = sTab.getAttribute("multiSelectedAncestor");
+      if (oldAncestorId) {
+        let newParent = selectedIds.get(oldAncestorId);
+        depthFix = parseInt(newParent.getAttribute("new-tree-depth")) + 1;
+        setOpener(sTab, newParent);
+        sTab.setAttribute("multiSelectedAncestorFixed",true);
+        sTab.removeAttribute("multiSelectedAncestor");
+      } else {
+        depthFix = newDepth;
+        copyOpener(sTab, aTab);
+      }
       sTab.setAttribute("new-tree-depth", depthFix);
     }, this);
     selectedTabs.forEach(function(sTab) {
@@ -308,7 +318,18 @@ window.nativeTreeTabs = {
     let selectedTabs = gBrowser.selectedTabs;
     if (selectedTabs.length > 1) {
       selectedTabs.forEach(function(sTab) {
+        sTab.removeAttribute("multiSelectedAncestorFixed");
+        sTab.removeAttribute("multiSelectedAncestor");
         sTab.setAttribute("dragStartPos", sTab._tPos);
+        if (sTab.getAttribute("tree-depth") != '0') {
+          let rootTab = getRootTab(sTab);
+          while (isTab(rootTab) && !rootTab.multiselected) {
+            rootTab = getRootTab(rootTab);
+          }
+          if (rootTab != null) {
+            sTab.setAttribute("multiSelectedAncestor", rootTab.getAttribute("tree-id"));
+          }
+        }
       }, this);
     } else {
       let aTab = aEvent.currentTarget;
@@ -443,7 +464,6 @@ window.nativeTreeTabs = {
 
     if (selectedTabs.length > 1) {
       //Multiple selected tabs
-      // all will get the same depth
       shouldUpdateChildren = false;
       this.multiselectedDepthUpdate(selectedTabs, newDepth, aTab);
     } else {
@@ -466,6 +486,22 @@ window.nativeTreeTabs = {
     if (aTab.hasAttribute("skipMoveForced") && !aTab.splitview) {
       aTab.removeAttribute("skipMoveForced");
       return;
+    }
+    //Multiple selected case
+    if( aTab.multiselected){
+      if (aTab.hasAttribute("multiSelectedAncestorFixed")) {
+        aTab.removeAttribute("multiSelectedAncestorFixed");
+        return;
+      }
+      if (aTab.hasAttribute("multiSelectedAncestor")) {
+        let ancestorId = aTab.getAttribute("multiSelectedAncestor").toString();
+        // aTab.removeAttribute("multiSelectedAncestor");
+        let ancestor = gBrowser.selectedTabs.find(x => x.getAttribute("tree-id").toString() === ancestorId);
+        setOpener(aTab, ancestor);
+        let depthFix = parseInt(ancestor.getAttribute("tree-depth")) + 1;
+        setTreeDepth(aTab, depthFix );
+        return;
+      }
     }
     let tabOriginalDepth = parseInt(aTab.getAttribute("tree-depth"));
     let prevPosition = aEvent.detail.previousTabState.tabIndex;
@@ -1072,7 +1108,7 @@ getClosestZeroDepthTab = function(aTab, direction) {
   return null;
 }
 
-getRootTab = function(aTab, prevPosition) {
+getRootTab = function(aTab) {
   let aTabDepth = parseInt(aTab.getAttribute("tree-depth"));
   if (aTabDepth == 0) return null;
   let previousTab = aTab.previousSibling;
