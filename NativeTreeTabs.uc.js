@@ -1,5 +1,6 @@
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
+const lockCtrlTabInPanel = true;
 
 window.nativeTreeTabs = {
 
@@ -9,6 +10,7 @@ window.nativeTreeTabs = {
   originalPinTab: null,
   originalAddTabSplitView: null,
   originalAddToMultiSelectedTabs: null,
+  originalAdvanceSelectedTab: null,
   moveNewTabsDirectlyUnderParent: true,
   customStyle: null,
   selectedtPanel: null,
@@ -92,7 +94,7 @@ window.nativeTreeTabs = {
       }
       nativeTreeTabs.originalRemoveTab.apply(this, arguments);
     };
-
+    
     //Tab pinning
     this.originalPinTab = gBrowser.pinTab;
     gBrowser.pinTab = function(aTab, aOptions) {
@@ -121,7 +123,37 @@ window.nativeTreeTabs = {
         return;
       nativeTreeTabs.originalAddToMultiSelectedTabs.apply(this, arguments);
     };
-
+    //Ctrl + Tab don't cycle panel tabs
+    //(don't select next panel tabs)
+    this.originalAdvanceSelectedTab = gBrowser.tabContainer.advanceSelectedTab;
+    if (lockCtrlTabInPanel) {
+      gBrowser.tabContainer.advanceSelectedTab = function(aDir, aWrap) {
+        let {
+          ariaFocusedItem
+        } = this;
+        let startTab = ariaFocusedItem;
+        if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
+          startTab = this.selectedItem;
+        }
+        let newTab = null;
+        if (startTab.hidden) {
+          if (aDir == 1) {
+            newTab = this.allTabs.find(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
+          } else {
+            newTab = this.allTabs.findLast(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
+          }
+        } else {
+          newTab = this.findNextTab(startTab, {
+            direction: aDir,
+            wrap: aWrap,
+            filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
+        if (newTab && newTab != startTab) {
+          this._selectNewTab(newTab, aDir, aWrap);
+        }
+      };
+    }
     this.customStyle = loadNTTstyle();
     Services.prefs.addObserver("treeTabs.rootTabTopMargin", this);
     Services.prefs.addObserver("treeTabs.branchTabTopMargin", this);
@@ -141,6 +173,7 @@ window.nativeTreeTabs = {
     gBrowser.pinTab = this.originalPinTab;
     gBrowser.addTabSplitView = this.originalAddTabSplitView;
     gBrowser.addToMultiSelectedTabs = this.originalAddToMultiSelectedTabs;
+    gBrowser.tabContainer.advanceSelectedTab = this.originalAdvanceSelectedTab;
 
     let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
       Ci.nsIStyleSheetService
@@ -1391,6 +1424,7 @@ unHideTab = function(aTab, panelId) {
   aTab.removeAttribute("tabPanel-hidden");
   SessionStore.deleteCustomTabValue(aTab, "tabPanel-hidden");
 }
+
 setOpener = function(aTab, openerTab) {
   if (openerTab == null) return;
   let openerId = openerTab.getAttribute("tree-id");
