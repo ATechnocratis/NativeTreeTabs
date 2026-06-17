@@ -1,5 +1,6 @@
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
+const lockCtrlTabInPanel = true;
 
 window.nativeTreeTabs = {
 
@@ -1383,14 +1384,21 @@ setPanel = function(aTab, panel, window) {
 }
 
 hideTab = function(aTab, panelId) {
+  // if(lockCtrlTabInPanel == true)
+  aTab.setAttribute("hidden","");
+
   aTab.setAttribute("tabPanel-hidden", true);
   SessionStore.setCustomTabValue(aTab, "tabPanel-hidden", "true");
 }
 
 unHideTab = function(aTab, panelId) {
+  // if(lockCtrlTabInPanel == true)
+  aTab.removeAttribute("hidden");
+
   aTab.removeAttribute("tabPanel-hidden");
   SessionStore.deleteCustomTabValue(aTab, "tabPanel-hidden");
 }
+
 setOpener = function(aTab, openerTab) {
   if (openerTab == null) return;
   let openerId = openerTab.getAttribute("tree-id");
