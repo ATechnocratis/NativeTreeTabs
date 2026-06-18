@@ -94,7 +94,7 @@ window.nativeTreeTabs = {
       }
       nativeTreeTabs.originalRemoveTab.apply(this, arguments);
     };
-    
+
     //Tab pinning
     this.originalPinTab = gBrowser.pinTab;
     gBrowser.pinTab = function(aTab, aOptions) {
@@ -1164,7 +1164,11 @@ window.nativeTreeTabs = {
     return newArray;
   },
 
-  tabPanelOpen: function(tabs = null, label = null, id = null) {
+  tabPanelOpen: function(tabs = null, label = null, id = null, forceShow = false) {
+    let show = true;
+    // if (tabs != null && !tabs.includes(window.gBrowser.selectedTab) && !forceShow) {
+    //   show = false;
+    // }
     let newPanelId;
     if (id != null) {
       id = id.toString();
@@ -1177,17 +1181,18 @@ window.nativeTreeTabs = {
       newPanelId = getNextAvailableId(this.tabPanels);
     }
     //Hide other tabs
-    if (this.tabPanels.length === 1 && id == null) {
-      gBrowser.tabs.forEach(function(aTab) {
-        hideTab(aTab);
-        setPanel(aTab, this.tabPanels[0], window);
-      }, this);
-    } else if (id == null) {
-      gBrowser.tabs.forEach(function(aTab) {
-        hideTab(aTab);
-      }, this);
+    if (show) {
+      if (this.tabPanels.length === 1 && id == null) {
+        gBrowser.tabs.forEach(function(aTab) {
+          hideTab(aTab);
+          setPanel(aTab, this.tabPanels[0], window);
+        }, this);
+      } else if (id == null) {
+        gBrowser.tabs.forEach(function(aTab) {
+          hideTab(aTab);
+        }, this);
+      }
     }
-
     let checkPanel = (id != null) ? false : true;
     if (this.tabPanels.length === 1) {
       addNewPanelInMenu(this.tabPanels[0], checkIt = !checkPanel);
@@ -1201,20 +1206,40 @@ window.nativeTreeTabs = {
 
     this.tabPanels.push(newPanel);
     addNewPanelInMenu(newPanel, checkIt = checkPanel);
-    if (id == null) {
+    if (show && id == null) {
       this.changeSelectedPanel(newPanel);
+    } else {
+      checkPanelInMenu(window.nativeTreeTabs.selectedtPanel);
     }
+
 
     if (tabs != null && tabs.length > 0) {
       //Move tabs to the new panel
       tabs = this.prepareTabsForPanelMove(tabs);
-      gBrowser.moveTabsAfter(tabs, gBrowser.tabs[gBrowser.tabs.length - 1]);
+      let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
+      gBrowser.moveTabsAfter(tabs, lastTab);
       tabs.forEach(function(cTab) {
-        unHideTab(cTab);
+        //Special Case
+        if (cTab === lastTab) {
+          setTreeDepth(cTab, 0);
+          removeOpener(cTab);
+        }
+        if (show) {
+          unHideTab(cTab);
+        } else {
+          hideTab(cTab);
+        }
         setPanel(cTab, newPanel, window);
       }, this);
-      window.gBrowser.selectedTabs = tabs[0];
-      window.gBrowser.selectedTab = tabs[0];
+      if (show) {
+        if(tabs.includes(window.gBrowser.selectedTab)){
+          window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
+        }
+        else{
+          window.gBrowser.selectedTabs = tabs[0];
+          window.gBrowser.selectedTab = tabs[0];
+        }
+      }
     } else if (id == null) {
       //Open new tab for the new panel
       let newTab = window.gBrowser.addTab(
@@ -1268,7 +1293,7 @@ window.nativeTreeTabs = {
     }
   },
 
-  moveTabsToPanel: function(tabsToMove, panel) {
+  moveTabsToPanel: function(tabsToMove, panel, forceShow = false) {
     panelId = panel.id.toString();
     let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
     let previousTab = lastTab;
@@ -1287,11 +1312,19 @@ window.nativeTreeTabs = {
       tabsToMove.forEach(function(cTab) {
         setPanel(cTab, panel, window);
       }, this);
-      //Case to not show the panel?...
-      this.tabPanelShow(panelId, changeSelectedTab = false);
-      if (!tabsToMove.includes(gBrowser.selectedTab)) {
-        gBrowser.selectedTabs = tabsToMove[0];
-        gBrowser.selectedTab = tabsToMove[0];
+      if (forceShow || tabsToMove.includes(gBrowser.selectedTab)) {
+        this.tabPanelShow(panelId, changeSelectedTab = false);
+        if (!tabsToMove.includes(gBrowser.selectedTab)) {
+          gBrowser.selectedTabs = tabsToMove[0];
+          gBrowser.selectedTab = tabsToMove[0];
+        } else {
+          window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
+        }
+      } else {
+        tabsToMove.forEach(function(cTab) {
+          hideTab(cTab);
+        }, this);
+        window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
       }
     }
   },
@@ -1330,6 +1363,7 @@ window.nativeTreeTabs = {
   changeSelectedPanel: function(panel) {
     let panelId = panel.id.toString();
     if (this.selectedtPanel.id.toString() === panelId) {
+      checkPanelInMenu(panel);
       return;
     }
     let currentPanelId = this.selectedtPanel.id.toString();
@@ -1424,7 +1458,6 @@ unHideTab = function(aTab, panelId) {
   aTab.removeAttribute("tabPanel-hidden");
   SessionStore.deleteCustomTabValue(aTab, "tabPanel-hidden");
 }
-
 setOpener = function(aTab, openerTab) {
   if (openerTab == null) return;
   let openerId = openerTab.getAttribute("tree-id");
@@ -1605,7 +1638,9 @@ getNextAvailableId = function(array) {
 }
 
 panelNameRightClick = function(aEvent) {
-  aEvent.preventDefault();
+  if (aEvent) {
+    aEvent.preventDefault();
+  }
   let panel = window.nativeTreeTabs.selectedtPanel;
   let tabPanelName = document.querySelector('#tab-panels-name');
 
@@ -1819,7 +1854,7 @@ function addNewPanelInput(aEvent, menupopup) {
   input.style.border = "none";
   input.style.background = "transparent";
   input.style.font = "inherit";
-  input.style.color = "var(--toolbox-textcolor)";
+  input.style.color = "var(--toolbox-textcolor, var(--toolbox-text-color))";
 
   let addNewButon = menupopup.querySelector(".add-panel-button");
   addNewButon.parentNode.insertBefore(input, addNewButon);
@@ -1886,11 +1921,11 @@ addNewPanelInMenu = function(panel, checkIt = false) {
     menuitem.setAttribute("checked", "");
   }
   let tabContextMenupopup = document.getElementById("tab-context-panel-actions");
-  addMenuItem(tabContextMenupopup, "" + panel.label, () => {
+  addMenuItem(tabContextMenupopup, "" + panel.label, (aTab, aEvent) => {
+    let forceShow = (aEvent.ctrlKey) ? true : false;
     let tabs = (TabContextMenu.contextTab.multiselected) ?
       gBrowser.selectedTabs : [TabContextMenu.contextTab];
-    // window.nativeTreeTabs.tabPanelOpen(aTab);
-    window.nativeTreeTabs.moveTabsToPanel(tabs, panel);
+    window.nativeTreeTabs.moveTabsToPanel(tabs, panel, forceShow);
   }, isToggle = false, id = "moveTo-panel-" + panel.id.toString());
 
   updateCountInMenu(panel);
@@ -1942,7 +1977,9 @@ checkPanelInMenu = function(panel) {
   for (var i = 0, len = tabContextMenupopup.childElementCount; i < len; ++i) {
     tabContextMenupopup.children[i].disabled = false;
   }
-  p.disabled = true;
+  if (p) {
+    p.disabled = true;
+  }
 }
 
 addMenuItem = function(parentPopup, label, action, isToggle = false, id = null) {
@@ -1984,11 +2021,13 @@ addItemInTabContextMenu = function() {
   const menupopup = document.createXULElement("menupopup");
   menupopup.setAttribute("id", "tab-context-panel-actions");
 
-  addMenuItem(menupopup, "Create New Panel", () => {
+  addMenuItem(menupopup, "Create New Panel", (aTab, aEvent) => {
+    let forceShow = (aEvent.ctrlKey) ? true : false;
     let tabs = (TabContextMenu.contextTab.multiselected) ?
       gBrowser.selectedTabs : [TabContextMenu.contextTab];
-    window.nativeTreeTabs.tabPanelOpen(tabs, label = null);
-  });
+    window.nativeTreeTabs.tabPanelOpen(tabs, label = null, id = null, forceShow);
+    panelNameRightClick();
+  },isToggle = false,id = "tab-context-create-new-panel");
   //Insert before tab Group entry
   submenu.appendChild(menupopup);
   let context_moveTabToGroup = document.getElementById("context_moveTabToGroup");
@@ -2029,8 +2068,8 @@ addTabPanelButton = function() {
   tabPanelGroup.appendChild(tabPanelName);
   tabPanelGroup.appendChild(dropDownImg);
   //Insert on top of sidebar
-  let tabbrowserTabs = document.getElementById("sidebar-main").firstChild;
-  tabbrowserTabs.parentNode.insertBefore(tabPanelGroup, tabbrowserTabs);
+  let sidebarMain = document.querySelector(["sidebar-main"]);
+  sidebarMain.parentNode.insertBefore(tabPanelGroup, sidebarMain);
   //Create popup
   let menupopup = document.createXULElement('panel');
   menupopup.setAttribute('id', 'tab-panels-menupopup');
@@ -2089,7 +2128,7 @@ addTabPanelButton = function() {
    flex: 1;
    max-height: calc( 100% - 30px ); 
 }
-#sidebar-main {
+box:has(>sidebar-main) {
     flex-flow: column!important;
 }
 #tab-panels-group {
@@ -2105,25 +2144,25 @@ addTabPanelButton = function() {
     fill: var(--toolbarbutton-icon-fill)!important;
     background-color: transparent!important;
 }
-#sidebar-main:not([sidebar-launcher-expanded])  {
+box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
   #tab-panels-group .dropdown-arrow,
   #tab-panels-name{
     display: none;
   }
 }
-:root:not([customizing])[uidensity="compact"] #sidebar-main:not([sidebar-launcher-expanded]) #tab-panels-button {
+:root:not([customizing])[uidensity="compact"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
     padding-inline-start: 7px;
 }
-:root:not([customizing]) #sidebar-main:not([sidebar-launcher-expanded]) #tab-panels-button {
+:root:not([customizing]) box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
     padding-inline-start: 9px;
 }
-:root:not([customizing])[uidensity="touch"] #sidebar-main:not([sidebar-launcher-expanded]) #tab-panels-button {
+:root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
     padding-inline-start: 12px;
 }
-.button-background:hover {
+#tab-panels-group .button-background:hover {
     background-color: var(--button-background-color);
 }
-.button-background {
+#tab-panels-group .button-background {
     box-sizing: border-box;
     min-height: var(--button-min-height);
     border: var(--button-border);
@@ -2151,7 +2190,7 @@ addTabPanelButton = function() {
     text-overflow: "...";
     text-wrap: nowrap;
 }
-.panel-name-input:focus-visible {
+#tab-panels-group .panel-name-input:focus-visible {
     border: none!important;
     padding: 7px!important;
     margin-left: -4px!important;
@@ -2160,7 +2199,7 @@ addTabPanelButton = function() {
     min-width:fit-content;
     max-width:80%;
 }
-.panel-name-input {
+#tab-panels-group .panel-name-input {
     border: none!important;
     margin-top: 0px!important;
 }
@@ -2184,7 +2223,7 @@ addTabPanelButton = function() {
 }
 #tab-panels-menupopup menuitem {
     font-size: 14px;
-    color: var(--toolbox-textcolor-inactive);
+    color: var(--toolbox-textcolor-inactive, var(--toolbox-text-color-inactive));
     padding-left: 15px;
     padding-right: 15px;
     padding-top: 10px;
@@ -2193,9 +2232,9 @@ addTabPanelButton = function() {
     border-radius: 9px;
 }
 #tab-panels-menupopup menuitem[checked] {
-    color: var(--toolbox-textcolor);
+    color: var(--toolbox-textcolor, var(--toolbox-text-color));
     opacity: 1;
-    background: var(--toolbarbutton-active-background) padding-box;
+    background: var(--toolbarbutton-active-background, var(--toolbarbutton-background-color-active)) padding-box;
 }
 #tab-panels-menupopup .add-panel-button {
     justify-content: center;
@@ -2222,11 +2261,20 @@ addTabPanelButton = function() {
     padding-left: 5px;
 }
 #tab-panels-menupopup .add-panel-button menuitem {
-    color: var(--toolbox-textcolor);
+    color: var(--toolbox-textcolor, var(--toolbox-text-color));
     font-size: 13px;
     padding-top: 7px;
     padding-left: 0;
 }
+#tab-context-create-new-panel{
+  border-bottom: 1px solid var(--panel-separator-color);
+  margin-bottom: 4px;
+}
+#tab-context-create-new-panel:only-child{
+  border-bottom: none;
+  margin-bottom: 0px;
+}
+
   `;
   let styleURI = makeURI(
     `data:text/css;charset=UTF=8,${encodeURIComponent(customCSS)}`
