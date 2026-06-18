@@ -1873,8 +1873,8 @@ addNewPanelInMenu = function(panel, checkIt = false) {
   menuitem.setAttribute('panel-id', panel.id);
   menuitem.setAttribute('label', panel.label);
   menuitem.setAttribute('type', 'radio');
-  menuitem.addEventListener("command", (aEvent) => aEvent.target.ownerGlobal.menuItemClick(panel, aEvent.target));
-  menuitem.addEventListener("click", (aEvent) => aEvent.target.ownerGlobal.menuItemRightClick(aEvent, panel, aEvent.target));
+  menuitem.addEventListener("command", (aEvent) => menuItemClick(panel, aEvent.target));
+  menuitem.addEventListener("click", (aEvent) => menuItemRightClick(aEvent, panel, aEvent.target));
 
   let menupopup = document.getElementById('tab-panels-menupopup-view');
   if (menupopup) {
@@ -2059,7 +2059,7 @@ addTabPanelButton = function() {
   menupopup.appendChild(mainDiv);
   // tabPanelButton.setAttribute('popup', 'tab-panels-menupopup');
 
-  subDiv.addEventListener("click", (aEvent) => aEvent.target.ownerGlobal.addNewPanelInput(aEvent, menupopup));
+  subDiv.addEventListener("click", (aEvent) => addNewPanelInput(aEvent, menupopup));
 
   tabPanelGroup.addEventListener("auxclick", (aEvent) => {
     let button = aEvent.button;
