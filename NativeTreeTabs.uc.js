@@ -92,6 +92,10 @@ window.nativeTreeTabs = {
           aTab.owner = previousTab;
         }
       }
+      if (aTab.hasAttribute("panel-id")) {
+        let panelId = aTab.getAttribute("panel-id");
+        window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
+      }
       nativeTreeTabs.originalRemoveTab.apply(this, arguments);
     };
 
@@ -813,10 +817,6 @@ window.nativeTreeTabs = {
   },
 
   tabClose: function(aTab) {
-    if (aTab.hasAttribute("panel-id")) {
-      let panelId = aTab.getAttribute("panel-id");
-      this.panelDecreaseCount(panelId)
-    }
     this.tabLeaveStrip(aTab);
   },
 
@@ -1232,10 +1232,9 @@ window.nativeTreeTabs = {
         setPanel(cTab, newPanel, window);
       }, this);
       if (show) {
-        if(tabs.includes(window.gBrowser.selectedTab)){
+        if (tabs.includes(window.gBrowser.selectedTab)) {
           window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
-        }
-        else{
+        } else {
           window.gBrowser.selectedTabs = tabs[0];
           window.gBrowser.selectedTab = tabs[0];
         }
@@ -1336,7 +1335,7 @@ window.nativeTreeTabs = {
     panel.count++;
   },
 
-  panelDecreaseCount: function(panelId) {
+  panelDecreaseCount: function(panelId, aTab = null) {
     panelId = panelId.toString();
     let panel = this.tabPanels.find(x => x.id.toString() === panelId);
     if (!panel) {
@@ -1346,8 +1345,11 @@ window.nativeTreeTabs = {
       //Remove panel with zero tabs
       this.tabPanels.splice(this.tabPanels.indexOf(panel), 1);
       removePanelFromMenu(panelId);
-      if (this.tabPanels.length > 0 && this.selectedtPanel.id === panelId) {
+      if (this.tabPanels.length > 0 && this.selectedtPanel.id.toString() === panelId) {
         if (this.previousSelectedPanel != null) {
+          if (aTab != null) {
+            aTab.owner = null;
+          }
           this.tabPanelShow(this.previousSelectedPanel.id);
         }
       }
@@ -1357,6 +1359,20 @@ window.nativeTreeTabs = {
       }
     } else {
       panel.count--;
+    }
+  },
+  replaceTabsPanelLabel: function(panel) {
+    let panelId = panel.id.toString();
+    let label = panel.label.toString();
+    //Replace tabs saved panel label
+    gBrowser.tabs.forEach(function(aTab) {
+      if (aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === panelId) {
+        aTab.setAttribute("panel-label", panel.label);
+        SessionStore.setCustomTabValue(aTab, "panel-label", panel.label);
+      }
+    }, this);
+    if (panelId === "0") {
+      Services.prefs.setStringPref("treeTabs.defaultPanelName", label);
     }
   },
 
@@ -1369,7 +1385,7 @@ window.nativeTreeTabs = {
     let currentPanelId = this.selectedtPanel.id.toString();
     let previousPanel = this.tabPanels.find(x => x.id.toString() === currentPanelId);
     if (previousPanel) {
-      this.previousSelectedPanel = this.selectedtPanel;
+      this.previousSelectedPanel = previousPanel;
     }
     this.selectedtPanel = panel;
     checkPanelInMenu(panel);
@@ -1637,31 +1653,87 @@ getNextAvailableId = function(array) {
   return id;
 }
 
+function getNameFromInput(input, panel) {
+  let name = input.value.trim();
+  if (name && name != '') {
+    panel.label = name;
+  }
+}
+
+function closePopupAfter(popup) {
+  if (popup == null) {
+    return;
+  }
+  popup._stayOpen = false;
+  popup.style.display = "none";
+  setTimeout(() => {
+    popup.style.display = "";
+  }, 10);
+}
+
+function addInputListeners(input, enterAction, escapeAction, blurAction, popup = null) {
+  input.addEventListener("keydown", (aEvent) => {
+    if (aEvent.key === "Enter") {
+      enterAction();
+      closePopupAfter(popup);
+    } else if (aEvent.key === "Escape") {
+      escapeAction();
+      closePopupAfter(popup);
+    }
+  });
+  setTimeout(() => {
+    input.focus();
+    input.select();
+    input.addEventListener("blur", () => {
+      blurAction();
+      closePopupAfter(popup);
+    });
+  }, 5);
+}
+
+function createInput(target, replace = false, value = '', placeholder = '', width = null,
+  minWidth = null, minHeight = null, textAlign = null, fontSize = null, color = null,
+  padding = null, outline = null, ) {
+
+  let input = document.createElement("input");
+  input.setAttribute("type", "text");
+  input.setAttribute("value", value);
+  input.setAttribute("placeholder", placeholder);
+  input.style.background = "transparent";
+  input.style.border = "none";
+  input.style.width = width;
+  input.style.minWidth = minWidth;
+  input.style.minHeight = minHeight;
+  input.style.textAlign = textAlign;
+  input.style.fontSize = fontSize;
+  input.style.color = color;
+  input.style.padding = padding;
+  input.style.outline = outline;
+
+  if (replace) {
+    target.parentNode.replaceChild(input, target);
+  } else {
+    target.parentNode.insertBefore(input, target);
+  }
+  input.focus();
+  input.select();
+
+  return input;
+}
+
 panelNameRightClick = function(aEvent) {
   if (aEvent) {
     aEvent.preventDefault();
   }
-  let panel = window.nativeTreeTabs.selectedtPanel;
   let tabPanelName = document.querySelector('#tab-panels-name');
-
   if (!tabPanelName) {
     return;
   }
-
-  let input = document.createElement("input");
-  input.setAttribute("class", "panel-name-input");
-  input.setAttribute("type", "text");
-  input.setAttribute("value", panel.label);
-  input.style.border = "none";
-  input.style.background = "transparent";
+  let panel = window.nativeTreeTabs.selectedtPanel;
   let prvWidth = getComputedStyle(tabPanelName).getPropertyValue("width");
-  input.style.width = prvWidth;
-  input.style.minWidth = "50%";
-  input.style.outnile = "none!important";
-
-  tabPanelName.parentNode.replaceChild(input, tabPanelName);
-  input.focus();
-  input.select();
+  let input = createInput(tabPanelName, replace = true, value = panel.label, placeholder = '', width = prvWidth,
+    minWidth = "50%", minHeight = null, textAlign = null, fontSize = null, color = null,
+    padding = null, outline = "none!important");
 
   function replaceInputWithNew() {
     tabPanelName.innerText = panel.label;
@@ -1672,46 +1744,14 @@ panelNameRightClick = function(aEvent) {
     }
     input.parentNode.replaceChild(tabPanelName, input);
     updateCountInMenu(panel);
-    let panelId = panel.id.toString();
-    let label = panel.label.toString();
-    //Replace tabs saved panel label
-    gBrowser.tabs.forEach(function(aTab) {
-      if (aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === panelId) {
-        aTab.setAttribute("panel-label", panel.label);
-        SessionStore.setCustomTabValue(aTab, "panel-label", panel.label);
-      }
-    });
-    if (panelId === "0") {
-      Services.prefs.setStringPref("treeTabs.defaultPanelName", label);
-    }
-  }
-
-  function lostFocus() {
-    let name = input.value.trim();
-    if (name && name != '') {
-      panel.label = name;
-    }
-    replaceInputWithNew();
+    window.nativeTreeTabs.replaceTabsPanelLabel(panel);
   }
 
   function finishEdit() {
-    let name = input.value.trim();
-    if (name && name != '') {
-      panel.label = name;
-    }
+    getNameFromInput(input, panel)
     replaceInputWithNew();
   }
-
-  input.addEventListener("keydown", (aEvent) => {
-    if (aEvent.key === "Enter") {
-      finishEdit();
-    } else if (aEvent.key === "Escape") {
-      replaceInputWithNew();
-    }
-  });
-  setTimeout(() => {
-    input.addEventListener("blur", lostFocus);
-  }, 5);
+  addInputListeners(input, finishEdit, replaceInputWithNew, finishEdit);
 }
 
 menuItemRightClick = function(aEvent, panel, target) {
@@ -1727,24 +1767,11 @@ menuItemRightClick = function(aEvent, panel, target) {
   }
   let menupopup = document.getElementById('tab-panels-menupopup');
   menupopup._stayOpen = true;
-  let input = document.createElement("input");
-  input.setAttribute("type", "text");
-  input.setAttribute("value", panel.label);
-  input.style.minHeight = "25px";
-  input.style.textAlign = "center";
-  input.style.border = "none";
-  input.style.background = "transparent";
-  input.style.font = "inherit";
-  input.style.color = "inherit";
-  input.style.fontSize = "13px";
-  input.style.padding = "4px";
   let prvWidth = getComputedStyle(target).getPropertyValue("width");
-  input.style.width = prvWidth;
-
-  target.parentNode.insertBefore(input, target);
+  let input = createInput(target, replace = false, value = panel.label, placeholder = '', width = prvWidth,
+    minWidth = null, minHeight = "25px", textAlign = "center", fontSize = "13px", color = null,
+    padding = "4px", outline = null);
   target.style.display = "none";
-  input.focus();
-  input.select();
 
   function replaceInputWithNew() {
     target.label = panel.label;
@@ -1762,61 +1789,19 @@ menuItemRightClick = function(aEvent, panel, target) {
       }
     }
     updateCountInMenu(panel);
-    let panelId = panel.id.toString();
-    let label = panel.label.toString();
-    gBrowser.tabs.forEach(function(aTab) {
-      if (aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === panelId) {
-        aTab.setAttribute("panel-label", panel.label);
-        SessionStore.setCustomTabValue(aTab, "panel-label", panel.label);
-      }
-    });
-    if (panelId === "0") {
-      Services.prefs.setStringPref("treeTabs.defaultPanelName", label);
-    }
+    window.nativeTreeTabs.replaceTabsPanelLabel(panel);
   }
 
-  function lostFocus() {
-    let name = input.value.trim();
-    if (name && name != '') {
-      panel.label = name;
-    }
-    replaceInputWithNew();
-    let menupopup = document.getElementById('tab-panels-menupopup');
-    menupopup._stayOpen = false;
-    menupopup.style.display = "none";
-    setTimeout(() => {
-      menupopup.style.display = "";
-    }, 10);
-    window.focus();
+  function escapeKey() {
+    target.style.display = "";
+    input.parentNode.removeChild(input);
   }
 
   function finishEdit() {
-    let name = input.value.trim();
-    if (name && name != '') {
-      panel.label = name;
-    }
+    getNameFromInput(input, panel)
     replaceInputWithNew();
-    let menupopup = document.getElementById('tab-panels-menupopup');
-    menupopup._stayOpen = false;
-    menupopup.style.display = "none";
-    setTimeout(() => {
-      menupopup.style.display = "";
-    }, 10);
-    window.focus();
   }
-
-  input.addEventListener("keydown", (aEvent) => {
-    if (aEvent.key === "Enter") {
-      // aEvent.preventDefault();
-      finishEdit();
-    } else if (aEvent.key === "Escape") {
-      replaceInputWithNew();
-    }
-  });
-
-  setTimeout(() => {
-    input.addEventListener("blur", lostFocus);
-  }, 5);
+  addInputListeners(input, finishEdit, replaceInputWithNew, escapeKey, popup = menupopup);
 }
 
 menuItemClick = function(panel, target) {
@@ -1837,29 +1822,17 @@ makePopupStayOpen = function(popup) {
   }, true);
 }
 
-function addNewPanelInput(aEvent, menupopup) {
+addNewPanelInput = function(aEvent, menupopup) {
+  //Disallow adding new when renaming
   let popupView = document.getElementById('tab-panels-menupopup-view');
   if (popupView.querySelector("input")) {
     return;
   }
-
   menupopup._stayOpen = true;
-  let input = document.createElement("input");
-  input.setAttribute("type", "text");
-
-  input.setAttribute("value", "");
-  input.setAttribute("placeholder", "Enter name...");
-  input.style.minHeight = "25px";
-  input.style.textAlign = "center";
-  input.style.border = "none";
-  input.style.background = "transparent";
-  input.style.font = "inherit";
-  input.style.color = "var(--toolbox-textcolor, var(--toolbox-text-color))";
-
   let addNewButon = menupopup.querySelector(".add-panel-button");
-  addNewButon.parentNode.insertBefore(input, addNewButon);
-  input.focus();
-  input.select();
+  let input = createInput(addNewButon, replace = false, value = '', placeholder = "Enter name...", width = null,
+    minWidth = null, minHeight = "25px", textAlign = "center", fontSize = null, color = "var(--toolbox-textcolor, var(--toolbox-text-color))",
+    padding = "4px", outline = null, );
 
   function lostFocus() {
     let name = input.value.trim();
@@ -1877,30 +1850,12 @@ function addNewPanelInput(aEvent, menupopup) {
       name = null;
     }
     input.parentNode.removeChild(input);
-    menupopup._stayOpen = false;
     window.nativeTreeTabs.tabPanelOpen(tabs = null, label = name);
-    menupopup.style.display = "none";
-    setTimeout(() => {
-      menupopup.style.display = "";
-    }, 10);
-    //
-    window.focus();
   }
-  input.addEventListener("keydown", (aEvent) => {
-    if (aEvent.key === "Enter") {
-      // aEvent.preventDefault();
-      finishEdit();
-    } else if (aEvent.key === "Escape") {
-      input.parentNode.removeChild(input);
-    }
-  });
 
-  setTimeout(() => {
-    input.focus();
-    input.select();
-    input.addEventListener("blur", lostFocus);
-
-  }, 5);
+  addInputListeners(input, finishEdit, () => {
+    input.parentNode.removeChild(input)
+  }, lostFocus, popup = menupopup);
 }
 
 addNewPanelInMenu = function(panel, checkIt = false) {
@@ -1948,31 +1903,43 @@ updateCountInMenu = function(panel) {
 
 removePanelFromMenu = function(panelId) {
   let menupopup = document.getElementById('tab-panels-menupopup-view');
+  if (menupopup == null) {
+    return;
+  }
   let menuitem = menupopup.querySelector('[panel-id="' + panelId + '"]');
-  menupopup.removeChild(menuitem);
+  if (menuitem) {
+    menupopup.removeChild(menuitem);
+  }
   let tabContextMenupopup = document.getElementById("tab-context-panel-actions");
-  let p = tabContextMenupopup.querySelector("#moveTo-panel-" + panelId.toString());
-  //Timeout exists so context item which removes itself won't get stuck
-  setTimeout(() => {
-    tabContextMenupopup.removeChild(p);
-  }, 10);
-
+  if (tabContextMenupopup != null) {
+    let p = tabContextMenupopup.querySelector("#moveTo-panel-" + panelId.toString());
+    //Timeout exists so context item which removes itself won't get stuck
+    setTimeout(() => {
+      if (p)
+        tabContextMenupopup.removeChild(p);
+    }, 10);
+  }
 }
 
 checkPanelInMenu = function(panel) {
   let menupopup = document.getElementById('tab-panels-menupopup-view');
-  let menuitem = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
-  if (menuitem != null) {
-    menupopup.childNodes.forEach(function(item) {
-      item.removeAttribute("checked");
-    });
-    menuitem.setAttribute("checked", "");
+  if (menupopup != null) {
+    let menuitem = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
+    if (menuitem) {
+      menupopup.childNodes.forEach(function(item) {
+        item.removeAttribute("checked");
+      });
+      menuitem.setAttribute("checked", "");
+    }
   }
   let tabPanelName = document.querySelector('#tab-panels-name');
   if (tabPanelName != null) {
     tabPanelName.innerText = panel.label;
   }
   let tabContextMenupopup = document.getElementById("tab-context-panel-actions");
+  if (tabContextMenupopup == null) {
+    return;
+  }
   let p = tabContextMenupopup.querySelector("#moveTo-panel-" + panel.id.toString());
   for (var i = 0, len = tabContextMenupopup.childElementCount; i < len; ++i) {
     tabContextMenupopup.children[i].disabled = false;
@@ -2027,11 +1994,13 @@ addItemInTabContextMenu = function() {
       gBrowser.selectedTabs : [TabContextMenu.contextTab];
     window.nativeTreeTabs.tabPanelOpen(tabs, label = null, id = null, forceShow);
     panelNameRightClick();
-  },isToggle = false,id = "tab-context-create-new-panel");
+  }, isToggle = false, id = "tab-context-create-new-panel");
   //Insert before tab Group entry
   submenu.appendChild(menupopup);
   let context_moveTabToGroup = document.getElementById("context_moveTabToGroup");
-  tabContextMenu.insertBefore(submenu, context_moveTabToGroup.nextSibling);
+  if (context_moveTabToGroup) {
+    tabContextMenu.insertBefore(submenu, context_moveTabToGroup.nextSibling);
+  }
 }
 
 addTabPanelButton = function() {
