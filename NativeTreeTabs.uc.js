@@ -1,6 +1,5 @@
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
-const lockCtrlTabInPanel = true;
 
 window.nativeTreeTabs = {
 
@@ -17,8 +16,17 @@ window.nativeTreeTabs = {
   previousSelectedPanel: null,
   tabPanels: [],
   defaultPanelName: "Default Panel",
+  lockCtrlTabInPanel: true,
 
   init: function() {
+
+    if (Services.prefs.getPrefType("treeTabs.behavior.lockCtrlTabInPanel") != 128) {
+      Services.prefs.setBoolPref("treeTabs.behavior.lockCtrlTabInPanel", this.lockCtrlTabInPanel);
+    } else {
+      this.lockCtrlTabInPanel = Services.prefs.getBoolPref("treeTabs.behavior.lockCtrlTabInPanel");
+    }
+    Services.prefs.addObserver("treeTabs.behavior.lockCtrlTabInPanel", this);
+
 
     if (Services.prefs.getPrefType("treeTabs.defaultPanelName") != 32) {
       Services.prefs.setStringPref("treeTabs.defaultPanelName", this.defaultPanelName);
@@ -130,39 +138,43 @@ window.nativeTreeTabs = {
     //Ctrl + Tab don't cycle panel tabs
     //(don't select next panel tabs)
     this.originalAdvanceSelectedTab = gBrowser.tabContainer.advanceSelectedTab;
-    if (lockCtrlTabInPanel) {
-      gBrowser.tabContainer.advanceSelectedTab = function(aDir, aWrap) {
-        let {
-          ariaFocusedItem
-        } = this;
-        let startTab = ariaFocusedItem;
-        if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
-          startTab = this.selectedItem;
-        }
-        let newTab = null;
-        if (startTab.hidden) {
-          if (aDir == 1) {
-            newTab = this.allTabs.find(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
-          } else {
-            newTab = this.allTabs.findLast(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
-          }
+    gBrowser.tabContainer.advanceSelectedTab = function(aDir, aWrap) {
+      console.log(this.lockCtrlTabInPanel);
+      if (nativeTreeTabs.lockCtrlTabInPanel === false) {
+        nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
+        return;
+      }
+      let {
+        ariaFocusedItem
+      } = this;
+      let startTab = ariaFocusedItem;
+      if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
+        startTab = this.selectedItem;
+      }
+      let newTab = null;
+      if (startTab.hidden) {
+        if (aDir == 1) {
+          newTab = this.allTabs.find(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
         } else {
-          newTab = this.findNextTab(startTab, {
-            direction: aDir,
-            wrap: aWrap,
-            filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
-          });
+          newTab = this.allTabs.findLast(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
         }
-        if (newTab && newTab != startTab) {
-          this._selectNewTab(newTab, aDir, aWrap);
-        }
-      };
-    }
+      } else {
+        newTab = this.findNextTab(startTab, {
+          direction: aDir,
+          wrap: aWrap,
+          filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
+        });
+      }
+      if (newTab && newTab != startTab) {
+        this._selectNewTab(newTab, aDir, aWrap);
+      }
+    };
     this.customStyle = loadNTTstyle();
     Services.prefs.addObserver("treeTabs.rootTabTopMargin", this);
     Services.prefs.addObserver("treeTabs.branchTabTopMargin", this);
     Services.prefs.addObserver("treeTabs.tabHeight", this);
     Services.prefs.addObserver("treeTabs.labelFontSize", this);
+    Services.prefs.addObserver("treeTabs.tabBorderRadius", this);
 
     //-------------------
     console.log("Native Tree Tabs loaded.");
@@ -1115,6 +1127,10 @@ window.nativeTreeTabs = {
         nativeTreeTabs.moveNewTabsDirectlyUnderParent = Services.prefs.getBoolPref("browser.tabs.insertRelatedAfterCurrent");
         return;
       }
+      if (name === "treeTabs.behavior.lockCtrlTabInPanel") {
+        nativeTreeTabs.lockCtrlTabInPanel = Services.prefs.getBoolPref("treeTabs.behavior.lockCtrlTabInPanel");
+        return;
+      }
       let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
         Ci.nsIStyleSheetService
       );
@@ -1983,7 +1999,7 @@ addItemInTabContextMenu = function() {
   const submenu = document.createXULElement("menu");
   submenu.setAttribute("id", "custom-tab-submenu");
   submenu.setAttribute("label", "Move to Panel...");
-  submenu.setAttribute("accesskey", "v");
+  submenu.setAttribute("accesskey", "a");
 
   const menupopup = document.createXULElement("menupopup");
   menupopup.setAttribute("id", "tab-context-panel-actions");
@@ -2134,12 +2150,9 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
 #tab-panels-group .button-background {
     box-sizing: border-box;
     min-height: var(--button-min-height);
-    border: var(--button-border);
-    border-radius: var(--button-border-radius);
+    border: none!important;
     color: var(--button-text-color);
     padding: var(--button-padding);
-    font-weight: var(--button-font-weight);
-    font-size: var(--button-font-size);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -2205,6 +2218,12 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     opacity: 1;
     background: var(--toolbarbutton-active-background, var(--toolbarbutton-background-color-active)) padding-box;
 }
+#tab-panels-menupopup-view input {
+    margin-top:5px!important;
+    margin-left:4px;
+    max-width:90%;
+    align-self:center;
+}
 #tab-panels-menupopup .add-panel-button {
     justify-content: center;
     display: flex;
@@ -2213,6 +2232,7 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     order: 100!important;
     align-items: center;
     margin-top: 5px;
+    padding-bottom: 5px;
 }
 #tab-panels-menupopup .add-panel-button:only-child menuitem {
     padding: 0;
@@ -2280,8 +2300,12 @@ loadNTTstyle = function() {
   } else {
     labelFontSize = Services.prefs.getStringPref("treeTabs.labelFontSize");
   }
-
-
+  let tabBorderRadius = parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius'));
+  if (Services.prefs.getPrefType("treeTabs.tabBorderRadius") != 32) {
+    Services.prefs.setStringPref("treeTabs.tabBorderRadius", tabBorderRadius);
+  } else {
+    tabBorderRadius = Services.prefs.getStringPref("treeTabs.tabBorderRadius");
+  }
   let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
     Ci.nsIStyleSheetService
   );
@@ -2292,6 +2316,7 @@ loadNTTstyle = function() {
     --tab-height: ` + tabHeight + `px;
     --label-font-size: ` + labelFontSize + `px;
     --tab-close-button-padding-custom: 4px;
+    --tab-border-radius-forced: ` + tabBorderRadius + `px;
 }
 #vertical-tabs tab[tree-depth="0"] { --tab-indent: 0; }
 #vertical-tabs tab[tree-depth="1"] { --tab-indent: 11; }
@@ -2473,6 +2498,9 @@ tab[soundplaying] .tab-background {
     --tree-tab-default-color: rgb(130, 120, 140);
     --tab-icon-start: 3px;
 }
+#vertical-tabs tab .tab-background {
+    border-radius: var(--tab-border-radius-forced)!important;
+}
 @media (prefers-color-scheme: dark) {
   #vertical-tabs tab:not([selected]) .tab-background {
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
@@ -2483,7 +2511,6 @@ tab[soundplaying] .tab-background {
       filter: saturate(1) brightness(1);
   }
   #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
-      border-radius: var(--tab-border-radius);
       backdrop-filter: blur(5px);
       outline: none!important;
       border: 2px solid transparent!important;
@@ -2518,7 +2545,6 @@ tab[soundplaying] .tab-background {
       filter: saturate(1) brightness(1);
   }
   #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
-      border-radius: var(--tab-border-radius);
       backdrop-filter: blur(5px);
       outline: none!important;
       border: 2px solid transparent!important;
