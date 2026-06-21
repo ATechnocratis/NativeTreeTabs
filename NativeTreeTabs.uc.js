@@ -17,6 +17,10 @@ window.nativeTreeTabs = {
   tabPanels: [],
   defaultPanelName: "Default Panel",
   lockCtrlTabInPanel: true,
+  previousSelectedTab: null,
+  selectedTab: null,
+  clickedActiveTab: null,
+  switchSelectedOnClick: false,
 
   init: function() {
 
@@ -26,6 +30,13 @@ window.nativeTreeTabs = {
       this.lockCtrlTabInPanel = Services.prefs.getBoolPref("treeTabs.behavior.lockCtrlTabInPanel");
     }
     Services.prefs.addObserver("treeTabs.behavior.lockCtrlTabInPanel", this);
+
+    if (Services.prefs.getPrefType("treeTabs.behavior.switchSelectedOnClick") != 128) {
+      Services.prefs.setBoolPref("treeTabs.behavior.switchSelectedOnClick", this.switchSelectedOnClick);
+    } else {
+      this.switchSelectedOnClick = Services.prefs.getBoolPref("treeTabs.behavior.switchSelectedOnClick");
+    }
+    Services.prefs.addObserver("treeTabs.behavior.switchSelectedOnClick", this);
 
 
     if (Services.prefs.getPrefType("treeTabs.defaultPanelName") != 32) {
@@ -56,6 +67,7 @@ window.nativeTreeTabs = {
     Services.prefs.setBoolPref("browser.tabs.groups.smart.enabled", false);
 
     //Check if Tabs existed before initialization
+    gBrowser.tabs.forEach(this.attachTabListeners, this);
     gBrowser.tabs.forEach(this.initTab, this);
 
     //Close default panel if empty
@@ -139,7 +151,6 @@ window.nativeTreeTabs = {
     //(don't select next panel tabs)
     this.originalAdvanceSelectedTab = gBrowser.tabContainer.advanceSelectedTab;
     gBrowser.tabContainer.advanceSelectedTab = function(aDir, aWrap) {
-      console.log(this.lockCtrlTabInPanel);
       if (nativeTreeTabs.lockCtrlTabInPanel === false) {
         nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
         return;
@@ -169,6 +180,10 @@ window.nativeTreeTabs = {
         this._selectNewTab(newTab, aDir, aWrap);
       }
     };
+
+    //Used to find if the clicked tab is actually the selected tab or the too be selected 
+    gBrowser.tabContainer.addEventListener("mousedown", this, true);
+
     this.customStyle = loadNTTstyle();
     Services.prefs.addObserver("treeTabs.rootTabTopMargin", this);
     Services.prefs.addObserver("treeTabs.branchTabTopMargin", this);
@@ -185,6 +200,7 @@ window.nativeTreeTabs = {
     this._tabEvents.forEach(function(aEvent) {
       gBrowser.tabContainer.removeEventListener(aEvent, this);
     }, this);
+    gBrowser.tabContainer.removeEventListener("mousedown", this);
     gBrowser.removeTab = this.originalRemoveTab;
     gBrowser.pinTab = this.originalPinTab;
     gBrowser.addTabSplitView = this.originalAddTabSplitView;
@@ -198,7 +214,7 @@ window.nativeTreeTabs = {
   },
 
   onLocationChange(browser, webProgress, request, locationURI, flags) {
-    const aTab = gBrowser.getTabForBrowser(browser);
+    let aTab = gBrowser.getTabForBrowser(browser);
     setDomainAttr(aTab);
   },
 
@@ -247,6 +263,10 @@ window.nativeTreeTabs = {
             this.closeTree(aEvent);
           }
           break;
+        }
+      case "mousedown":
+        {
+          this.markTrueSelectedTab(aEvent);
         }
     }
   },
@@ -427,8 +447,8 @@ window.nativeTreeTabs = {
   },
 
   tabDragEnd: function(aEvent) {
-    let aTab = aEvent.target;
 
+    let aTab = aEvent.target;
 
     setTimeout(() => {
       SessionStore.deleteCustomTabValue(aTab, "draggedFromWindow");
@@ -497,7 +517,7 @@ window.nativeTreeTabs = {
     if (isTab(nextTab)) nextTabDepth = parseInt(nextTab.getAttribute("tree-depth"));
 
     //Case 0: Dropped inside a tab -> Set tab as parent
-    if (previousTabDepth != null && offsetY < 4) {
+    if (previousTabDepth != null && offsetY < 10) {
       //Tab was already direct parent -> Swap
       let isAlreadyParent = (!aTab.multiselected && oldParent != "" &&
           oldParent === previousTab.getAttribute("tree-id")) ?
@@ -710,7 +730,70 @@ window.nativeTreeTabs = {
     }
   },
 
+  markTrueSelectedTab: function(aEvent) {
+
+    if (aEvent.button !== 0 || aEvent.ctrlKey || aEvent.shiftKey || aEvent.altKey || aEvent.metaKey) {
+      return;
+    }
+    let aTab = aEvent.target.closest(".tabbrowser-tab");
+    if (!aTab) return;
+    this.clickedActiveTab = aTab && aTab.selected ? aTab : null;
+
+  },
+
+  previousSwitch: function(aEvent) {
+
+    if (nativeTreeTabs.switchSelectedOnClick === false) {
+      return;
+    }
+    //only on left click (with no modifiers)
+    if (aEvent.button !== 0 || aEvent.ctrlKey || aEvent.shiftKey || aEvent.altKey || aEvent.metaKey) {
+      nativeTreeTabs.clickedActiveTab = null;
+      return;
+    }
+    //mouseddown on (truly) selected tab
+    if (!nativeTreeTabs.clickedActiveTab) {
+      nativeTreeTabs.clickedActiveTab = null;
+      return;
+    }
+
+    //Ignore clicks on buttons
+    if (aEvent.target.closest(".tab-audio-button, .tab-close-button, .tab-icon-overlay")) {
+      return;
+    }
+    if (SidebarController._sidebarMain.__expanded) {
+      if (aEvent.target.closest(".tab-icon-stack")) {
+        return;
+      }
+    }
+
+    let aTab = aEvent.target.closest(".tabbrowser-tab");
+
+    let pSTab = nativeTreeTabs.previousSelectedTab;
+    if (!aTab || aTab !== nativeTreeTabs.clickedActiveTab || !aTab.selected ||
+      !pSTab || pSTab === aTab || pSTab.closing) {
+
+      nativeTreeTabs.clickedActiveTab = null;
+      return;
+    }
+
+    gBrowser.selectedTab = pSTab;
+    nativeTreeTabs.clickedActiveTab = null;
+  },
+
+
   tabSelected: function(aTab) {
+
+    //Select previous selected on click current selected click
+    if (gBrowser.selectedTab !== this.selectedTab) {
+      this.previousSelectedTab = this.selectedTab;
+      this.selectedTab = aTab;
+    }
+    if (this.previousSelectedTab) {
+      this.previousSelectedTab.removeEventListener("click", this.previousSwitch);
+    }
+    aTab.addEventListener("click", this.previousSwitch, true);
+
     //Hidden tab selected unravel root
     if (aTab.hasAttribute("hidden-child")) {
       let rootId = aTab.getAttribute("hidden-child-rootID");
@@ -965,15 +1048,16 @@ window.nativeTreeTabs = {
     this.observeTab(aTab, this);
   },
 
-  initTab: function(aTab) {
+  attachTabListeners: function(aTab) {
     aTab.addEventListener("dragend", this);
     aTab.addEventListener("dragstart", this);
     aTab.querySelector(".tab-icon-stack").addEventListener("click", this);
     aTab.querySelector(".tab-close-button").addEventListener("click", this);
+  },
+
+  initTab: function(aTab) {
     setDomainAttr(aTab);
-
     let restorePaneldId = SessionStore.getCustomTabValue(aTab, "panel-id");
-
     let dragged = SessionStore.getCustomTabValue(aTab, "draggedFromWindow");
 
     //Don't restore panel for out of window dragging
@@ -987,6 +1071,7 @@ window.nativeTreeTabs = {
     if (restorePaneldId) {
       panelId = restorePaneldId.toString();
       let panel = this.tabPanels.find(x => x.id.toString() === panelId);
+
       if (!panel) {
         //panel no longer exists => restore it
         let relabel = "restored " + panelId;
@@ -995,6 +1080,10 @@ window.nativeTreeTabs = {
           restorePanelLabel = "Restored Panel";
         }
         panel = this.tabPanelOpen(tabs = null, label = restorePanelLabel, id = panelId);
+      } else {
+        if (!findPanelInMenu(panel)) {
+          addNewPanelInMenu(panel, checkIt = false);
+        }
       }
       setPanel(aTab, panel, window);
       foundPanel = true;
@@ -1057,6 +1146,7 @@ window.nativeTreeTabs = {
     }
   },
   initTreeDepth: function(aTab) {
+    this.attachTabListeners(aTab);
     let rootTab = aTab.openerTab;
     let uriString = aTab._fullLabel;
     //Find possible opener, if domain matches current tab
@@ -1131,6 +1221,10 @@ window.nativeTreeTabs = {
         nativeTreeTabs.lockCtrlTabInPanel = Services.prefs.getBoolPref("treeTabs.behavior.lockCtrlTabInPanel");
         return;
       }
+      if (name === "treeTabs.behavior.switchSelectedOnClick") {
+        nativeTreeTabs.switchSelectedOnClick = Services.prefs.getBoolPref("treeTabs.behavior.switchSelectedOnClick");
+        return;
+      }
       let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
         Ci.nsIStyleSheetService
       );
@@ -1190,6 +1284,9 @@ window.nativeTreeTabs = {
       id = id.toString();
       let panelExist = this.tabPanels.find(x => x.id.toString() === id);
       if (panelExist != null) {
+        if (!findPanelInMenu(panelExist)) {
+          addNewPanelInMenu(panelExist, checkIt = false);
+        }
         return panelExist;
       }
       newPanelId = id;
@@ -1211,9 +1308,10 @@ window.nativeTreeTabs = {
     }
     let checkPanel = (id != null) ? false : true;
     if (this.tabPanels.length === 1) {
-      addNewPanelInMenu(this.tabPanels[0], checkIt = !checkPanel);
+      if (!findPanelInMenu(this.tabPanels[0]) && this.tabPanels[0].count > 0) {
+        addNewPanelInMenu(this.tabPanels[0], checkIt = !checkPanel);
+      }
     }
-
     let newPanel = {
       "id": newPanelId,
       "count": 0,
@@ -1268,6 +1366,46 @@ window.nativeTreeTabs = {
       window.gBrowser.selectedTab = newTab;
     }
     return newPanel;
+  },
+
+  movePanel: function(panelId, beforePanelId) {
+    panelId = panelId.toString();
+    let panel = this.tabPanels.find(x => x.id.toString() === panelId);
+    if (!panel) {
+      return;
+    }
+    let position;
+    if (beforePanelId != null) {
+      beforePanelId = beforePanelId.toString();
+
+      let beforePanel = this.tabPanels.find(x => x.id.toString() === beforePanelId);
+      if (!beforePanel) {
+        return;
+      }
+      //first tab of before panel
+      let pTab = gBrowser.tabs.find(aTab => aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === beforePanelId);
+      if (!isTab(pTab)) {
+        return;
+      }
+      position = pTab;
+    }
+    let tabsToMove = new Array();
+    gBrowser.tabs.forEach(function(aTab) {
+      if (aTab.hasAttribute("panel-id")) {
+        if (aTab.getAttribute("panel-id") === panelId) {
+          tabsToMove.push(aTab);
+          aTab.setAttribute("skipMoveForced", "true");
+        }
+      }
+    }, this);
+    if (position != null) {
+      gBrowser.moveTabsBefore(tabsToMove, position);
+    } else {
+      gBrowser.moveTabsAfter(tabsToMove, gBrowser.tabs[gBrowser.tabs.length - 1]);
+    }
+    tabsToMove.forEach(function(cTab) {
+      cTab.removeAttribute("skipMoveForced");
+    }, this);
   },
 
   tabPanelShow: function(panelId, changeSelectedTab = true) {
@@ -1368,10 +1506,6 @@ window.nativeTreeTabs = {
           }
           this.tabPanelShow(this.previousSelectedPanel.id);
         }
-      }
-      //Don't show solo panel in menu
-      if (this.tabPanels.length === 1) {
-        removePanelFromMenu(this.tabPanels[0].id);
       }
     } else {
       panel.count--;
@@ -1824,11 +1958,14 @@ menuItemClick = function(panel, target) {
   nativeTreeTabs.tabPanelShow(panel.id);
 }
 
-makePopupStayOpen = function(popup) {
+makePopupStayOpen = function(popup, action) {
   if (!popup) {
     return;
   }
   popup.addEventListener("popuphiding", function(aEvent) {
+    if (action) {
+      action();
+    }
     if (popup._stayOpen) {
       aEvent.preventDefault();
       aEvent.stopImmediatePropagation();
@@ -1879,6 +2016,8 @@ addNewPanelInMenu = function(panel, checkIt = false) {
   menuitem.setAttribute('panel-id', panel.id);
   menuitem.setAttribute('label', panel.label);
   menuitem.setAttribute('type', 'radio');
+  menuitem.setAttribute("draggable", "true");
+
   menuitem.addEventListener("command", (aEvent) => menuItemClick(panel, aEvent.target));
   menuitem.addEventListener("click", (aEvent) => menuItemRightClick(aEvent, panel, aEvent.target));
 
@@ -1937,6 +2076,17 @@ removePanelFromMenu = function(panelId) {
   }
 }
 
+findPanelInMenu = function(panel) {
+  let menupopup = document.getElementById('tab-panels-menupopup-view');
+  if (menupopup != null) {
+    let menuitem = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
+    if (menuitem) {
+      return true;
+    }
+  }
+  return false;
+}
+
 checkPanelInMenu = function(panel) {
   let menupopup = document.getElementById('tab-panels-menupopup-view');
   if (menupopup != null) {
@@ -1957,7 +2107,7 @@ checkPanelInMenu = function(panel) {
     return;
   }
   let p = tabContextMenupopup.querySelector("#moveTo-panel-" + panel.id.toString());
-  for (var i = 0, len = tabContextMenupopup.childElementCount; i < len; ++i) {
+  for (let i = 0, len = tabContextMenupopup.childElementCount; i < len; ++i) {
     tabContextMenupopup.children[i].disabled = false;
   }
   if (p) {
@@ -1966,7 +2116,7 @@ checkPanelInMenu = function(panel) {
 }
 
 addMenuItem = function(parentPopup, label, action, isToggle = false, id = null) {
-  const item = document.createXULElement("menuitem");
+  let item = document.createXULElement("menuitem");
   item.setAttribute("label", label);
   if (id != null) {
     item.setAttribute("id", id);
@@ -1976,7 +2126,7 @@ addMenuItem = function(parentPopup, label, action, isToggle = false, id = null) 
     item.setAttribute("type", "checkbox");
   }
   item.addEventListener("command", (aEvent) => {
-    const aTab = TabContextMenu.contextTab || gBrowser.selectedTab;
+    let aTab = TabContextMenu.contextTab || gBrowser.selectedTab;
     if (aTab) {
       aEvent.stopPropagation();
       aEvent.preventDefault();
@@ -1988,20 +2138,20 @@ addMenuItem = function(parentPopup, label, action, isToggle = false, id = null) 
 }
 
 addItemInTabContextMenu = function() {
-  const tabContextMenu = document.getElementById("tabContextMenu");
+  let tabContextMenu = document.getElementById("tabContextMenu");
   if (!tabContextMenu) return;
 
-  const separator = document.createXULElement("menuseparator");
+  let separator = document.createXULElement("menuseparator");
   separator.setAttribute("id", "custom-tab-submenu-separator");
 
   tabContextMenu.appendChild(separator);
 
-  const submenu = document.createXULElement("menu");
+  let submenu = document.createXULElement("menu");
   submenu.setAttribute("id", "custom-tab-submenu");
   submenu.setAttribute("label", "Move to Panel...");
   submenu.setAttribute("accesskey", "a");
 
-  const menupopup = document.createXULElement("menupopup");
+  let menupopup = document.createXULElement("menupopup");
   menupopup.setAttribute("id", "tab-context-panel-actions");
 
   addMenuItem(menupopup, "Create New Panel", (aTab, aEvent) => {
@@ -2062,7 +2212,6 @@ addTabPanelButton = function() {
   menupopup.setAttribute('class', 'panel-no-padding');
   menupopup.setAttribute('orient', 'vertical');
   menupopup.setAttribute('position', 'after_start');
-  makePopupStayOpen(menupopup);
 
   let mainDiv = document.createElement('div');
   mainDiv.setAttribute('id', 'tab-panels-menupopup-view');
@@ -2075,15 +2224,99 @@ addTabPanelButton = function() {
 
   let plusIcon = document.createElement('img');
   let menuitem = document.createXULElement('menuitem');
+  menuitem.setAttribute('id', 'add-panel-button-menuitem');
+
   menuitem.setAttribute('label', 'Create a New Panel');
 
   subDiv.appendChild(plusIcon);
   subDiv.appendChild(menuitem);
   mainDiv.appendChild(subDiv);
   menupopup.appendChild(mainDiv);
-  // tabPanelButton.setAttribute('popup', 'tab-panels-menupopup');
 
   subDiv.addEventListener("click", (aEvent) => addNewPanelInput(aEvent, menupopup));
+
+  let isDragging = false;
+  let draggedItem = null;
+  let previousNextitem = null;
+  let helddown = 0;
+
+  mainDiv.addEventListener("mousedown", (aEvent) => {
+    aEvent.preventDefault();
+    let item = aEvent.target.closest("#tab-panels-menupopup-view > menuitem");
+    if (item) {
+      helddown = 0;
+      isDragging = true;
+      draggedItem = item;
+      let containerOffsetY = draggedItem.offsetTop / 2;
+      draggedItem.classList.add("dragging");
+      draggedItem.style.top = containerOffsetY + "px";
+      draggedItem.style.background = "rgba(40,150,255,0.9)";
+      document.addEventListener("mousemove", handleMousemove);
+      document.addEventListener("mouseup", handleMouseUp);
+    }
+  });
+
+  handleMousemove = function(aEvent) {
+    if (isDragging && draggedItem) {
+      helddown++;
+      let itemSibilings = Array.from(mainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)"));
+      let nextItem = itemSibilings.find((sibiling) => {
+        return (
+          aEvent.clientY - mainDiv.getBoundingClientRect().top <=
+          sibiling.offsetTop + sibiling.offsetHeight / 2
+        );
+      });
+      if (previousNextitem) {
+        previousNextitem.style.marginTop = "";
+      }
+      if (nextItem) {
+        nextItem.style.marginTop = "5px";
+        previousNextitem = nextItem;
+      }
+      mainDiv.insertBefore(draggedItem, nextItem);
+    } else {
+      document.removeEventListener("mousemove", handleMousemove);
+    }
+  }
+
+  function dragEnds() {
+    if (draggedItem) {
+      draggedItem.style.background = "";
+      draggedItem.classList.remove("dragging");
+      isDragging = false;
+      let nextItem;
+      let itemSibilings = mainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)");
+
+      itemSibilings.forEach((sibiling) => {
+        sibiling.style.marginTop = "";
+        if (sibiling.previousSibling === draggedItem) {
+          nextItem = sibiling;
+        }
+      });
+      //Move whole panel tabs in tab strip
+      let panelId = draggedItem.getAttribute("panel-id");
+      draggedItem = null;
+
+      if (nextItem == null) {
+        //last position
+        window.nativeTreeTabs.movePanel(panelId, null);
+      } else {
+        let beforePanelId = nextItem.getAttribute("panel-id");
+        window.nativeTreeTabs.movePanel(panelId, beforePanelId);
+      }
+
+    }
+  }
+
+  handleMouseUp = function(aEvent) {
+    if (draggedItem) {
+      if (helddown > 10) {
+        aEvent.preventDefault();
+      }
+      dragEnds();
+    }
+    document.removeEventListener("mouseup", handleMouseUp);
+  }
 
   tabPanelGroup.addEventListener("auxclick", (aEvent) => {
     let button = aEvent.button;
@@ -2102,8 +2335,18 @@ addTabPanelButton = function() {
       }
     }
     window.nativeTreeTabs.tabPanels.forEach(updateCountInMenu, this);
+    let items = menupopup.querySelectorAll("[panel-id]");
+    if (items.length === 1) {
+      items[0].style.display = "none"
+    } else {
+      items.forEach((item) => {
+        item.style.display = "";
+      });
+    }
     menupopup.openPopup(tabPanelButton, "after_start", 6, 0, false, false);
   });
+
+  makePopupStayOpen(menupopup, dragEnds);
 
   let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
     Ci.nsIStyleSheetService
@@ -2172,16 +2415,16 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     text-overflow: "...";
     text-wrap: nowrap;
 }
-#tab-panels-group .panel-name-input:focus-visible {
+#tab-panels-group input:focus-visible {
     border: none!important;
     padding: 7px!important;
     margin-left: -4px!important;
-    margin-top: 4px!important;
+    margin-top: 3px!important;
     width:fit-content;
     min-width:fit-content;
     max-width:80%;
 }
-#tab-panels-group .panel-name-input {
+#tab-panels-group input {
     border: none!important;
     margin-top: 0px!important;
 }
@@ -2212,11 +2455,18 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     padding-bottom: 10px;
     border: 1px solid transparent;
     border-radius: 9px;
+    transition: margin 0.25s;
+    transition: background 0.25s;
+
+    box-sizing: border-box;
+}
+#tab-panels-menupopup menuitem.dragging {
+    transform: scale(1.1);
 }
 #tab-panels-menupopup menuitem[checked] {
     color: var(--toolbox-textcolor, var(--toolbox-text-color));
     opacity: 1;
-    background: var(--toolbarbutton-active-background, var(--toolbarbutton-background-color-active)) padding-box;
+    background: var(--button-background-color-active, var(--toolbarbutton-background-color-active)) padding-box;
 }
 #tab-panels-menupopup-view input {
     margin-top:5px!important;
@@ -2228,18 +2478,17 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     justify-content: center;
     display: flex;
     flex-flow: row;
-    border-top: 1px solid var(--arrowpanel-border-color);
+    border-top: 1px solid var(--panel-border-color);
     order: 100!important;
     align-items: center;
     margin-top: 5px;
     padding-bottom: 5px;
 }
-#tab-panels-menupopup .add-panel-button:only-child menuitem {
-    padding: 0;
-}
-#tab-panels-menupopup .add-panel-button:only-child {
+#tab-panels-menupopup-view:has(> :last-child:nth-child(2))
+.add-panel-button {
     border-top: none!important;
-    padding-bottom: 2px;
+    padding-bottom: 10px;
+    padding-top: 0
 }
 #tab-panels-menupopup .add-panel-button img {
     -moz-context-properties: fill, fill-opacity, stroke;
@@ -2253,7 +2502,8 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     color: var(--toolbox-textcolor, var(--toolbox-text-color));
     font-size: 13px;
     padding-top: 7px;
-    padding-left: 0;
+    padding-left: 0px!important;
+    margin-left:0;
 }
 #tab-context-create-new-panel{
   border-bottom: 1px solid var(--panel-separator-color);
@@ -2331,11 +2581,11 @@ loadNTTstyle = function() {
 
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab {
     max-width: calc(100% - var(--tab-indent))!important;
-    margin-inline-start: calc( ( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1%) !important;
+    padding-inline-start: calc( ( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1%) !important;
 }
 @container (min-width: 260px) {
     #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab {
-        margin-inline-start: calc(var(--tab-indent) * 1px)!important;
+        padding-inline-start: calc(var(--tab-indent) * 1px)!important;
     }
 }
 #vertical-tabs tab:not(collapsed, [pinned]) {
@@ -2344,19 +2594,19 @@ loadNTTstyle = function() {
     padding-block-end: 0px!important;
 }
 #vertical-tabs tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden]) {
-    margin-top: var(--branch-tab-top-margin)!important;
+    padding-top: var(--branch-tab-top-margin)!important;
 }
 #tabbrowser-arrowscrollbox[orient="vertical"]>tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"], #tabbrowser-arrowscrollbox[orient="vertical"]>tab-split-view-wrapper {
-    margin-top: var(--root-tab-top-margin) !important;
+    padding-top: var(--root-tab-top-margin) !important;
     margin-bottom: 0px!important;
 }
 /*TOP tab margin from top*/
 #tabbrowser-arrowscrollbox[orient="vertical"] {
     tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
-        margin-top: 6px!important;
+        padding-top: 6px!important;
     }
     tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
-        margin-top: var(--root-tab-top-margin) !important;
+        padding-top: var(--root-tab-top-margin) !important;
     }
 }
 
