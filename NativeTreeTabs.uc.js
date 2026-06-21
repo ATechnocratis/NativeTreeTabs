@@ -823,10 +823,7 @@ window.nativeTreeTabs = {
       if (panel) {
         panel.selectedTab = aTab;
       }
-    } else {
-      setPanel(aTab, window.nativeTreeTabs.selectedtPanel, window);
     }
-
   },
 
   //Closes the tree under a tab
@@ -1307,11 +1304,13 @@ window.nativeTreeTabs = {
       }
     }
     let checkPanel = (id != null) ? false : true;
-    if (this.tabPanels.length === 1) {
-      if (!findPanelInMenu(this.tabPanels[0]) && this.tabPanels[0].count > 0) {
+
+    if (this.tabPanels.length === 1 && this.tabPanels[0].count > 0) {
+      if (!findPanelInMenu(this.tabPanels[0])) {
         addNewPanelInMenu(this.tabPanels[0], checkIt = !checkPanel);
       }
     }
+
     let newPanel = {
       "id": newPanelId,
       "count": 0,
@@ -1320,6 +1319,7 @@ window.nativeTreeTabs = {
 
     this.tabPanels.push(newPanel);
     addNewPanelInMenu(newPanel, checkIt = checkPanel);
+
     if (show && id == null) {
       this.changeSelectedPanel(newPanel);
     } else {
