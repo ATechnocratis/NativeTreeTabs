@@ -2485,7 +2485,9 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     padding-bottom: 5px;
 }
 #tab-panels-menupopup-view:has(> :last-child:nth-child(2))
-.add-panel-button {
+.add-panel-button,
+#tab-panels-menupopup .add-panel-button:only-child
+{
     border-top: none!important;
     padding-bottom: 10px;
     padding-top: 0
