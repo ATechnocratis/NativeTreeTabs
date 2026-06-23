@@ -9,15 +9,20 @@
 <img width="190" height="375" alt="hover" src="https://github.com/user-attachments/assets/5b81d95f-b24c-4118-8cb3-8161ac19e633" />
 
 ## Features
-  - **Lightweight** 
+   
+  - **Fast&Lightweight** 
      - Only extends the native tabs. No extra elements are created.
   - **No interference with native features**
      - What works on native tabs is still there
      - Tab Groups support
      - Split view support (Will act independent from tree structure)
-     - Selecting and moving multiple tab with swift + click or ctrl + click is possible.
+     - Selecting and moving multiple tab with swift/ctrl + click is possible.
   - **Tab panels (Workspaces)** 
-     - Organized tabs in Workspaces for even less clutter
+     - Organize tabs in Workspaces for even less clutter
+     - Move tabs between panels from the tab context menu (right click menu)
+     - Right click on the name of a panel to rename it
+     - Drag inside the Menu to reorder
+     - Middle click in the Panel Header to instantly open a new panel
   - **Expand on hover support**
       - Just enable the expand sidebar on hover option in Firefox sidebar settings.
   - **Middle click the close button to close the whole tree**
@@ -30,7 +35,7 @@
     - Drag outside of tree
     - Children (descendants) follow parent tab
   - **Session Restore friendly**
-      - Saves the tree structure
+      - Saves the tree structure and the Tab panels
   - **Customizable**
       - Search for `treeTabs.` in `about:config`.
       - Change tab style and margins
