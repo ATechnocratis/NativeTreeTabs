@@ -190,6 +190,19 @@ window.nativeTreeTabs = {
           startTab = this.selectedItem;
         }
         if (nativeTreeTabs.lockCtrlTabInPanel === false && !startTab.pinned) {
+          if (aDir == 1) {
+            let nextTab = getNextTab(startTab);
+            if (nextTab == null || (nextTab.hasAttribute("panel-id") && nextTab.getAttribute("panel-id") != startTab.getAttribute("panel-id"))) {
+              let startTabPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === startTab.getAttribute("panel-id"));
+              let nextPanelIndex = (startTabPanelIndex === nativeTreeTabs.tabPanels.length - 1) ? 0 : startTabPanelIndex + 1;
+              let nextPanelId = nativeTreeTabs.tabPanels[nextPanelIndex].id.toString();
+              let nextPanelfirstTab = this.allTabs.find(tab => tab.visible && tab.getAttribute("panel-id") === nextPanelId);
+              if (nextPanelfirstTab && nextPanelfirstTab != startTab) {
+                this._selectNewTab(nextPanelfirstTab, aDir, aWrap);
+                return;
+              }
+            }
+          }
           nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
           return;
         }
@@ -643,6 +656,7 @@ window.nativeTreeTabs = {
 
   checkForPanelOverStep: function(aTab, sTab, direction) {
     let aTabPanelId = aTab.getAttribute("panel-id");
+    if (aTabPanelId == null) return;
     let aTabPanelIndex = this.tabPanels.findIndex(x => x.id.toString() === aTabPanelId);
     let tabsToMove = new Array();
 
@@ -1265,7 +1279,7 @@ window.nativeTreeTabs = {
     setDomainAttr(aTab);
     let restorePaneldId = SessionStore.getCustomTabValue(aTab, "panel-id");
     let dragged = SessionStore.getCustomTabValue(aTab, "draggedFromWindow");
-
+    let previousTab = getPreviousTab(aTab);
     //Don't restore panel for out of window dragging
     if (dragged) {
       let thisWindowId = window.docShell.outerWindowID.toString();
@@ -1288,16 +1302,38 @@ window.nativeTreeTabs = {
           restorePanelLabel = "Restored Panel";
         }
         let previousPanelIndex;
-        let previousTab = getPreviousTab(aTab);
+
 
         if (previousTab) {
-          previousPanelIndex = getPreviousTab(aTab).getAttribute("panel-id");
+          previousPanelIndex = previousTab.getAttribute("panel-id");
         }
         panel = this.tabPanelOpen(tabs = null, label = restorePanelLabel, id = panelId, forceShow = false, index = previousPanelIndex);
 
       } else {
         if (!findPanelInMenu(panel)) {
           addNewPanelInMenu(panel, checkIt = false);
+        } else {
+          //Correct panel wrong index
+          // probably caused by pinned tab restore (happens first of all)
+
+          if (previousTab && previousTab.hasAttribute("panel-id") && previousTab.hasAttribute("tabPanel-hidden")) {
+            let previousPanelId = previousTab.getAttribute("panel-id");
+            let previousPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === previousPanelId);
+            if (previousPanelIndex && nativeTreeTabs.tabPanels.indexOf(panel) < previousPanelIndex) {
+              moveItemInTheArray(nativeTreeTabs.tabPanels, nativeTreeTabs.tabPanels.indexOf(panel), previousPanelIndex);
+              let menupopup = document.getElementById('tab-panels-menupopup-view');
+              //Put it in the right position
+              //Move it in the panel array too
+              if (menupopup) {
+                let panelItemInmenu = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
+                let prevPanelItemInmenu = menupopup.querySelector('[panel-id="' + previousPanelId + '"]');
+                if (panelItemInmenu && panelItemInmenu) {
+                  prevPanelItemInmenu.after(panelItemInmenu)
+                  // menupopup.insertBefore(prevPanelItemInmenu,panelItemInmenu);
+                }
+              }
+            }
+          }
         }
       }
       setPanel(aTab, panel, window);
@@ -1713,19 +1749,21 @@ window.nativeTreeTabs = {
     }
 
     let tabsToMove = new Array();
+
     gBrowser.tabs.forEach(function(aTab) {
       if (aTab.hasAttribute("panel-id")) {
-        if (aTab.getAttribute("panel-id") === panelId) {
+        if (aTab.getAttribute("panel-id") === panelId && !aTab.pinned) {
           tabsToMove.push(aTab);
           aTab.setAttribute("skipMoveForced", "true");
         }
       }
     }, this);
+
     //Change panel position in panel array and move tabs
     if (position != null) {
       let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
       let indexOfBeforePanel = nativeTreeTabs.tabPanels.indexOf(beforePanel);
-      //downards move
+      //downwards move
       if (indexOfBeforePanel > indexOfPanel) {
         indexOfBeforePanel = indexOfBeforePanel - 1;
       }
