@@ -1,8 +1,7 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.2
+// @version        0.2.0.3
 // ==/UserScript==
-
 
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -124,10 +123,6 @@ window.nativeTreeTabs = {
           }
         } else {
           checkForPinned(aTab, nextTab);
-        }
-        if (aTab.hasAttribute("panel-id")) {
-          let panelId = aTab.getAttribute("panel-id");
-          window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
         }
       } catch (error) {
         console.error(error);
@@ -1105,6 +1100,10 @@ window.nativeTreeTabs = {
   },
 
   tabClose: function(aTab) {
+    if (aTab.hasAttribute("panel-id")) {
+      let panelId = aTab.getAttribute("panel-id");
+      window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
+    }
     this.tabLeaveStrip(aTab);
   },
 
