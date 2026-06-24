@@ -1396,6 +1396,15 @@ window.nativeTreeTabs = {
     if (rootTab != null && rootTab.hasAttribute("twisted-root")) {
       this.toggleTwist(rootTab);
     }
+    //will never get initialized otherwise
+    // another approach?
+    if(aTab.linkedBrowser.currentURI.spec==="about:newtab"){
+      setTimeout(() => {
+        if(!aTab.hasAttribute("tree-id")){
+          this.initTab(aTab);
+        }
+      }, 100);
+    }
     return treeDepth;
   },
 
