@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.1
+// @version        0.2.0.2
 // ==/UserScript==
+
 
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -198,6 +199,7 @@ window.nativeTreeTabs = {
           if (aDir == 1) {
             let nextTab = getNextTab(startTab);
             if (nextTab == null || (nextTab.hasAttribute("panel-id") && nextTab.getAttribute("panel-id") != startTab.getAttribute("panel-id"))) {
+              //Move from last tab of panel to the first tab of the next one INCLUDING pinned tabs
               let startTabPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === startTab.getAttribute("panel-id"));
               let nextPanelIndex = (startTabPanelIndex === nativeTreeTabs.tabPanels.length - 1) ? 0 : startTabPanelIndex + 1;
               let nextPanelId = nativeTreeTabs.tabPanels[nextPanelIndex].id.toString();
@@ -777,9 +779,12 @@ window.nativeTreeTabs = {
     let prevPosition = aEvent.detail.previousTabState.tabIndex;
     let newPosition = aEvent.detail.currentTabState.tabIndex;
 
+    //Create group case
     if (prevPosition === newPosition) {
+      this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
       return;
     }
+
     //Whole group ungroup
     if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId &&
       gBrowser.getTabGroupById(aEvent.detail.previousTabState.tabGroupId) == null && aEvent.detail.telemetrySource != "drag") {
@@ -3221,15 +3226,6 @@ tab[soundplaying] .tab-background {
     margin-top: 0!important;
     margin-block-start: 0!important;
     border:none!important;
-}
-#tabbrowser-tabs [orient="vertical"] tab[tabPanel-hidden]{
-  display: none!important;
-  max-height: 0px!important;
-  min-height: 0px!important;
-  margin-block: 0!important;
-  margin-top: 0!important;
-  margin-block-start: 0!important;
-  border:none!important;
 }
 #pinned-tabs-container:has(>tab[tabPanel-hidden="true"]) {
     display: none;
