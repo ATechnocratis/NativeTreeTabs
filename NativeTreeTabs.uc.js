@@ -139,16 +139,17 @@ window.nativeTreeTabs = {
     //(don't select next panel tabs)
     this.originalAdvanceSelectedTab = gBrowser.tabContainer.advanceSelectedTab;
     gBrowser.tabContainer.advanceSelectedTab = function(aDir, aWrap) {
-      if (nativeTreeTabs.lockCtrlTabInPanel === false) {
-        nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
-        return;
-      }
+
       let {
         ariaFocusedItem
       } = this;
       let startTab = ariaFocusedItem;
       if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
         startTab = this.selectedItem;
+      }
+      if (nativeTreeTabs.lockCtrlTabInPanel === false&&!startTab.pinned) {
+        nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
+        return;
       }
       let newTab = null;
       if (startTab.hidden) {
@@ -1398,7 +1399,7 @@ window.nativeTreeTabs = {
     }
     //will never get initialized otherwise
     // another approach?
-    if (aTab.linkedBrowser.currentURI.spec.startsWith("about:")) {
+    if (aTab.linkedBrowser&&aTab.linkedBrowser.currentURI.spec.startsWith("about:")) {
       setTimeout(() => {
         if (!aTab.hasAttribute("tree-id")) {
           this.initTab(aTab);
@@ -2000,6 +2001,8 @@ isHidden = function(aTab) {
 
 setDomainAttr = function(aTab) {
   if (!isTab(aTab)) return;
+  let linkedBrowser = aTab.linkedBrowser;
+  if (linkedBrowser==null) return;
   let uri = aTab.linkedBrowser.currentURI;
   let spec = uri.spec;
   let bakedPatterns = ["about", "resource", "chrome", "wyciwyg", "file", "blob", "moz-extension", "jar"];
