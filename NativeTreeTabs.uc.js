@@ -110,7 +110,7 @@ window.nativeTreeTabs = {
           }
           //Don't select another panel(hidden one) tabs
           if (nextTab && nextTab.hasAttribute("tabPanel-hidden")) {
-            if (!nextTab.hasAttribute("tabPanel-hidden")) {
+            if (!previousTab.hasAttribute("tabPanel-hidden")) {
               gBrowser.setSuccessor(aTab, previousTab);
             } else {
               checkForPinned(aTab, nextTab);
@@ -1927,7 +1927,7 @@ getPreviousTab = function(aTab) {
   }
 
   let previousTab = aTab.previousSibling;
-  
+
   if (aTab.group) {
     if (aTab.group.tabs.indexOf(aTab) === 0) {
       previousTab = aTab.group.previousSibling;
