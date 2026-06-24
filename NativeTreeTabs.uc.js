@@ -1854,7 +1854,7 @@ getNextTab = function(aTab) {
       nextTab = aTab.group.nextSibling;
     }
   }
-  if (nextTab.tagName === "tab-group") {
+  if (nextTab && nextTab.tagName === "tab-group") {
     nextTab = nextTab.tabs[0];
   }
 
@@ -3112,6 +3112,18 @@ tab[soundplaying] .tab-background {
     margin-top: 0!important;
     margin-block-start: 0!important;
     border:none!important;
+}
+#tabbrowser-tabs [orient="vertical"] tab[tabPanel-hidden]{
+  display: none!important;
+  max-height: 0px!important;
+  min-height: 0px!important;
+  margin-block: 0!important;
+  margin-top: 0!important;
+  margin-block-start: 0!important;
+  border:none!important;
+}
+#pinned-tabs-container[orient="vertical"]{
+  min-height:0!important;
 }
 
 /*Tab Groups*/
