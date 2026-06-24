@@ -710,6 +710,9 @@ window.nativeTreeTabs = {
     let prevPosition = aEvent.detail.previousTabState.tabIndex;
     let newPosition = aEvent.detail.currentTabState.tabIndex;
 
+    if (prevPosition === newPosition) {
+      return;
+    }
     //Whole group ungroup
     if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId &&
       gBrowser.getTabGroupById(aEvent.detail.previousTabState.tabGroupId) == null && aEvent.detail.telemetrySource != "drag") {
@@ -1584,6 +1587,7 @@ window.nativeTreeTabs = {
       if (!newTab) {
         throw new Error("Could not open new tab.");
       }
+      setPanel(newTab, newPanel, window);
       window.gBrowser.selectedTab = newTab;
     }
     return newPanel;
