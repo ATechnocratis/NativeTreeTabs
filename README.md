@@ -1,7 +1,8 @@
 
 # Native Tree Tabs for Firefox
 
-   A scirpt that extends the abilities of the native vertical tabs of Firefox.
+   A script that extends the native vertical tabs. Adding the ability to adopt tree-like structure automatically and more.
+
 
 <img width="190" height="375" alt="light" src="https://github.com/user-attachments/assets/be94570d-1f5a-4f4d-9715-af2078db748b" />
 <img width="190" height="375" alt="colors" src="https://github.com/user-attachments/assets/966ebff1-02d9-4f66-b9aa-e225e61ff930" />
