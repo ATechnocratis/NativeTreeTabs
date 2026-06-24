@@ -81,28 +81,52 @@ window.nativeTreeTabs = {
     //  before the closing tab is fully closed
     this.originalRemoveTab = gBrowser.removeTab;
     gBrowser.removeTab = function(aTab, aOptions) {
-      if (aTab.hasAttribute("tabPanel-hidden")) {
-        return;
+
+      function checkForPinned(aTab, nextTab) {
+        if (aTab.selected && nextTab && nextTab.hasAttribute("tabPanel-hidden") &&
+          window.gBrowser.pinnedTabCount > 0) {
+          //Don't select another panel(hidden one) tabs if a not hidden pinned tab exists
+          let newowner = Array.from(gBrowser.pinnedTabsContainer.childNodes).find(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
+          if (newowner) {
+            gBrowser.setSuccessor(aTab, newowner);
+          }
+        }
       }
-      let previousTab = getPreviousTab(aTab);
-      if (aTab.selected && previousTab) {
-        let tabDepth = getTreeDepth(aTab);
+      try {
+
+        if (aTab.hasAttribute("tabPanel-hidden")) {
+          return;
+        }
+        let previousTab = getPreviousTab(aTab);
         let nextTab = getNextTab(aTab);
-        let focusNext = (nextTab && getTreeDepth(nextTab) >= tabDepth) ?
-          true : false;
-        if (focusNext) {
-          aTab.owner = nextTab;
-        } else if (tabDepth != 0) {
-          aTab.owner = previousTab;
+        if (aTab.selected && previousTab) {
+          let tabDepth = getTreeDepth(aTab);
+          let focusNext = (nextTab && getTreeDepth(nextTab) >= tabDepth) ?
+            true : false;
+          if (focusNext) {
+            gBrowser.setSuccessor(aTab, nextTab);
+          } else if (tabDepth != 0) {
+            gBrowser.setSuccessor(aTab, previousTab);
+          }
+          //Don't select another panel(hidden one) tabs
+          if (nextTab && nextTab.hasAttribute("tabPanel-hidden")) {
+            if (!nextTab.hasAttribute("tabPanel-hidden")) {
+              gBrowser.setSuccessor(aTab, previousTab);
+            } else {
+              checkForPinned(aTab, nextTab);
+            }
+          }
+        } else {
+          checkForPinned(aTab, nextTab);
         }
-        //Don't select another panel(hidden one) tabs
-        if (nextTab && nextTab.hasAttribute("tabPanel-hidden")) {
-          aTab.owner = previousTab;
+        if (aTab.hasAttribute("panel-id")) {
+          let panelId = aTab.getAttribute("panel-id");
+          window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
         }
-      }
-      if (aTab.hasAttribute("panel-id")) {
-        let panelId = aTab.getAttribute("panel-id");
-        window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
+      } catch (error) {
+        console.error(error);
+        nativeTreeTabs.originalRemoveTab.apply(this, arguments);
+        return;
       }
       nativeTreeTabs.originalRemoveTab.apply(this, arguments);
     };
@@ -110,11 +134,17 @@ window.nativeTreeTabs = {
     //Tab pinning
     this.originalPinTab = gBrowser.pinTab;
     gBrowser.pinTab = function(aTab, aOptions) {
-      removeTreeOutline(aTab._tPos, aTab);
-      nativeTreeTabs.tabLeaveStrip(aTab);
-      setTreeDepth(aTab, 0);
-      if (aTab._tPos != 0) {
-        aTab.setAttribute("skipMoveForced", true);
+      try {
+        removeTreeOutline(aTab._tPos, aTab);
+        nativeTreeTabs.tabLeaveStrip(aTab);
+        setTreeDepth(aTab, 0);
+        if (aTab._tPos != 0) {
+          aTab.setAttribute("skipMoveForced", true);
+        }
+      } catch (error) {
+        console.error(error);
+        nativeTreeTabs.originalPinTab.apply(this, arguments);
+        return;
       }
       nativeTreeTabs.originalPinTab.apply(this, arguments);
     };
@@ -125,48 +155,65 @@ window.nativeTreeTabs = {
       insertBefore,
       trigger,
     }) {
-      nativeTreeTabs.moveSplitView(tabsToAdd, insertBefore);
+      try {
+        nativeTreeTabs.moveSplitView(tabsToAdd, insertBefore);
+      } catch (error) {
+        console.error(error);
+        nativeTreeTabs.originalAddTabSplitView.apply(this, arguments);
+        return;
+      }
       nativeTreeTabs.originalAddTabSplitView.apply(this, arguments);
     };
     //Multiselect ignore hidden tabs
     this.originalAddToMultiSelectedTabs = gBrowser.addToMultiSelectedTabs;
     gBrowser.addToMultiSelectedTabs = function(aTab) {
-      if (isHidden(aTab))
+      try {
+        if (isHidden(aTab))
+          return;
+      } catch (error) {
+        console.error(error);
+        nativeTreeTabs.originalAddToMultiSelectedTabs.apply(this, arguments);
         return;
+      }
       nativeTreeTabs.originalAddToMultiSelectedTabs.apply(this, arguments);
     };
     //Ctrl + Tab don't cycle panel tabs
     //(don't select next panel tabs)
     this.originalAdvanceSelectedTab = gBrowser.tabContainer.advanceSelectedTab;
     gBrowser.tabContainer.advanceSelectedTab = function(aDir, aWrap) {
-
-      let {
-        ariaFocusedItem
-      } = this;
-      let startTab = ariaFocusedItem;
-      if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
-        startTab = this.selectedItem;
-      }
-      if (nativeTreeTabs.lockCtrlTabInPanel === false&&!startTab.pinned) {
+      try {
+        let {
+          ariaFocusedItem
+        } = this;
+        let startTab = ariaFocusedItem;
+        if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
+          startTab = this.selectedItem;
+        }
+        if (nativeTreeTabs.lockCtrlTabInPanel === false && !startTab.pinned) {
+          nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
+          return;
+        }
+        let newTab = null;
+        if (startTab.hidden) {
+          if (aDir == 1) {
+            newTab = this.allTabs.find(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
+          } else {
+            newTab = this.allTabs.findLast(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
+          }
+        } else {
+          newTab = this.findNextTab(startTab, {
+            direction: aDir,
+            wrap: aWrap,
+            filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
+        if (newTab && newTab != startTab) {
+          this._selectNewTab(newTab, aDir, aWrap);
+        }
+      } catch (error) {
+        console.error(error);
         nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
         return;
-      }
-      let newTab = null;
-      if (startTab.hidden) {
-        if (aDir == 1) {
-          newTab = this.allTabs.find(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
-        } else {
-          newTab = this.allTabs.findLast(tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"));
-        }
-      } else {
-        newTab = this.findNextTab(startTab, {
-          direction: aDir,
-          wrap: aWrap,
-          filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
-        });
-      }
-      if (newTab && newTab != startTab) {
-        this._selectNewTab(newTab, aDir, aWrap);
       }
     };
 
@@ -1399,7 +1446,7 @@ window.nativeTreeTabs = {
     }
     //will never get initialized otherwise
     // another approach?
-    if (aTab.linkedBrowser&&aTab.linkedBrowser.currentURI.spec.startsWith("about:")) {
+    if (aTab.linkedBrowser && aTab.linkedBrowser.currentURI.spec.startsWith("about:")) {
       setTimeout(() => {
         if (!aTab.hasAttribute("tree-id")) {
           this.initTab(aTab);
@@ -1849,7 +1896,12 @@ if (gBrowserInit.delayedStartupFinished) {
 /*==============================*/
 getNextTab = function(aTab) {
 
+  if (aTab == null) {
+    return;
+  }
+
   let nextTab = aTab.nextSibling;
+
   if (aTab.group) {
     if (aTab.group.tabs.indexOf(aTab) === aTab.group.tabs.length - 1) {
       nextTab = aTab.group.nextSibling;
@@ -1869,7 +1921,13 @@ getNextTab = function(aTab) {
 }
 
 getPreviousTab = function(aTab) {
+
+  if (aTab == null) {
+    return;
+  }
+
   let previousTab = aTab.previousSibling;
+  
   if (aTab.group) {
     if (aTab.group.tabs.indexOf(aTab) === 0) {
       previousTab = aTab.group.previousSibling;
@@ -2002,7 +2060,7 @@ isHidden = function(aTab) {
 setDomainAttr = function(aTab) {
   if (!isTab(aTab)) return;
   let linkedBrowser = aTab.linkedBrowser;
-  if (linkedBrowser==null) return;
+  if (linkedBrowser == null) return;
   let uri = aTab.linkedBrowser.currentURI;
   let spec = uri.spec;
   let bakedPatterns = ["about", "resource", "chrome", "wyciwyg", "file", "blob", "moz-extension", "jar"];
@@ -3124,6 +3182,22 @@ tab[soundplaying] .tab-background {
   margin-top: 0!important;
   margin-block-start: 0!important;
   border:none!important;
+}
+#pinned-tabs-container:has(>tab[tabPanel-hidden="true"]) {
+    display: none;
+}
+#pinned-tabs-container:has(tab:not([tabPanel-hidden="true"])) {
+    display: flex!important;
+}
+#vertical-pinned-tabs-splitter {
+    #pinned-tabs-container:has(>tab[tabPanel-hidden="true"])+& {
+        display: none;
+    }
+}
+#vertical-pinned-tabs-splitter {
+    #pinned-tabs-container:has(tab: not([tabPanel-hidden="true"])) + & {
+        display:block!important;
+    }
 }
 #pinned-tabs-container[orient="vertical"]{
   min-height:0!important;
