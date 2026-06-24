@@ -1,3 +1,8 @@
+// ==UserScript==
+// @name           Native Tree Tabs
+// @version        0.2.0.1
+// ==/UserScript==
+
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
 
