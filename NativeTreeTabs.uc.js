@@ -1704,7 +1704,7 @@ window.nativeTreeTabs = {
       if (!beforePanel) {
         return;
       }
-      //first tab of before panel
+      //first tab of the before panel
       let pTab = gBrowser.tabs.find(aTab => aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === beforePanelId);
       if (!isTab(pTab)) {
         return;
@@ -1724,18 +1724,18 @@ window.nativeTreeTabs = {
     //Change panel position in panel array and move tabs
     if (position != null) {
       let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-      let temp = beforePanel;
       let indexOfBeforePanel = nativeTreeTabs.tabPanels.indexOf(beforePanel);
-      nativeTreeTabs.tabPanels[indexOfBeforePanel] = panel;
-      nativeTreeTabs.tabPanels[indexOfPanel] = temp;
+      //downards move
+      if (indexOfBeforePanel > indexOfPanel) {
+        indexOfBeforePanel = indexOfBeforePanel - 1;
+      }
+      moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, indexOfBeforePanel);
       nativeTreeTabs.moveTabsBefore(tabsToMove, position);
 
     } else {
       let lastIndex = nativeTreeTabs.tabPanels.length - 1;
-      let tempLast = nativeTreeTabs.tabPanels[lastIndex];
       let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-      nativeTreeTabs.tabPanels[lastIndex] = panel;
-      nativeTreeTabs.tabPanels[indexOfPanel] = tempLast;
+      moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, lastIndex);
       nativeTreeTabs.moveTabsAfter(tabsToMove, gBrowser.tabs[gBrowser.tabs.length - 1]);
     }
     tabsToMove.forEach(function(cTab) {
@@ -2196,6 +2196,12 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
 }
 //_________________
 
+function moveItemInTheArray(arr, fromIndex, toIndex) {
+  var element = arr[fromIndex];
+  arr.splice(fromIndex, 1);
+  arr.splice(toIndex, 0, element);
+}
+
 getNextAvailableId = function(array) {
   let id = (performance.now() + performance.timeOrigin).toFixed(3) * 1000;
   while (array.find(obj => obj.id.toString() === id.toString())) {
@@ -2423,29 +2429,28 @@ addNewPanelInMenu = function(panel, checkIt = false, position = -1) {
   menuitem.addEventListener("click", (aEvent) => menuItemRightClick(aEvent, panel, aEvent.target));
 
   let menupopup = document.getElementById('tab-panels-menupopup-view');
-  //put it in the right position
-  //Swap in panel array too
+  //Put it in the right position
+  //Move it in the panel array too
   if (menupopup) {
     if (position === -1) {
       menupopup.appendChild(menuitem);
     } else if (position == null) {
       //first place
       let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-      let temp0 = nativeTreeTabs.tabPanels[0];
-      nativeTreeTabs.tabPanels[0] = panel;
-      nativeTreeTabs.tabPanels[indexOfPanel] = temp0;
+      moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, 0);
       menupopup.firstChild.after(menuitem);
     } else {
       let prevItem = menupopup.querySelector('[panel-id="' + position.toString() + '"]');
       if (prevItem) {
-        //already add to tabPanels so indexes differ in the menu by + 1
+        //already added to tabPanels so indexes differ in the menu by + 1
         // no need to add it because menu first child is start button so indexes
         // of menu are +1 always
         let itemIndex = Array.prototype.indexOf.call(menupopup.children, prevItem);
         let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-        let temp = nativeTreeTabs.tabPanels[itemIndex];
-        nativeTreeTabs.tabPanels[itemIndex] = panel;
-        nativeTreeTabs.tabPanels[indexOfPanel] = temp;
+        //downards move
+        // if (itemIndex >  indexOfPanel){
+        //   indexOfBeforePanel = indexOfBeforePanel - 1; 
+        // }
         prevItem.after(menuitem);
       } else {
         menupopup.appendChild(menuitem);
