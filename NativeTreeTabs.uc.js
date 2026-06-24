@@ -1398,9 +1398,9 @@ window.nativeTreeTabs = {
     }
     //will never get initialized otherwise
     // another approach?
-    if(aTab.linkedBrowser.currentURI.spec==="about:newtab"){
+    if (aTab.linkedBrowser.currentURI.spec.startsWith("about:")) {
       setTimeout(() => {
-        if(!aTab.hasAttribute("tree-id")){
+        if (!aTab.hasAttribute("tree-id")) {
           this.initTab(aTab);
         }
       }, 100);
