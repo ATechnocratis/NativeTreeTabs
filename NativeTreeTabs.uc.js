@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.4
+// @version        0.2.0.5
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -1439,9 +1439,9 @@ window.nativeTreeTabs = {
         rootTab = currentTab;
       }
     }
-    if (isTab(aTab.previousSibling)) {
-      let pTab = aTab.previousSibling;
-      let nTab = aTab.nextSibling;
+    if (isTab(getPreviousTab(aTab))) {
+      let pTab = getPreviousTab(aTab);
+      let nTab = getNextTab(aTab);
       //Move tabs that open under the hidden-tabs (not selected tab panel tabs)
       let nextNotHidden = (isTab(nTab) && !nTab.hasAttribute("tabPanel-hidden")) ?
         true : false;
@@ -1452,6 +1452,9 @@ window.nativeTreeTabs = {
           pTab = getPreviousTab(pTab);
         }
         if (isTab(pTab)) {
+          if(newPosition.group){
+            newPosition = newPosition.group;
+          }
           aTab.setAttribute("skipMoveForced", true);
           gBrowser.moveTabBefore(aTab, newPosition);
           aTab.removeAttribute("skipMoveForced");
