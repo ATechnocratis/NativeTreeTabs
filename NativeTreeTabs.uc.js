@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.3
+// @version        0.2.0.4
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -1658,6 +1658,12 @@ window.nativeTreeTabs = {
       tabs = this.prepareTabsForPanelMove(tabs);
       let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
       nativeTreeTabs.moveTabsAfter(tabs, lastTab);
+      let saveSelectedTab;
+      if (tabs.includes(window.gBrowser.selectedTab)) {
+        //save in case of last panel closing
+        // which will change the selected tab
+        saveSelectedTab = window.gBrowser.selectedTab;
+      }
       tabs.forEach(function(cTab) {
         //Special Case
         if (cTab === lastTab) {
@@ -1672,6 +1678,9 @@ window.nativeTreeTabs = {
         setPanel(cTab, newPanel, window);
       }, this);
       if (show) {
+        if (saveSelectedTab != null) {
+          window.gBrowser.selectedTab = saveSelectedTab;
+        }
         if (tabs.includes(window.gBrowser.selectedTab)) {
           window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
         } else {
@@ -1843,10 +1852,21 @@ window.nativeTreeTabs = {
     }
     if (found) {
       tabsToMove = this.prepareTabsForPanelMove(tabsToMove);
+      //Force select the new panel when switching
+      // if the selected tab is set to move
+      // Check before setting the panel, because 
+      // the selected tab might change (if the panel closes)
+      let saveSelectedTab;
+      if (tabsToMove.includes(gBrowser.selectedTab)) {
+        saveSelectedTab = gBrowser.selectedTab;
+      }
       nativeTreeTabs.moveTabsAfter(tabsToMove, previousTab);
       tabsToMove.forEach(function(cTab) {
         setPanel(cTab, panel, window);
       }, this);
+      if (saveSelectedTab != null) {
+        gBrowser.selectedTab = saveSelectedTab;
+      }
       if (forceShow || tabsToMove.includes(gBrowser.selectedTab)) {
         this.tabPanelShow(panelId, changeSelectedTab = false);
         if (!tabsToMove.includes(gBrowser.selectedTab)) {
@@ -1888,7 +1908,8 @@ window.nativeTreeTabs = {
           }
           this.tabPanelShow(this.previousSelectedPanel.id);
         }
-      } else {
+      } else if (this.tabPanels.length === 0) {
+        //No panels left? when  does this happen?
         this.addDefaultPanel();
       }
     } else {
@@ -2254,7 +2275,7 @@ getNextAvailableId = function(array) {
   while (array.find(obj => obj.id.toString() === id.toString())) {
     id++;
   }
-  return id;
+  return id.toString();
 }
 
 function getNameFromInput(input, panel) {
