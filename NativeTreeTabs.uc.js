@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.5
+// @version        0.2.0.6
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -774,15 +774,10 @@ window.nativeTreeTabs = {
     let prevPosition = aEvent.detail.previousTabState.tabIndex;
     let newPosition = aEvent.detail.currentTabState.tabIndex;
 
-    //Create group case
-    if (prevPosition === newPosition) {
-      this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
-      return;
-    }
-
     //Whole group ungroup
-    if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId &&
-      gBrowser.getTabGroupById(aEvent.detail.previousTabState.tabGroupId) == null && aEvent.detail.telemetrySource != "drag") {
+    if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId && prevPosition === newPosition &&
+      aEvent.detail.telemetrySource != "drag") {
+      // this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
       return;
     }
 
@@ -1452,7 +1447,7 @@ window.nativeTreeTabs = {
           pTab = getPreviousTab(pTab);
         }
         if (isTab(pTab)) {
-          if(newPosition.group){
+          if (newPosition.group) {
             newPosition = newPosition.group;
           }
           aTab.setAttribute("skipMoveForced", true);
