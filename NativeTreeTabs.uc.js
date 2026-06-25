@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.6
+// @version        0.2.0.7
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -189,6 +189,10 @@ window.nativeTreeTabs = {
         let startTab = ariaFocusedItem;
         if (!ariaFocusedItem || !this.allTabs.includes(ariaFocusedItem)) {
           startTab = this.selectedItem;
+        }
+        if (!startTab) {
+          nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
+          return;
         }
         if (nativeTreeTabs.lockCtrlTabInPanel === false && !startTab.pinned) {
           if (aDir == 1) {
@@ -1547,9 +1551,11 @@ window.nativeTreeTabs = {
         let panel = aEvent.target;
         let input = panel.querySelector("#tab-group-name");
         if (nativeTreeTabs.lastRightClickedTab) {
-          let newTitle = nativeTreeTabs.lastRightClickedTab.label
+          let newTitle = nativeTreeTabs.lastRightClickedTab.label;
           input.value = newTitle;
-          nativeTreeTabs.lastRightClickedTab.group.label = newTitle;
+          if (nativeTreeTabs.lastRightClickedTab.group) {
+            nativeTreeTabs.lastRightClickedTab.group.label = newTitle;
+          }
         }
       }, true);
     }
@@ -1655,7 +1661,12 @@ window.nativeTreeTabs = {
       //Move tabs to the new panel
       tabs = this.prepareTabsForPanelMove(tabs);
       let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
-      nativeTreeTabs.moveTabsAfter(tabs, lastTab);
+      //extreme case, group last => move last
+      try {
+        nativeTreeTabs.moveTabsAfter(tabs, lastTab);
+      } catch (error) {
+        console.error(error);
+      }
       let saveSelectedTab;
       if (tabs.includes(window.gBrowser.selectedTab)) {
         //save in case of last panel closing
