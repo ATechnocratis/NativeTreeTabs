@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.0.7
+// @version        0.2.0.8
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -3255,6 +3255,11 @@ tab[soundplaying] .tab-background {
     margin-top: 0!important;
     margin-block-start: 0!important;
     border:none!important;
+}
+#pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden] *::before,
+#pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden],
+#pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden] * {
+    display:none!important;
 }
 #pinned-tabs-container:has(>tab[tabPanel-hidden="true"]) {
     display: none;
