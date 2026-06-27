@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.1.1
+// @version        0.2.1.2
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -721,7 +721,37 @@ window.nativeTreeTabs = {
       this.updateChildrenLite(aTab, oldDepth);
     }
   },
+  newGroupCreation: function(aTab) {
+    window.gBrowser.selectedTabs.forEach(function(sTab) {
+      sTab.setAttribute("groupCreationSkip", "true");
+      let sTabtreeDepth = getTreeDepth(sTab);
 
+      let nextChild = getNextTab(sTab);
+      if (sTab === aTab) {
+        let possibleChildIndex = (prevPosition >= newPosition) ?
+          prevPosition + 1 : prevPosition;
+        nextChild = gBrowser.tabs[possibleChildIndex];
+      }
+      if (nextChild === aTab) {
+        nextChild = getNextTab(nextChild);
+      }
+      while (nextChild) {
+        childDepth = getTreeDepth(nextChild);
+        if (childDepth == null || childDepth <= sTabtreeDepth) {
+          break;
+        }
+        if (nextChild.multiselected) {
+          nextChild.setAttribute("skipGroupDepthUpdate", "true");
+        }
+        nextChild = getNextTab(nextChild);
+        if (nextChild === aTab) {
+          nextChild = getNextTab(nextChild);
+        }
+      }
+    }, this);
+    aTab.removeAttribute("groupCreationSkip", "true");
+    aTab.removeAttribute("skipGroupDepthUpdate", "true");
+  },
   checkForPanelOverStep: function(aTab, sTab, direction) {
     let aTabPanelId = aTab.getAttribute("panel-id");
     if (aTabPanelId == null) return;
@@ -846,14 +876,30 @@ window.nativeTreeTabs = {
       // this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
       return;
     }
-    //Multiselected group all together
+
+    //Multiselected group creation keep tree structure
     if (!aEvent.detail.previousTabState.tabGroupId && aEvent.detail.currentTabState.tabGroupId &&
       aEvent.detail.telemetrySource != "drag" && aTab.multiselected) {
-      let root = getRootTabForNewlyGrouped(tabOriginalDepth,prevPosition,newPosition);
-      if(!root||(root.group&&root.group.id===aEvent.detail.currentTabState.tabGroupId)||(root&&root.multiselected)){
-        //if parent was selected => don't update depth level
+      if (!aTab.hasAttribute("groupCreationSkip")) {
+        //First tab seen, prepare the others
+        this.newGroupCreation(aTab);
+        //Remove so it can update child depth in updateChildrenFromIndex
+        gBrowser.removeFromMultiSelectedTabs(aTab);
         this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
-        return;}
+        return;
+      } else {
+        aTab.removeAttribute("groupCreationSkip");
+        if (aTab.hasAttribute("skipGroupDepthUpdate")) {
+          //tab ancestor will be in the new group
+          aTab.removeAttribute("skipGroupDepthUpdate")
+          this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
+          return;
+        } else {
+          setTreeDepth(aTab, 0);
+          this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
+          return;
+        }
+      }
     }
 
     let inGroup = (aTab.group && aEvent.detail.previousTabState.tabGroupId === aEvent.detail.currentTabState.tabGroupId) ? true : false;
@@ -2339,26 +2385,7 @@ getRootTab = function(aTab) {
   }
   return null;
 }
-getRootTabForNewlyGrouped = function(tabOriginalDepth,prevPosition,newPosition) {
 
-  let aTabDepth = tabOriginalDepth;
-  if (aTabDepth == 0) return null;
-  let possibleIndex = (prevPosition >= newPosition) ?
-    prevPosition : prevPosition - 1;
-
-  if(possibleIndex<0||possibleIndex> window.gBrowser.tabs.length - 1){
-    return null;
-  }
-
-  let previousTab = window.gBrowser.tabs[possibleIndex];
-  while (isTab(previousTab)) {
-    if (getTreeDepth(previousTab) < aTabDepth) {
-      return previousTab;
-    }
-    previousTab = getPreviousTab(previousTab);
-  }
-  return null;
-}
 getLastInTree = function(aTab) {
   let aTabDepth = getTreeDepth(aTab);
   let nextTab = aTab.nextSibling;
