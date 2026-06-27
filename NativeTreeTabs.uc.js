@@ -721,7 +721,7 @@ window.nativeTreeTabs = {
       this.updateChildrenLite(aTab, oldDepth);
     }
   },
-  newGroupCreation: function(aTab) {
+  newGroupCreation: function(aTab, prevPosition, newPosition) {
     window.gBrowser.selectedTabs.forEach(function(sTab) {
       sTab.setAttribute("groupCreationSkip", "true");
       let sTabtreeDepth = getTreeDepth(sTab);
@@ -882,7 +882,7 @@ window.nativeTreeTabs = {
       aEvent.detail.telemetrySource != "drag" && aTab.multiselected) {
       if (!aTab.hasAttribute("groupCreationSkip")) {
         //First tab seen, prepare the others
-        this.newGroupCreation(aTab);
+        this.newGroupCreation(aTab, prevPosition, newPosition);
         //Remove so it can update child depth in updateChildrenFromIndex
         gBrowser.removeFromMultiSelectedTabs(aTab);
         this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
