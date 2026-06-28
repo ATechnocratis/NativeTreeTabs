@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.1.3
+// @version        0.2.1.4
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -27,7 +27,6 @@ window.nativeTreeTabs = {
   selectedTab: null,
   clickedActiveTab: null,
   switchSelectedOnClick: false,
-  lastRightClickedTab: null,
 
   init: function() {
 
@@ -1716,24 +1715,23 @@ window.nativeTreeTabs = {
   },
 
   addTabGroupCreateListeners: function() {
+    //renames group to last right clicked tab label on creation
     let groupPopup = document.getElementById("tab-group-editor").querySelector(["panel"]);
     if (groupPopup) {
       groupPopup.addEventListener("popupshowing", function(aEvent) {
         let panel = aEvent.target;
         let input = panel.querySelector("#tab-group-name");
-        if (nativeTreeTabs.lastRightClickedTab) {
-          let newTitle = nativeTreeTabs.lastRightClickedTab.label;
-          input.value = newTitle;
-          if (nativeTreeTabs.lastRightClickedTab.group) {
-            nativeTreeTabs.lastRightClickedTab.group.label = newTitle;
+        if (input && input.value === "") {
+          if (TabContextMenu.contextTab) {
+            let newTitle = TabContextMenu.contextTab.label;
+            input.value = newTitle;
+            if (TabContextMenu.contextTab.group) {
+              TabContextMenu.contextTab.group.label = newTitle;
+            }
           }
         }
       }, true);
     }
-    let tabContextMenu = document.getElementById("tabContextMenu");
-    tabContextMenu.addEventListener("popupshowing", function(aEvent) {
-      nativeTreeTabs.lastRightClickedTab = tabContextMenu.triggerNode.closest("tab");
-    }, true);
   },
 
   prepareTabsForPanelMove: function(tabs, group = false) {
@@ -1922,11 +1920,17 @@ window.nativeTreeTabs = {
     return result;
   },
 
-  moveTabsAfter: function(tabs, position) {
+  moveTabsAfter: function(tabs, position, makeSureNoGroup = true) {
+    if (makeSureNoGroup && position.group) {
+      position = position.group;
+    }
     gBrowser.moveTabsAfter(this.filterGroups(tabs), position);
   },
 
-  moveTabsBefore: function(tabs, position) {
+  moveTabsBefore: function(tabs, position, makeSureNoGroup = true) {
+    if (makeSureNoGroup && position.group) {
+      position = position.group;
+    }
     gBrowser.moveTabsBefore(this.filterGroups(tabs), position);
   },
 
@@ -2886,7 +2890,7 @@ addItemInTabContextMenu = function() {
     groupSubPopup.setAttribute("id", "tabgroup-context-panel-actions");
     addMenuItem(groupSubPopup, "Create New Panel", (aTab, aEvent) => {
       let forceShow = (aEvent.ctrlKey) ? true : false;
-      let group = gBrowser.tabGroupMenu.activeGroup.tabs;
+      let group = gBrowser.tabGroupMenu.activeGroup.tabs.slice();
       group.forEach(function(tab) {
         tab.setAttribute("skipMoveForced", true);
       });
@@ -2906,11 +2910,13 @@ addItemInTabContextMenu = function() {
       window.nativeTreeTabs.tabPanels.forEach(function(panel) {
         let item = addMenuItem(groupSubPopup, "" + panel.label, (aTab, aEvent) => {
           let forceShow = (aEvent.ctrlKey) ? true : false;
-          let group = gBrowser.tabGroupMenu.activeGroup.tabs;
+          let group = gBrowser.tabGroupMenu.activeGroup.tabs.slice();
           group.forEach(function(tab) {
             tab.setAttribute("skipMoveForced", true);
           });
+          console.log(group);
           window.nativeTreeTabs.moveTabsToPanel(group, panel, forceShow, true);
+          console.log(group);
           group.forEach(function(tab) {
             tab.removeAttribute("skipMoveForced");
           });
@@ -3531,9 +3537,10 @@ tab[soundplaying] .tab-background {
 }
 
 /*Tab Groups*/
-
+#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]) *,
 #vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]){
-  display: none!important;
+  min-height:0!important;
+  max-height:0!important;
 }
 #vertical-tabs .tab-group-label-container{
   margin-left: 4px!important;
