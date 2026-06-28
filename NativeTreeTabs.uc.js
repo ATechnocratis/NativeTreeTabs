@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.1.2
+// @version        0.2.1.3
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -752,6 +752,7 @@ window.nativeTreeTabs = {
     aTab.removeAttribute("groupCreationSkip", "true");
     aTab.removeAttribute("skipGroupDepthUpdate", "true");
   },
+
   checkForPanelOverStep: function(aTab, sTab, direction) {
     let aTabPanelId = aTab.getAttribute("panel-id");
     if (aTabPanelId == null) return;
@@ -1735,24 +1736,30 @@ window.nativeTreeTabs = {
     }, true);
   },
 
-  prepareTabsForPanelMove: function(tabs) {
+  prepareTabsForPanelMove: function(tabs, group = false) {
 
     let newArray = tabs.slice();
     tabs.forEach(function(cTab, index) {
       if (cTab.hasAttribute("twisted-root")) {
         let nextTab = cTab.nextSibling
         while (isTab(nextTab)) {
+          //Add hidden childs
           if (nextTab.hasAttribute("hidden-child")) {
             if (!tabs.includes(nextTab)) {
               newArray.splice(index + 1 + (newArray.length - tabs.length), 0, nextTab);
             }
+            nextTab.setAttribute("skipMoveForced", "true");
           } else {
             break;
           }
           nextTab = nextTab.nextSibling;
         }
       } else {
-        this.tabLeaveStrip(cTab);
+        // let root = getRootTab(cTab);
+        // if(!tabs.includes(root)){
+        if (!group) {
+          this.tabLeaveStrip(cTab);
+        }
       }
     }, this);
 
@@ -1770,7 +1777,7 @@ window.nativeTreeTabs = {
     this.selectedtPanel = panel0;
   },
 
-  tabPanelOpen: function(tabs = null, label = null, id = null, forceShow = false, index = null) {
+  tabPanelOpen: function(tabs = null, label = null, id = null, forceShow = false, index = null, group = false) {
     let show = true;
     // if (tabs != null && !tabs.includes(window.gBrowser.selectedTab) && !forceShow) {
     //   show = false;
@@ -1829,7 +1836,7 @@ window.nativeTreeTabs = {
 
     if (tabs != null && tabs.length > 0) {
       //Move tabs to the new panel
-      tabs = this.prepareTabsForPanelMove(tabs);
+      tabs = this.prepareTabsForPanelMove(tabs, group);
       let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
       //extreme case, group last => move last
       try {
@@ -1845,7 +1852,7 @@ window.nativeTreeTabs = {
       }
       tabs.forEach(function(cTab) {
         //Special Case
-        if (cTab === lastTab) {
+        if (cTab === lastTab && !group) {
           setTreeDepth(cTab, 0);
           removeOpener(cTab);
         }
@@ -2031,7 +2038,7 @@ window.nativeTreeTabs = {
     }
   },
 
-  moveTabsToPanel: function(tabsToMove, panel, forceShow = false) {
+  moveTabsToPanel: function(tabsToMove, panel, forceShow = false, group = false) {
     panelId = panel.id.toString();
     let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
     let previousTab = lastTab;
@@ -2045,7 +2052,7 @@ window.nativeTreeTabs = {
       previousTab = getPreviousTab(previousTab);
     }
     if (found) {
-      tabsToMove = this.prepareTabsForPanelMove(tabsToMove);
+      tabsToMove = this.prepareTabsForPanelMove(tabsToMove, group);
       //Force select the new panel when switching
       // if the selected tab is set to move
       // Check before setting the panel, because 
@@ -2054,7 +2061,11 @@ window.nativeTreeTabs = {
       if (tabsToMove.includes(gBrowser.selectedTab)) {
         saveSelectedTab = gBrowser.selectedTab;
       }
-      nativeTreeTabs.moveTabsAfter(tabsToMove, previousTab);
+      try {
+        nativeTreeTabs.moveTabsAfter(tabsToMove, previousTab);
+      } catch (error) {
+        console.log(error)
+      }
       tabsToMove.forEach(function(cTab) {
         setPanel(cTab, panel, window);
       }, this);
@@ -2861,6 +2872,59 @@ addItemInTabContextMenu = function() {
   if (context_moveTabToGroup) {
     tabContextMenu.insertBefore(submenu, context_moveTabToGroup.nextSibling);
   }
+
+  let tabGroupMoveToWindow = document.getElementById("tabGroupEditor_moveGroupToNewWindow");
+  if (tabGroupMoveToWindow) {
+
+    let tabGroupMoveToPanel = document.createXULElement("menu");
+    tabGroupMoveToPanel.setAttribute("id", "custom-tab-submenu");
+    tabGroupMoveToPanel.setAttribute("label", "Move to Panel...");
+    tabGroupMoveToPanel.setAttribute("accesskey", "a");
+
+
+    let groupSubPopup = document.createXULElement("menupopup");
+    groupSubPopup.setAttribute("id", "tabgroup-context-panel-actions");
+    addMenuItem(groupSubPopup, "Create New Panel", (aTab, aEvent) => {
+      let forceShow = (aEvent.ctrlKey) ? true : false;
+      let group = gBrowser.tabGroupMenu.activeGroup.tabs;
+      group.forEach(function(tab) {
+        tab.setAttribute("skipMoveForced", true);
+      });
+      window.nativeTreeTabs.tabPanelOpen(group, label = null, id = null, forceShow, index = null, true);
+      group.forEach(function(tab) {
+        tab.removeAttribute("skipMoveForced");
+      });
+      window.gBrowser.tabGroupMenu.close();
+      panelNameRightClick();
+    }, isToggle = false, id = "tab-context-create-new-panel");
+
+
+    groupSubPopup.addEventListener("popupshowing", function(aEvent) {
+      while (groupSubPopup.childNodes.length > 1) {
+        groupSubPopup.removeChild(groupSubPopup.lastChild);
+      }
+      window.nativeTreeTabs.tabPanels.forEach(function(panel) {
+        let item = addMenuItem(groupSubPopup, "" + panel.label, (aTab, aEvent) => {
+          let forceShow = (aEvent.ctrlKey) ? true : false;
+          let group = gBrowser.tabGroupMenu.activeGroup.tabs;
+          group.forEach(function(tab) {
+            tab.setAttribute("skipMoveForced", true);
+          });
+          window.nativeTreeTabs.moveTabsToPanel(group, panel, forceShow, true);
+          group.forEach(function(tab) {
+            tab.removeAttribute("skipMoveForced");
+          });
+          window.gBrowser.tabGroupMenu.close();
+        }, isToggle = false, id = "moveTo-panel-" + panel.id.toString());
+        if (panel === window.nativeTreeTabs.selectedtPanel) {
+          item.disabled = true;
+        }
+      });
+    }, true);
+    tabGroupMoveToPanel.appendChild(groupSubPopup);
+    tabGroupMoveToWindow.parentNode.insertBefore(tabGroupMoveToPanel, tabGroupMoveToWindow);
+  }
+
 }
 
 addTabPanelButton = function() {
