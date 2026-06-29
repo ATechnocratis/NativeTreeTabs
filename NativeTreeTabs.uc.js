@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.1.5
+// @version        0.2.1.6
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -2898,7 +2898,10 @@ addItemInTabContextMenu = function() {
       group.forEach(function(tab) {
         tab.removeAttribute("skipMoveForced");
       });
-      window.gBrowser.tabGroupMenu.close();
+
+      setTimeout(() => {
+        gBrowser.tabGroupMenu.close();
+      }, 30);
       panelNameRightClick();
     }, isToggle = false, id = "tab-context-create-new-panel");
 
@@ -2914,13 +2917,13 @@ addItemInTabContextMenu = function() {
           group.forEach(function(tab) {
             tab.setAttribute("skipMoveForced", true);
           });
-          console.log(group);
           window.nativeTreeTabs.moveTabsToPanel(group, panel, forceShow, true);
-          console.log(group);
           group.forEach(function(tab) {
             tab.removeAttribute("skipMoveForced");
           });
-          window.gBrowser.tabGroupMenu.close();
+          setTimeout(() => {
+            gBrowser.tabGroupMenu.close();
+          }, 30);
         }, isToggle = false, id = "moveTo-panel-" + panel.id.toString());
         if (panel === window.nativeTreeTabs.selectedtPanel) {
           item.disabled = true;
@@ -3546,10 +3549,7 @@ tab[soundplaying] .tab-background {
 #vertical-tabs .tab-group-label-container{
   margin-left: 4px!important;
 }
-#vertical-tabs tab-group{
-  padding-left: -10px!important;
-  margin-block: 0p!important;
-}
+
 #vertical-tabs tab-group[collapsed] .tab-group-label-container{
    margin-left: 9px!important;
 }
