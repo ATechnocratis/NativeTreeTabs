@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.1.4
+// @version        0.2.1.5
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -1715,7 +1715,7 @@ window.nativeTreeTabs = {
   },
 
   addTabGroupCreateListeners: function() {
-    //renames group to last right clicked tab label on creation
+    //renames group to last right clicked tab label, on creation
     let groupPopup = document.getElementById("tab-group-editor").querySelector(["panel"]);
     if (groupPopup) {
       groupPopup.addEventListener("popupshowing", function(aEvent) {
@@ -3541,6 +3541,7 @@ tab[soundplaying] .tab-background {
 #vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]){
   min-height:0!important;
   max-height:0!important;
+  outline:none!important;
 }
 #vertical-tabs .tab-group-label-container{
   margin-left: 4px!important;
