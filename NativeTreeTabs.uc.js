@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.1.6
+// @version        0.2.1.7
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -3545,11 +3545,16 @@ tab[soundplaying] .tab-background {
   min-height:0!important;
   max-height:0!important;
   outline:none!important;
+  padding-bottom:0!important;
+  padding-top:0!important;
+  padding-block-end:0!important;
+  padding-block-start:0!important;
+  margin-block-start:0!important;
+  margin:0!important;
 }
 #vertical-tabs .tab-group-label-container{
   margin-left: 4px!important;
 }
-
 #vertical-tabs tab-group[collapsed] .tab-group-label-container{
    margin-left: 9px!important;
 }
@@ -3559,7 +3564,6 @@ tab[soundplaying] .tab-background {
 #vertical-tabs .tab-group-line{
   display: none!important;
 } 
-
 
 /*Styling*/
 
