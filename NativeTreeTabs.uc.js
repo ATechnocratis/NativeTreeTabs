@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.0
+// @version        0.2.2.1
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -8,7 +8,6 @@ const moveChildren = true;
 const MAX_STACK_SIZE = 30;
 
 window.nativeTreeTabs = {
-
   _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned"],
   lastId: 0,
   originalRemoveTab: null,
@@ -364,6 +363,7 @@ window.nativeTreeTabs = {
   tabDragEnd: function(aEvent) {
 
     let aTab = aEvent.target;
+    let rect = aTab.getBoundingClientRect().top;
 
     setTimeout(() => {
       SessionStore.deleteCustomTabValue(aTab, "draggedFromWindow");
@@ -391,6 +391,16 @@ window.nativeTreeTabs = {
     while (nextTab && (isHidden(nextTab) || nextTab.multiselected)) {
       nextTab = getNextTab(nextTab);
     }
+    if (previousTab) {
+      let rectPrv = previousTab.getBoundingClientRect().top;
+      //Stop case where wrong previousTab is set
+      // previous is actually under
+      // Internal (drag-and-drop) bug?
+      if (rectPrv > rect) {
+        previousTab = null;
+      }
+    }
+
     let previousPosition = parseInt(aTab.getAttribute("dragStartPos"), 10);
     let oldParent = aTab.getAttribute("dragStartoldParent");
     aTab.removeAttribute("dragStartoldParent");
@@ -425,12 +435,14 @@ window.nativeTreeTabs = {
     }
 
     let offsetY = aEvent.offsetY - mainWindowExtra - childrenCount;
+
     //....
     if (moveChildren) {
       while (isTab(nextTab) && getTreeDepth(nextTab) > oldDepth) {
         nextTab = getNextTab(nextTab);
       }
     }
+
     let newDepth = -1;
     let previousTabDepth = null;
     let nextTabDepth = null;
@@ -440,7 +452,20 @@ window.nativeTreeTabs = {
     if (isTab(nextTab)) nextTabDepth = getTreeDepth(nextTab);
 
     //Case 0: Dropped inside a tab -> Set tab as parent
-    if (previousTabDepth != null && offsetY < 10) {
+
+    let tabHeight = 31;
+
+    if (Services.prefs.getPrefType("treeTabs.tabHeight") != 32) {} else {
+      tabHeight = Services.prefs.getStringPref("treeTabs.tabHeight");
+    }
+
+    let calcDistance = tabHeight / 1.4 - 8;
+    
+    if (calcDistance < -4) {
+      calcDistance = -4;
+    }
+
+    if (previousTabDepth != null && offsetY < calcDistance) {
       //Tab was already direct parent -> Swap
       let isAlreadyParent = (!aTab.multiselected && oldParent != "" &&
           oldParent === previousTab.getAttribute("tree-id")) ?
@@ -480,14 +505,14 @@ window.nativeTreeTabs = {
     } else {
       //Case 1: Dropped at the bottom border of tab
       // Move at the end of a tree and become simpling
-      if (previousTabDepth != null && offsetY < 14 && (nextTabDepth == null || nextTabDepth == 0)) {
+      if (previousTabDepth != null && offsetY < (calcDistance + 4) && (nextTabDepth == null || nextTabDepth == 0)) {
         newDepth = previousTabDepth;
         shouldUpdateChildren = true;
         if (newDepth != 0) copyOpener(aTab, previousTab);
       }
       //Case 2: Dropped under a tab with space between
       // Don't stick, became a zero depth root
-      else if ((nextTabDepth == null || nextTabDepth == 0) && offsetY > 17) {
+      else if ((nextTabDepth == null || nextTabDepth == 0) && offsetY > (calcDistance + 7)) {
         newDepth = 0;
         shouldUpdateChildren = true;
       }
@@ -861,14 +886,14 @@ window.nativeTreeTabs = {
     if (aEvent.target.closest(".tab-audio-button, .tab-close-button, .tab-icon-overlay")) {
       return;
     }
-    if (SidebarController._sidebarMain.__expanded) {
-      if (aEvent.target.closest(".tab-icon-stack")) {
-        return;
-      }
-    }
 
     let aTab = aEvent.target.closest(".tabbrowser-tab");
 
+    if (SidebarController._sidebarMain.__expanded) {
+      if (aEvent.target.closest(".tab-icon-stack") && !aTab.pinned) {
+        return;
+      }
+    }
     let source = (nativeTreeTabs.switchSelectedOnClickStayOnPanel) ? nativeTreeTabs.selectedtPanel.previousSelectedTab : nativeTreeTabs.previousSelectedTab;
 
     let pSTab = source.pop();
@@ -1231,19 +1256,77 @@ window.nativeTreeTabs = {
   },
 
   initTab: function(aTab) {
+
+    if (aTab.hasAttribute("tree-id")) {
+      //already initialized
+      return;
+    }
+
+    //Solo tab in window
+    let soloTab = (window.gBrowser.tabs.length == 1) ? true : false;
+    let restoredId = SessionStore.getCustomTabValue(aTab, "tree-id");
+
+    if (!restoredId) {
+      //Generate new unique id 
+      let timeNow = (performance.now() + performance.timeOrigin).toFixed(3) * 1000;
+      while (timeNow === this.lastId) timeNow = timeNow + 1;
+      this.lastId = timeNow;
+      setTabTreeID(aTab, timeNow.toString());
+    } else {
+      aTab.setAttribute("tree-id", restoredId);
+    }
+
+    let twistedRoot = SessionStore.getCustomTabValue(aTab, "twisted-root");
+
+    if (twistedRoot) {
+      aTab.setAttribute("twisted-root", true);
+    }
+
+    let hiddenChild = SessionStore.getCustomTabValue(aTab, "hidden-child");
+    let hiddenChildRoot = SessionStore.getCustomTabValue(aTab, "hidden-child-rootID");
+    if (hiddenChild && hiddenChildRoot) {
+      aTab.setAttribute("hidden-child", true);
+      aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
+    }
+
+    let treeDepth = SessionStore.getCustomTabValue(aTab, "tree-depth");
+
+    if (treeDepth && !soloTab) {
+      //add a fix for out of order restore
+      aTab.setAttribute("tree-depth", treeDepth);
+    } else {
+      treeDepth = aTab.getAttribute("tree-depth");
+      //Tab didn't depth initialized for some reason
+      if (treeDepth == null) {
+        treeDepth = this.initTreeDepth(aTab);
+      }
+      SessionStore.setCustomTabValue(aTab, "tree-depth", treeDepth.toString());
+    }
+
+    let openerId = SessionStore.getCustomTabValue(aTab, "opener-id");
+
+    if (openerId) {
+      aTab.setAttribute("opener-id", openerId);
+    } else {
+      if (aTab.openerTab != null && parseInt(treeDepth, 10) != 0) {
+        setOpener(aTab, aTab.openerTab);
+      }
+    }
+
     setDomainAttr(aTab);
-    let restorePaneldId = SessionStore.getCustomTabValue(aTab, "panel-id");
-    let dragged = SessionStore.getCustomTabValue(aTab, "draggedFromWindow");
+
     let previousTab = getPreviousTab(aTab);
+    let restorePaneldId = SessionStore.getCustomTabValue(aTab, "panel-id");
+    let foundPanel = false;
     //Don't restore panel for out of window dragging
+    let dragged = SessionStore.getCustomTabValue(aTab, "draggedFromWindow");
+
     if (dragged) {
       let thisWindowId = window.docShell.outerWindowID.toString();
       if (dragged != thisWindowId) {
         restorePaneldId = false;
       }
     }
-
-    let foundPanel = false;
 
     if (restorePaneldId) {
       panelId = restorePaneldId.toString();
@@ -1362,49 +1445,6 @@ window.nativeTreeTabs = {
           nativeTreeTabs.moveTabAfter(aTab, previousInPanel);
           aTab.removeAttribute("skipMoveForced");
         }
-
-      }
-    }
-    //Solo tab in window
-    let soloTab = (window.gBrowser.tabs.length == 1) ? true : false;
-    let restoredId = SessionStore.getCustomTabValue(aTab, "tree-id");
-    if (!restoredId) {
-      //Generate new unique id 
-      let timeNow = (performance.now() + performance.timeOrigin).toFixed(3) * 1000;
-      while (timeNow === this.lastId) timeNow = timeNow + 1;
-      this.lastId = timeNow;
-      setTabTreeID(aTab, timeNow.toString());
-    } else {
-      aTab.setAttribute("tree-id", restoredId);
-    }
-    let twistedRoot = SessionStore.getCustomTabValue(aTab, "twisted-root");
-    if (twistedRoot) {
-      aTab.setAttribute("twisted-root", true);
-    }
-    let hiddenChild = SessionStore.getCustomTabValue(aTab, "hidden-child");
-    let hiddenChildRoot = SessionStore.getCustomTabValue(aTab, "hidden-child-rootID");
-    if (hiddenChild && hiddenChildRoot) {
-      aTab.setAttribute("hidden-child", true);
-      aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
-    }
-    let treeDepth = SessionStore.getCustomTabValue(aTab, "tree-depth");
-    if (treeDepth && !soloTab) {
-      //add a fix for out of order restore
-      aTab.setAttribute("tree-depth", treeDepth);
-    } else {
-      treeDepth = aTab.getAttribute("tree-depth");
-      //Tab didn't depth initialized for some reason
-      if (treeDepth == null) {
-        treeDepth = this.initTreeDepth(aTab);
-      }
-      SessionStore.setCustomTabValue(aTab, "tree-depth", treeDepth.toString());
-    }
-    let openerId = SessionStore.getCustomTabValue(aTab, "opener-id");
-    if (openerId) {
-      aTab.setAttribute("opener-id", openerId);
-    } else {
-      if (aTab.openerTab != null && parseInt(treeDepth, 10) != 0) {
-        setOpener(aTab, aTab.openerTab);
       }
     }
   },
@@ -1472,15 +1512,13 @@ window.nativeTreeTabs = {
     if (rootTab != null && rootTab.hasAttribute("twisted-root")) {
       this.toggleTwist(rootTab);
     }
-    //will never get initialized otherwise
-    // another approach?
-    if (aTab.linkedBrowser && aTab.linkedBrowser.currentURI.spec.startsWith("about:")) {
-      setTimeout(() => {
-        if (!aTab.hasAttribute("tree-id")) {
-          this.initTab(aTab);
-        }
-      }, 100);
-    }
+
+    setTimeout(() => {
+      if (!aTab.hasAttribute("tree-id")) {
+        this.initTab(aTab);
+      }
+    }, 100);
+
     return treeDepth;
   },
 
@@ -1529,6 +1567,7 @@ window.nativeTreeTabs = {
       attributes: true,
     });
   },
+
 
   initPreferences: function() {
     if (Services.prefs.getPrefType("treeTabs.behavior.lockCtrlTabInPanel") != 128) {
@@ -1913,6 +1952,7 @@ window.nativeTreeTabs = {
         if (newParent != null) {
           let parentTab = tabs.find(x => x.getAttribute("tree-id") === newParent);
           setOpener(cTab, parentTab);
+          cTab.removeAttribute("new-tree-parent");
         }
         setTreeDepth(cTab, cTab.getAttribute("new-tree-depth"));
         cTab.removeAttribute("new-tree-depth");
@@ -2162,6 +2202,7 @@ window.nativeTreeTabs = {
     }
     gBrowser.moveTabBefore(tab, position);
   },
+
   moveTabAfter: function(tab, position) {
     //Move tab but not inside group
     if (position.group) {
@@ -2178,6 +2219,8 @@ window.nativeTreeTabs = {
     }
     let position;
     let beforePanel;
+    let indexOfBeforePanel;
+    let afterMove = false;
     if (beforePanelId != null) {
       beforePanelId = beforePanelId.toString();
       beforePanel = this.tabPanels.find(x => x.id.toString() === beforePanelId);
@@ -2185,11 +2228,42 @@ window.nativeTreeTabs = {
         return;
       }
       //first tab of the before panel
-      let pTab = gBrowser.tabs.find(aTab => aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === beforePanelId);
+      let pTab = gBrowser.tabs.find(tab => !tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === beforePanelId);
+
       if (!isTab(pTab)) {
-        return;
+        //check for pinned tabs
+        pTab = gBrowser.tabs.find(tab => tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === beforePanelId);
+        if (!isTab(pTab)) {
+          return;
+        }
+        indexOfBeforePanel = nativeTreeTabs.tabPanels.indexOf(beforePanel);
+        if (indexOfBeforePanel === nativeTreeTabs.tabPanels.length - 1) {
+          //last
+          position = null;
+        } else {
+          while (position == null || indexOfBeforePanel > 0) {
+            let previousBeforePanel = this.tabPanels[indexOfBeforePanel - 1];
+            let previousBeforePanelId = previousBeforePanel.id.toString();
+            pTab = gBrowser.tabs.find(tab => !tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === previousBeforePanelId);
+            if (isTab(pTab)) {
+              position = pTab;
+              afterMove = true;
+              break;
+            }
+            indexOfBeforePanel--;
+          }
+          if (position == null) {
+            //top of tab strip move
+            position = window.gBrowser.tabs[window.gBrowser.pinnedTabCount];
+            if (position.getAttribute("panel-id") === panelId) {
+              return;
+            }
+          }
+        }
+
+      } else {
+        position = pTab;
       }
-      position = pTab;
     }
 
     let tabsToMove = new Array();
@@ -2206,19 +2280,27 @@ window.nativeTreeTabs = {
     //Change panel position in panel array and move tabs
     if (position != null) {
       let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-      let indexOfBeforePanel = nativeTreeTabs.tabPanels.indexOf(beforePanel);
+      indexOfBeforePanel = nativeTreeTabs.tabPanels.indexOf(beforePanel);
       //downwards move
       if (indexOfBeforePanel > indexOfPanel) {
         indexOfBeforePanel = indexOfBeforePanel - 1;
       }
       moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, indexOfBeforePanel);
-      nativeTreeTabs.moveTabsBefore(tabsToMove, position);
+      if (position != null && tabsToMove.length != 0) {
+        if (afterMove == false) {
+          nativeTreeTabs.moveTabsBefore(tabsToMove, position);
+        } else {
+          nativeTreeTabs.moveTabsAfter(tabsToMove, position);
+        }
+      }
 
     } else {
       let lastIndex = nativeTreeTabs.tabPanels.length - 1;
       let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
       moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, lastIndex);
-      nativeTreeTabs.moveTabsAfter(tabsToMove, gBrowser.tabs[gBrowser.tabs.length - 1]);
+      if (tabsToMove.length != 0) {
+        nativeTreeTabs.moveTabsAfter(tabsToMove, gBrowser.tabs[gBrowser.tabs.length - 1]);
+      }
     }
     tabsToMove.forEach(function(cTab) {
       cTab.removeAttribute("skipMoveForced");
@@ -2862,7 +2944,11 @@ menuItemRightClick = function(aEvent, panel, target) {
   addInputListeners(input, finishEdit, replaceInputWithNew, escapeKey, popup = menupopup);
 }
 
-menuItemClick = function(panel, target) {
+menuItemClick = function(aEvent, panel, target) {
+  let button = aEvent.button;
+  if (button != 0) {
+    return;
+  }
   nativeTreeTabs.tabPanelShow(panel.id);
 }
 
@@ -2926,7 +3012,7 @@ addNewPanelInMenu = function(panel, checkIt = false, position = -1) {
   menuitem.setAttribute('type', 'radio');
   menuitem.setAttribute("draggable", "true");
 
-  menuitem.addEventListener("command", (aEvent) => menuItemClick(panel, aEvent.target));
+  menuitem.addEventListener("click", (aEvent) => menuItemClick(aEvent, panel, aEvent.target));
   menuitem.addEventListener("click", (aEvent) => menuItemRightClick(aEvent, panel, aEvent.target));
 
   let menupopup = document.getElementById('tab-panels-menupopup-view');
@@ -3244,7 +3330,7 @@ addTabPanelButton = function() {
       draggedItem.style.top = containerOffsetY + "px";
       draggedItem.style.background = "rgba(40,150,255,0.9)";
       document.addEventListener("mousemove", handleMousemove);
-      document.addEventListener("mouseup", handleMouseUp);
+      document.addEventListener("mouseup", handleMouseUp, true);
     }
   });
 
