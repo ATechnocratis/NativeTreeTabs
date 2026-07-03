@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.1
+// @version        0.2.2.2
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -460,7 +460,7 @@ window.nativeTreeTabs = {
     }
 
     let calcDistance = tabHeight / 1.4 - 8;
-    
+
     if (calcDistance < -4) {
       calcDistance = -4;
     }
@@ -570,37 +570,61 @@ window.nativeTreeTabs = {
     aTab.removeAttribute("skipGroupDepthUpdate", "true");
   },
 
-  checkForPanelOverStep: function(aTab, sTab, direction) {
+  checkForPanelOverStep: function(aTab, prevPosition, tabOriginalDepth, group) {
     let aTabPanelId = aTab.getAttribute("panel-id");
-    if (aTabPanelId == null) return;
-    let aTabPanelIndex = this.tabPanels.findIndex(x => x.id.toString() === aTabPanelId);
-    let tabsToMove = new Array();
-
-    while (isTab(sTab) && sTab.hasAttribute("tabPanel-hidden")) {
-      let sTabPanelId = sTab.getAttribute("panel-id");
-      let sTabPanelIndex = this.tabPanels.findIndex(x => x.id.toString() === sTabPanelId);
-      if (direction === "After" && sTabPanelIndex > aTabPanelId) {
-        tabsToMove.push(sTab);
-        sTab.setAttribute("skipMoveForced", true);
-        sTab = sTab.previousSibling;
-      } else if (direction === "Before" && sTabPanelIndex < aTabPanelId) {
-        tabsToMove.push(sTab);
-        sTab.setAttribute("skipMoveForced", true);
-        sTab = sTab.nextSibling;
-      } else {
-        break;
+    let actualNext = getNextTab(aTab);
+    if (isTab(actualNext) && actualNext.hasAttribute("tabPanel-hidden")) {
+      let nextInPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
+        direction: 1,
+        wrap: false,
+        filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+      });
+      if (nextInPanel) {
+        if (group) {
+          let tabToMoves = aTab.group;
+          tabToMoves.tabs.forEach(function(mTab) {
+            mTab.setAttribute("skipMoveForced", "true");
+          }, this);
+          nativeTreeTabs.moveTabBefore(tabToMoves, nextInPanel);
+          tabToMoves.tabs.forEach(function(mTab) {
+            mTab.removeAttribute("skipMoveForced");
+          }, this);
+        } else {
+          aTab.setAttribute("skipMoveForced", "true");
+          nativeTreeTabs.moveTabBefore(aTab, nextInPanel);
+          aTab.removeAttribute("skipMoveForced");
+          this.updateChildrenFromIndex(aTab, prevPosition, aTab._tPos, tabOriginalDepth);
+        }
+        return true;
       }
     }
-    if (tabsToMove.length > 0) {
-      if (direction === "After") {
-        nativeTreeTabs.moveTabsAfter(tabsToMove, aTab.group);
-      } else {
-        nativeTreeTabs.moveTabsBefore(tabsToMove, aTab.group);
+    let actualPrevious = getPreviousTab(aTab);
+    if (isTab(actualPrevious) && actualPrevious.hasAttribute("tabPanel-hidden")) {
+      let previousnPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
+        direction: -1,
+        wrap: false,
+        filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+      });
+      if (previousnPanel) {
+        if (group) {
+          let tabToMoves = aTab.group;
+          tabToMoves.tabs.forEach(function(mTab) {
+            mTab.setAttribute("skipMoveForced", "true");
+          }, this);
+          nativeTreeTabs.moveTabAfter(tabToMoves, previousnPanel);
+          tabToMoves.tabs.forEach(function(mTab) {
+            mTab.removeAttribute("skipMoveForced");
+          }, this);
+        } else {
+          aTab.setAttribute("skipMoveForced", "true");
+          nativeTreeTabs.moveTabAfter(aTab, previousnPanel);
+          aTab.removeAttribute("skipMoveForced");
+          this.updateChildrenFromIndex(aTab, prevPosition, aTab._tPos, tabOriginalDepth);
+        }
+        return true;
       }
-      tabsToMove.forEach(function(cTab) {
-        cTab.removeAttribute("skipMoveForced");
-      }, this);
     }
+    return false;
   },
 
   recTraverseTree: function(aTab, aTabDepth, currentRootDepth) {
@@ -623,21 +647,21 @@ window.nativeTreeTabs = {
   },
 
   checkTreeSplit: function(aTab, aEvent) {
+
     let inGroup = (aTab.group && aEvent.detail.previousTabState.tabGroupId === aEvent.detail.currentTabState.tabGroupId) ? true : false;
 
     if (inGroup) {
+      //Check if group moved over hidden tabs
+      if (this.checkForPanelOverStep(aTab, 0, 0, true)) {
+        return;
+      }
       let previousTab = aTab.group.previousSibling;
-
-      if (isTab(previousTab) && previousTab.group != aTab.group) {
+      if (isTab(previousTab) && !previousTab.hasAttribute("tabPanel-hidden") && previousTab.group != aTab.group) {
         let nextTab = aTab.group.nextSibling;
-
-        //Check if group moved over hidden tabs
-        this.checkForPanelOverStep(aTab, previousTab, "After");
-        this.checkForPanelOverStep(aTab, nextTab, "Before");
 
         //Check if moved inside a tree ( Split tree )
         //Create new zero level depth roots from subtrees
-        while (isTab(nextTab)) {
+        while (isTab(nextTab) && !nextTab.hasAttribute("tabPanel-hidden")) {
           nextDepth = getTreeDepth(nextTab);
           if (!isTab(nextTab) || nextDepth === 0) {
             break;
@@ -655,13 +679,25 @@ window.nativeTreeTabs = {
   // *if they exist
   tabMove: function(aTab, aEvent) {
 
+    let prevPosition = aEvent.detail.previousTabState.tabIndex;
+    let newPosition = aEvent.detail.currentTabState.tabIndex;
+
     //Tab Group label drag, skip updating
     // tabs inside the group
     if (aTab.hasAttribute("tabGroupDrag")) {
-      this.checkTreeSplit(aTab, aEvent);
       aTab.removeAttribute("tabGroupDrag");
+      if (prevPosition > newPosition) {
+        if (aTab.group.tabs.indexOf(aTab) === aTab.group.tabs.length - 1) {
+          this.checkTreeSplit(aTab, aEvent);
+        }
+      } else {
+        if (aTab.group.tabs.indexOf(aTab) === 0) {
+          this.checkTreeSplit(aTab, aEvent);
+        }
+      }
       return;
     }
+
     //Skip update
     if (aTab.hasAttribute("skipMoveForced") && !aTab.splitview) {
       aTab.removeAttribute("skipMoveForced");
@@ -685,8 +721,6 @@ window.nativeTreeTabs = {
     }
 
     let tabOriginalDepth = getTreeDepth(aTab);
-    let prevPosition = aEvent.detail.previousTabState.tabIndex;
-    let newPosition = aEvent.detail.currentTabState.tabIndex;
 
     //Whole group ungroup
     if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId && prevPosition === newPosition &&
@@ -725,37 +759,6 @@ window.nativeTreeTabs = {
     let nextTab = aTab.nextSibling;
     let aTabTreeId = aTab.getAttribute("tree-id");
 
-    //Used for drop under last position in tab strip
-    // dragend will overwrite this if (case 0,1,2 happens)
-    if (newPosition == gBrowser.tabs.length - 1 || (isTab(nextTab) && nextTab.hasAttribute("tabPanel-hidden"))) {
-      setTreeDepth(aTab, '0');
-      this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth);
-      return;
-    }
-
-    //Split view moved
-    if (aTab.splitview) {
-      if (aTab.getAttribute("tree-depth") != '0') {
-        setTreeDepth(aTab, '0');
-      }
-      let trueNext = getNextTab(aTab.splitview);
-      aTab.splitview.childNodes.forEach(function(cTab) {
-        if (cTab.getAttribute("tree-depth") != '0') {
-          setTreeDepth(cTab, '0');
-        }
-        //This is to make sure that when the split
-        //breaks the tabs stay at 0 depth 
-        if (!cTab.hasAttribute("skipMoveForced")) {
-          cTab.setAttribute("skipMoveForced", true);
-        }
-      }, this);
-      if (trueNext && trueNext.hasAttribute("tree-depth") && getTreeDepth(trueNext) != 0) {
-        let direction = 'up';
-        if (newPosition > prevPosition) direction = 'down';
-        nativeTreeTabs.moveTabBefore(aTab.splitview, getClosestZeroDepthTab(trueNext, direction));
-      }
-      return;
-    }
 
     //illegal move
     // twisted root tab moved under its own hidden tree
@@ -786,6 +789,43 @@ window.nativeTreeTabs = {
         this.updateChildrenFromIndex(aTab, prevPosition, aTab._tPos, tabOriginalDepth);
         return;
       }
+    }
+
+    //illegal 3 (move on other tab panel)
+    if (this.checkForPanelOverStep(aTab, prevPosition, tabOriginalDepth, false)) {
+      return;
+    }
+
+    //Split view moved
+    if (aTab.splitview) {
+      if (aTab.getAttribute("tree-depth") != '0') {
+        setTreeDepth(aTab, '0');
+      }
+      let trueNext = getNextTab(aTab.splitview);
+      aTab.splitview.childNodes.forEach(function(cTab) {
+        if (cTab.getAttribute("tree-depth") != '0') {
+          setTreeDepth(cTab, '0');
+        }
+        //This is to make sure that when the split
+        //breaks the tabs stay at 0 depth 
+        if (!cTab.hasAttribute("skipMoveForced")) {
+          cTab.setAttribute("skipMoveForced", true);
+        }
+      }, this);
+      if (trueNext && trueNext.hasAttribute("tree-depth") && getTreeDepth(trueNext) != 0) {
+        let direction = 'up';
+        if (newPosition > prevPosition) direction = 'down';
+        nativeTreeTabs.moveTabBefore(aTab.splitview, getClosestZeroDepthTab(trueNext, direction));
+      }
+      return;
+    }
+
+    //Used for drop under last position in tab strip
+    // dragend will overwrite this if (case 0,1,2 happens)
+    if (newPosition == gBrowser.tabs.length - 1 || (isTab(nextTab) && nextTab.hasAttribute("tabPanel-hidden"))) {
+      setTreeDepth(aTab, '0');
+      this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth);
+      return;
     }
 
     //Ignore hidden tabs and tabs selected to move 
@@ -918,10 +958,10 @@ window.nativeTreeTabs = {
     let nextTab = getNextTab(aTab);
     let aTabPanelId = aTab.getAttribute("panel-id");
     if (isTab(nextTab) && !aTab.pinned && nextTab.getAttribute("panel-id") != aTabPanelId) {
-      nextInPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
+      let nextInPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
         direction: 1,
         wrap: false,
-        filter: tab => tab.visible && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+        filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
       });
       if (nextInPanel) {
         aTab.setAttribute("skipMoveForced", "true");
@@ -1428,7 +1468,7 @@ window.nativeTreeTabs = {
       previousInPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
         direction: -1,
         wrap: false,
-        filter: tab => tab.visible && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+        filter: tab => tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
       });
       if (previousInPanel) {
         if (aTab.group) {
@@ -1622,6 +1662,14 @@ window.nativeTreeTabs = {
           wrap: true,
           filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
         });
+        //second try stay in panel even if tab is hidden (for example collapsed group)?
+        if (newowner == null) {
+          newowner = window.gBrowser.tabContainer.findNextTab(aTab, {
+            direction: 1,
+            wrap: true,
+            filter: tab => visibleOrInGroup(tab) && !tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
         if (newowner) {
           gBrowser.setSuccessor(aTab, newowner);
         }
@@ -1729,8 +1777,15 @@ window.nativeTreeTabs = {
             nextTab = this.findNextTab(startTab, {
               direction: aDir,
               wrap: false,
-              filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
+              filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && !tab.hasAttribute("tabPanel-hidden"),
             });
+            if (nextTab == null) {
+              nextTab = this.findNextTab(startTab, {
+                direction: aDir,
+                wrap: false,
+                filter: tab => visibleOrInGroup(tab) && !tab.hasAttribute("tabPanel-hidden"),
+              });
+            }
           } else {
             nextTab = (aDir == 1) ? getNextTab(startTab) : getPreviousTab(startTab);
           }
@@ -1745,8 +1800,15 @@ window.nativeTreeTabs = {
               let possiblePin = this.findNextTab(startTab, {
                 direction: aDir,
                 wrap: false,
-                filter: tab => tab.visible && tab.getAttribute("panel-id") === startTabPanelId,
+                filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === startTabPanelId,
               });
+              if (possiblePin == null) {
+                possiblePin = this.findNextTab(startTab, {
+                  direction: aDir,
+                  wrap: false,
+                  filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === startTabPanelId,
+                });
+              }
               if (possiblePin && possiblePin != startTab) {
                 this._selectNewTab(possiblePin, aDir, aWrap);
                 return;
@@ -1760,9 +1822,15 @@ window.nativeTreeTabs = {
             }
             let nextPanelId = nativeTreeTabs.tabPanels[nextPanelIndex].id.toString();
             if (aDir == 1) {
-              nextPanelTab = this.allTabs.find(tab => tab.visible && tab.getAttribute("panel-id") === nextPanelId);
+              nextPanelTab = this.allTabs.find(tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === nextPanelId);
+              if (nextPanelTab == null) {
+                nextPanelTab = this.allTabs.find(tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === nextPanelId);
+              }
             } else {
-              nextPanelTab = this.allTabs.findLast(tab => tab.visible && tab.getAttribute("panel-id") === nextPanelId);
+              nextPanelTab = this.allTabs.findLast(tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === nextPanelId);
+              if (nextPanelTab == null) {
+                nextPanelTab = this.allTabs.findLast(tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === nextPanelId);
+              }
             }
             if (nextPanelTab && nextPanelTab != startTab) {
               this._selectNewTab(nextPanelTab, aDir, aWrap);
@@ -2182,6 +2250,9 @@ window.nativeTreeTabs = {
   },
 
   moveTabsAfter: function(tabs, position, makeSureNoGroup = true) {
+    if (position.splitview) {
+      position = position.splitview;
+    }
     if (makeSureNoGroup && position.group) {
       position = position.group;
     }
@@ -2189,6 +2260,9 @@ window.nativeTreeTabs = {
   },
 
   moveTabsBefore: function(tabs, position, makeSureNoGroup = true) {
+    if (position.splitview) {
+      position = position.splitview;
+    }
     if (makeSureNoGroup && position.group) {
       position = position.group;
     }
@@ -2197,16 +2271,22 @@ window.nativeTreeTabs = {
 
   moveTabBefore: function(tab, position) {
     //Move tab but not inside group
+    if (position.splitview) {
+      position = position.splitview;
+    }
     if (position.group) {
-      position = position.group
+      position = position.group;
     }
     gBrowser.moveTabBefore(tab, position);
   },
 
   moveTabAfter: function(tab, position) {
     //Move tab but not inside group
+    if (position.splitview) {
+      position = position.splitview;
+    }
     if (position.group) {
-      position = position.group
+      position = position.group;
     }
     gBrowser.moveTabAfter(tab, position);
   },
@@ -2494,11 +2574,11 @@ getNextTab = function(aTab) {
     nextTab = nextTab.tabs[0];
   }
 
-  while (nextTab && (nextTab.splitview || nextTab.splitViewId)) {
-    if (!isTab(nextTab) && nextTab.tagName != "tab-split-view-wrapper") return null;
-    nextTab = nextTab.nextSibling;
-  }
-  if (nextTab && nextTab.splitview) return null;
+  // while (nextTab && (nextTab.splitview || nextTab.splitViewId)) {
+  //   if (!isTab(nextTab) && nextTab.tagName != "tab-split-view-wrapper") return null;
+  //   nextTab = nextTab.nextSibling;
+  // }
+  if (nextTab && nextTab.splitViewId) return nextTab.tabs[0];
   if (!isTab(nextTab)) return null;
   return nextTab;
 }
@@ -2519,11 +2599,11 @@ getPreviousTab = function(aTab) {
   if (previousTab && previousTab.tagName === "tab-group") {
     previousTab = previousTab.tabs[previousTab.tabs.length - 1];
   }
-  while (previousTab && (previousTab.splitview || previousTab.splitViewId)) {
-    if (!isTab(previousTab) && previousTab.tagName != "tab-split-view-wrapper") return null;
-    previousTab = previousTab.previousSibling;
-  }
-  if (previousTab && previousTab.splitview) return null;
+  // while (previousTab && (previousTab.splitview || previousTab.splitViewId)) {
+  //   if (!isTab(previousTab) && previousTab.tagName != "tab-split-view-wrapper") return null;
+  //   previousTab = previousTab.previousSibling;
+  // }
+  if (previousTab && previousTab.splitViewId) return previousTab.tabs[1];
   if (!isTab(previousTab)) return null;
   return previousTab;
 }
@@ -2584,6 +2664,9 @@ hideTab = function(aTab, panelId) {
       cTab.setAttribute("tabPanel-hidden", true);
       SessionStore.setCustomTabValue(cTab, "tabPanel-hidden", "true");
     });
+    if (!aTab.group.hasAttribute("save-state-collapsed"))
+      aTab.group.setAttribute("save-state-collapsed", aTab.group.collapsed.toString());
+    aTab.group.collapsed = true;
   } else {
     aTab.setAttribute("tabPanel-hidden", true);
     SessionStore.setCustomTabValue(aTab, "tabPanel-hidden", "true");
@@ -2596,6 +2679,13 @@ unHideTab = function(aTab, panelId) {
       cTab.removeAttribute("tabPanel-hidden");
       SessionStore.deleteCustomTabValue(cTab, "tabPanel-hidden");
     });
+    if (aTab.group.hasAttribute("save-state-collapsed")) {
+      let unroll = aTab.group.getAttribute("save-state-collapsed");
+      if (unroll == "false") {
+        aTab.group.collapsed = false;
+      }
+      aTab.group.removeAttribute("save-state-collapsed");
+    }
   } else {
     aTab.removeAttribute("tabPanel-hidden");
     SessionStore.deleteCustomTabValue(aTab, "tabPanel-hidden");
@@ -2639,6 +2729,21 @@ isHidden = function(aTab) {
     return true;
   return false;
 }
+
+inNoCollapsedGroup = function(aTab) {
+  if (aTab.group && aTab.group.hasAttribute("save-state-collapsed") && aTab.group.getAttribute("save-state-collapsed") == "false")
+    return true;
+  return false;
+}
+
+
+
+visibleOrInGroup = function(aTab) {
+  if (aTab.visible || aTab.group)
+    return true;
+  return false;
+}
+
 
 setDomainAttr = function(aTab) {
   if (!isTab(aTab)) return;
@@ -3851,16 +3956,24 @@ tab[soundplaying] .tab-background {
 
 /*Tab Groups*/
 #vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]) *,
-#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]){
+#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"])
+{
   min-height:0!important;
   max-height:0!important;
+  min-width:0!important;
+  max-width:0!important;
   outline:none!important;
-  padding-bottom:0!important;
-  padding-top:0!important;
+  padding:0!important;
+  padding-inline:0!important;
   padding-block-end:0!important;
   padding-block-start:0!important;
   margin-block-start:0!important;
+  margin-inline:0!important;
   margin:0!important;
+  line-height:0!important;
+  visibility: collapse !important;
+}
+#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]) .tab-group-label-container{
 }
 #vertical-tabs .tab-group-label-container{
   margin-left: 4px!important;
