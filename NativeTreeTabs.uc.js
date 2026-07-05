@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.2
+// @version        0.2.2.3
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
@@ -1644,6 +1644,8 @@ window.nativeTreeTabs = {
 
     Services.prefs.setBoolPref("browser.tabs.dragDrop.createGroup.enabled", false);
     Services.prefs.setBoolPref("browser.tabs.groups.smart.enabled", false);
+    Services.prefs.setBoolPref("svg.context-properties.content.enabled", true);
+    
   },
 
   defaultFunctionWrap: function() {
@@ -3700,7 +3702,11 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
   border-bottom: none;
   margin-bottom: 0px;
 }
-
+@media (prefers-color-scheme: dark) {
+    .tab-group-editor-swatches label {
+        filter: saturate(1.2) brightness(0.6) contrast(1.4)!important;
+    }
+}
   `;
   let styleURI = makeURI(
     `data:text/css;charset=UTF=8,${encodeURIComponent(customCSS)}`
@@ -3743,6 +3749,7 @@ loadNTTstyle = function() {
   } else {
     tabBorderRadius = Services.prefs.getStringPref("treeTabs.tabBorderRadius");
   }
+
   let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
     Ci.nsIStyleSheetService
   );
@@ -3753,7 +3760,8 @@ loadNTTstyle = function() {
     --tab-height: ` + tabHeight + `px;
     --label-font-size: ` + labelFontSize + `px;
     --tab-close-button-padding-custom: 4px;
-    --tab-border-radius-forced: ` + tabBorderRadius + `px;
+    --tab-border-radius-forced: ` + tabBorderRadius  + `px;
+    --group-first-tab-top-margin:  ` + ( 1 +  rootTabTopMargin * 0.7 ) + `px;
 }
 #vertical-tabs tab[tree-depth="0"] { --tab-indent: 0; }
 #vertical-tabs tab[tree-depth="1"] { --tab-indent: 11; }
@@ -3789,7 +3797,7 @@ loadNTTstyle = function() {
 }
 /*TOP tab margin from top*/
 #tabbrowser-arrowscrollbox[orient="vertical"] {
-    tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
+    tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"] {
         padding-top: 6px!important;
     }
     tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
@@ -3955,8 +3963,10 @@ tab[soundplaying] .tab-background {
 }
 
 /*Tab Groups*/
-#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]) *,
-#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"])
+#tabbrowser-tabs[orient="vertical"] {
+
+tab-group:has(tab[tabPanel-hidden="true"]) *,
+tab-group:has(tab[tabPanel-hidden="true"])
 {
   min-height:0!important;
   max-height:0!important;
@@ -3973,21 +3983,62 @@ tab[soundplaying] .tab-background {
   line-height:0!important;
   visibility: collapse !important;
 }
-#vertical-tabs tab-group:has(tab[tabPanel-hidden="true"]) .tab-group-label-container{
-}
-#vertical-tabs .tab-group-label-container{
-  margin-left: 4px!important;
-}
-#vertical-tabs tab-group[collapsed] .tab-group-label-container{
-   margin-left: 9px!important;
-}
-#vertical-tabs tab{
+
+tab-group tab{
   border-left: 2px solid var(--tab-group-line-color)!important;
 }
-#vertical-tabs .tab-group-line{
+.tab-group-line{
   display: none!important;
 } 
+.tab-group-label {
+  max-width:100%!important;
+  min-width:0!important;
+  align-self: unset!important;
+  margin-top: var( --root-tab-top-margin)!important;
+  margin-inline-end:0px!important;
+  text-align: left;
+  border-radius: var(--tab-border-radius-forced)!important;
+  text-indent: calc( var(--tab-icon-end-margin) + 20px)!important;
+  background-image: url("chrome://global/skin/icons/folder.svg")!important;
+  background-size: 18px;
+  -moz-context-properties: fill, fill-opacity, stroke;
+  fill: silver;
+  background-repeat: no-repeat!important;
+  background-position: left var(--tab-icon-end-margin) center!important;
+  height: var(--tab-height)!important;
+  font-size: var(--label-font-size)!important;
+  line-height:calc( var(--tab-height) - 1px )!important;
+}
+tab-group[collapsed] .tab-group-label {
+  margin-inline-end:0!important;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill"><path d="M1 3.5C1 2.67157 1.67157 2 2.5 2H6L8 4H13.5C14.3284 4 15 4.67157 15 5.5V12.5C15 13.3284 14.3284 14 13.5 14H2.5C1.67157 14 1 13.3284 1 12.5V3.5Z"/></svg>')!important;
+}
+tab-group[collapsed] .tab-group-label-container {
+  margin-right:0!important;
+}
+.tab-group-label-container {
+  margin-right:0!important;
+  margin-inline: var(--tab-inner-inline-margin)!important;
+}
+.tab-group-label-container {
+    tab-group:not([collapsed])>&, tab-group[collapsed][hasactivetab]>& {
+        padding-block-end: var(--group-first-tab-top-margin);
+    }
+}
 
+@media (prefers-color-scheme: dark) {
+    .tab-group-label {
+        color: light-dark(var(--tab-group-color-pale), var(--tab-group-color-pale));
+        background-color: color-mix( var(--tab-group-color), transparent 35%)!important;
+        outline-color: color-mix( var(--tab-group-color) 70%, gold, transparent 10%)!important;
+    }
+    tab-group[collapsed] .tab-group-label {
+        background-color: color-mix( var(--tab-group-color), transparent 40%)!important;
+        outline-color: color-mix( var(--tab-group-color) 10%, silver 30%, transparent 10%)!important;
+        filter: saturate(1) brightness(0.85) contrast(1)!important;
+    }
+}
+}
 /*Styling*/
 
 :root {
@@ -4065,14 +4116,14 @@ tab[soundplaying] .tab-background {
 /* Add custom tab colors based on domain, uncomment and add your sites and color */
 
 /*
-#vertical-tabs tab[domain^="example.com"] { --tree-domain-color: rgb(60,55,60);--tree-domain-border-color: rgb(150,0,0); }
-#vertical-tabs tab[domain^="youtube.com"] { --tree-domain-color: rgb(240,0,0);  --tree-domain-border-color: rgb(250,10,30);}
-#vertical-tabs tab[domain^="reddit.com"] { --tree-domain-color: rgb(80,120,150); }
-#vertical-tabs tab[domain$="github.com"] { --tree-domain-color: rgb(0,0,20); --tree-domain-border-color: darkblue;}
-#vertical-tabs tab[domain$="ycombinator.com"] { --tree-domain-color: rgb(120,120,70); --tree-domain-border-color: yellow;}
-#vertical-tabs tab[domain^="about"] { --tree-domain-color: rgb(120,10,120); }
-#vertical-tabs tab[domain^="chrome"] { --tree-domain-color: rgb(120,170,170); }
-#vertical-tabs tab[domain^="moz-extension"] { --tree-domain-color: rgb(60,55,60);--tree-domain-border-color: rgb(150,0,0); }
+#vertical-tabs tab[domain^="example.com"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
+#vertical-tabs tab[domain^="youtube.com"] { --tree-domain-color: rgba(240,0,0,0.8);  --tree-domain-border-color: rgb(250,10,30);}
+#vertical-tabs tab[domain^="reddit.com"] { --tree-domain-color: rgba(80,120,150,0.8); }
+#vertical-tabs tab[domain$="github.com"] { --tree-domain-color: rgba(0,0,20,0.8); --tree-domain-border-color: darkblue;}
+#vertical-tabs tab[domain$="ycombinator.com"] { --tree-domain-color: rgba(120,120,70,0.8); --tree-domain-border-color: yellow;}
+#vertical-tabs tab[domain^="about"] { --tree-domain-color: rgba(120,10,120,0.8); }
+#vertical-tabs tab[domain^="chrome"] { --tree-domain-color: rgba(120,170,170,0.9); }
+#vertical-tabs tab[domain^="moz-extension"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
 
  */
 
