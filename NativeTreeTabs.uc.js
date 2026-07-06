@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.3
+// @version        0.2.2.4
 // ==/UserScript==
 
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
 const MAX_STACK_SIZE = 30;
+
+
 
 window.nativeTreeTabs = {
   _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned"],
@@ -15,6 +17,7 @@ window.nativeTreeTabs = {
   originalAddTabSplitView: null,
   originalAddToMultiSelectedTabs: null,
   originalAdvanceSelectedTab: null,
+  original_findTabToBlurTo: null,
   originalCloseTabOrWindow: null,
   original_getTabsToTheEndFrom: null,
   original_getTabsToTheStartFrom: null,
@@ -31,12 +34,13 @@ window.nativeTreeTabs = {
   clickedActiveTab: null,
   switchSelectedOnClick: false,
   switchSelectedOnClickStayOnPanel: true,
+  hopOverUnloadedTabs: false,
 
   init: function() {
 
     this.initPreferences();
     this.addDefaultPanel();
-    addTabPanelButton();
+    addNTTSidebarHeader();
 
     //Check if Tabs existed before initialization
     gBrowser.tabs.forEach(this.attachTabListeners, this);
@@ -81,6 +85,7 @@ window.nativeTreeTabs = {
     gBrowser.addTabSplitView = this.originalAddTabSplitView;
     gBrowser.addToMultiSelectedTabs = this.originalAddToMultiSelectedTabs;
     gBrowser.tabContainer.advanceSelectedTab = this.originalAdvanceSelectedTab;
+    gBrowser._findTabToBlurTo = this.original_findTabToBlurTo;
     BrowserCommands.closeTabOrWindow = this.originalCloseTabOrWindow;
     gBrowser.original_getTabsToTheEndFrom = this.original_getTabsToTheEndFrom;
     gBrowser.original_getTabsToTheStartFrom = this.original_getTabsToTheStartFrom;
@@ -1580,6 +1585,10 @@ window.nativeTreeTabs = {
         nativeTreeTabs.switchSelectedOnClickStayOnPanel = Services.prefs.getBoolPref("treeTabs.behavior.switchSelectedOnClickStayOnPanel");
         return;
       }
+      if (name === "treeTabs.behavior.hopOverUnloadedTabs") {
+        nativeTreeTabs.hopOverUnloadedTabs = Services.prefs.getBoolPref("treeTabs.behavior.hopOverUnloadedTabs");
+        return;
+      }
 
       let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
         Ci.nsIStyleSheetService
@@ -1631,6 +1640,13 @@ window.nativeTreeTabs = {
     }
     Services.prefs.addObserver("treeTabs.behavior.switchSelectedOnClickStayOnPanel", this);
 
+    if (Services.prefs.getPrefType("treeTabs.behavior.hopOverUnloadedTabs") != 128) {
+      Services.prefs.setBoolPref("treeTabs.behavior.hopOverUnloadedTabs", this.hopOverUnloadedTabs);
+    } else {
+      this.hopOverUnloadedTabs = Services.prefs.getBoolPref("treeTabs.behavior.hopOverUnloadedTabs");
+    }
+    Services.prefs.addObserver("treeTabs.behavior.hopOverUnloadedTabs", this);
+
     if (Services.prefs.getPrefType("treeTabs.defaultPanelName") != 32) {
       Services.prefs.setStringPref("treeTabs.defaultPanelName", this.defaultPanelName);
     } else {
@@ -1645,7 +1661,7 @@ window.nativeTreeTabs = {
     Services.prefs.setBoolPref("browser.tabs.dragDrop.createGroup.enabled", false);
     Services.prefs.setBoolPref("browser.tabs.groups.smart.enabled", false);
     Services.prefs.setBoolPref("svg.context-properties.content.enabled", true);
-    
+
   },
 
   defaultFunctionWrap: function() {
@@ -1774,22 +1790,28 @@ window.nativeTreeTabs = {
           return;
         }
         if (nativeTreeTabs.lockCtrlTabInPanel === false) {
+          //Cycles all panels
           let nextTab;
           if (startTab.pinned) {
             nextTab = this.findNextTab(startTab, {
               direction: aDir,
               wrap: false,
-              filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && !tab.hasAttribute("tabPanel-hidden"),
+              filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+            });
+          } else {
+            // nextTab = (aDir == 1) ? (getNextTab(startTab) : getPreviousTab(startTab);
+            nextTab = this.findNextTab(startTab, {
+              direction: aDir,
+              wrap: false,
+              filter: tab => tab.visible && unloadedCheck(tab),
             });
             if (nextTab == null) {
               nextTab = this.findNextTab(startTab, {
                 direction: aDir,
                 wrap: false,
-                filter: tab => visibleOrInGroup(tab) && !tab.hasAttribute("tabPanel-hidden"),
+                filter: tab => tab.visible,
               });
             }
-          } else {
-            nextTab = (aDir == 1) ? getNextTab(startTab) : getPreviousTab(startTab);
           }
           let startTabPanelId = startTab.getAttribute("panel-id");
           if (nextTab == null || (nextTab.hasAttribute("panel-id") && nextTab.getAttribute("panel-id") != startTabPanelId)) {
@@ -1802,13 +1824,13 @@ window.nativeTreeTabs = {
               let possiblePin = this.findNextTab(startTab, {
                 direction: aDir,
                 wrap: false,
-                filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === startTabPanelId,
+                filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === startTabPanelId,
               });
               if (possiblePin == null) {
                 possiblePin = this.findNextTab(startTab, {
                   direction: aDir,
                   wrap: false,
-                  filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === startTabPanelId,
+                  filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === startTabPanelId,
                 });
               }
               if (possiblePin && possiblePin != startTab) {
@@ -1816,33 +1838,49 @@ window.nativeTreeTabs = {
                 return;
               }
             }
+            let nextPanelId
             let nextPanelIndex;
             if (aDir == 1) {
               nextPanelIndex = (startTabPanelIndex === nativeTreeTabs.tabPanels.length - 1) ? 0 : startTabPanelIndex + 1;
             } else {
               nextPanelIndex = (startTabPanelIndex === 0) ? nativeTreeTabs.tabPanels.length - 1 : startTabPanelIndex - 1;
             }
-            let nextPanelId = nativeTreeTabs.tabPanels[nextPanelIndex].id.toString();
-            if (aDir == 1) {
-              nextPanelTab = this.allTabs.find(tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === nextPanelId);
-              if (nextPanelTab == null) {
-                nextPanelTab = this.allTabs.find(tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === nextPanelId);
+            while (nextPanelIndex != startTabPanelIndex) {
+              nextPanelId = nativeTreeTabs.tabPanels[nextPanelIndex].id.toString();
+              if (aDir == 1) {
+                nextPanelTab = this.allTabs.find(tab => (tab.visible || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                if (nextPanelTab == null) {
+                  nextPanelTab = this.allTabs.find(tab => visibleOrInGroup(tab) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                }
+              } else {
+                nextPanelTab = this.allTabs.findLast(tab => (tab.visible || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                if (nextPanelTab == null) {
+                  nextPanelTab = this.allTabs.findLast(tab => visibleOrInGroup(tab) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                }
               }
-            } else {
-              nextPanelTab = this.allTabs.findLast(tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === nextPanelId);
-              if (nextPanelTab == null) {
-                nextPanelTab = this.allTabs.findLast(tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === nextPanelId);
+              if (nextPanelTab && nextPanelTab != startTab) {
+                this._selectNewTab(nextPanelTab, aDir, aWrap);
+                return;
+              }
+              if (aDir == 1) {
+                nextPanelIndex++;
+              } else {
+                nextPanelIndex--;
+              }
+              if (nextPanelIndex == nativeTreeTabs.tabPanels.length) {
+                nextPanelIndex = 0;
+              } else if (nextPanelIndex == -1) {
+                nextPanelIndex = nativeTreeTabs.tabPanels.length - 1;
               }
             }
-            if (nextPanelTab && nextPanelTab != startTab) {
-              this._selectNewTab(nextPanelTab, aDir, aWrap);
-              return;
-            }
           }
-          if (!startTab.pinned) {
-            nativeTreeTabs.originalAdvanceSelectedTab.apply(this, arguments);
-            return;
-          }
+          // if (startTab.pinned) {
+          //   if (nextTab && nextTab != startTab) {
+          //     this._selectNewTab(nextTab, aDir, aWrap);
+          //     return;
+          //   }
+          //   return;
+          // }
         }
         let newTab = null;
         if (startTab.hidden) {
@@ -1855,8 +1893,15 @@ window.nativeTreeTabs = {
           newTab = this.findNextTab(startTab, {
             direction: aDir,
             wrap: aWrap,
-            filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
+            filter: tab => tab.visible && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
           });
+          if (newTab == null) {
+            newTab = this.findNextTab(startTab, {
+              direction: aDir,
+              wrap: true,
+              filter: tab => tab.visible && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+            });
+          }
         }
         if (newTab && newTab != startTab) {
           this._selectNewTab(newTab, aDir, aWrap);
@@ -1867,6 +1912,129 @@ window.nativeTreeTabs = {
         return;
       }
     };
+
+    this.original_findTabToBlurTo = gBrowser._findTabToBlurTo;
+    gBrowser._findTabToBlurTo = function(aTab, aExcludeTabs = []) {
+      try {
+        if (!aTab.selected) {
+          return null;
+        }
+        if (FirefoxViewHandler.tab) {
+          aExcludeTabs.push(FirefoxViewHandler.tab);
+        }
+
+        let excludeTabs = new Set(aExcludeTabs);
+
+        // If this tab has a successor, it should be selectable, since
+        // hiding or closing a tab removes that tab as a successor.
+        if (aTab.successor && !excludeTabs.has(aTab.successor)) {
+          return aTab.successor;
+        }
+
+        if (aTab && aTab.owner != null && aTab.owner.visible &&
+          !excludeTabs.has(aTab.owner) &&
+          Services.prefs.getBoolPref("browser.tabs.selectOwnerOnClose")
+        ) {
+          return aTab.owner;
+        }
+
+        // Try to find a remaining tab that comes after the given tab
+        let remainingTabs = Array.prototype.filter.call(
+          this.visibleTabs,
+          tab => !excludeTabs.has(tab)
+        );
+
+        if (Services.prefs.getBoolPref("browser.tabs.selectMRUOnClose", false)) {
+          let mruTab = remainingTabs
+            .filter(t => t !== aTab)
+            .reduce(
+              (best, t) =>
+              !best || t.lastAccessed > best.lastAccessed ? t : best,
+              null
+            );
+          if (mruTab) {
+            return mruTab;
+          }
+        }
+
+
+        let tab = this.tabContainer.findNextTab(aTab, {
+          direction: 1,
+          filter: _tab => remainingTabs.includes(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
+        });
+
+        if (tab == null) {
+          tab = this.tabContainer.findNextTab(aTab, {
+            direction: -1,
+            filter: _tab => remainingTabs.includes(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
+
+        if (tab) {
+          return tab;
+        }
+
+        // If no qualifying visible tab was found, see if there is a tab in
+        // a collapsed tab group that could be selected.
+        let eligibleTabs = new Set(this.tabsInCollapsedTabGroups).difference(
+          excludeTabs
+        );
+
+        tab = this.tabContainer.findNextTab(aTab, {
+          direction: 1,
+          filter: _tab => eligibleTabs.has(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
+        });
+
+        if (!tab) {
+          tab = this.tabContainer.findNextTab(aTab, {
+            direction: -1,
+            filter: _tab => eligibleTabs.has(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
+
+        if (tab) {
+          return tab;
+        }
+
+        tab = this.tabContainer.findNextTab(aTab, {
+          direction: -1,
+          filter: _tab => remainingTabs.includes(_tab),
+        });
+
+        if (!tab) {
+          tab = this.tabContainer.findNextTab(aTab, {
+            direction: 1,
+            filter: _tab => remainingTabs.includes(_tab),
+          });
+        }
+
+        if (tab) {
+          return tab;
+        }
+
+        tab = this.tabContainer.findNextTab(aTab, {
+          direction: -1,
+          filter: _tab => eligibleTabs.has(_tab),
+        });
+
+        if (!tab) {
+          tab = this.tabContainer.findNextTab(aTab, {
+            direction: 1,
+            filter: _tab => eligibleTabs.has(_tab),
+          });
+        }
+        return tab;
+      } catch (error) {
+        console.error(error);
+        nativeTreeTabs.original_findTabToBlurTo.apply(this, arguments);
+        return;
+      }
+    };
+
+
+
+
+
     //Close pinned tab from keyboard selects next in panel if possible
     // og function selects next tab
     this.originalCloseTabOrWindow = BrowserCommands.closeTabOrWindow;
@@ -2738,14 +2906,19 @@ inNoCollapsedGroup = function(aTab) {
   return false;
 }
 
-
-
 visibleOrInGroup = function(aTab) {
   if (aTab.visible || aTab.group)
     return true;
   return false;
 }
 
+unloadedCheck = function(aTab) {
+  if (nativeTreeTabs.hopOverUnloadedTabs == false)
+    return true;
+  if (aTab.hasAttribute("discarded"))
+    return false;
+  return true;
+}
 
 setDomainAttr = function(aTab) {
   if (!isTab(aTab)) return;
@@ -3119,7 +3292,7 @@ addNewPanelInMenu = function(panel, checkIt = false, position = -1) {
   menuitem.setAttribute('type', 'radio');
   menuitem.setAttribute("draggable", "true");
 
-  menuitem.addEventListener("click", (aEvent) => menuItemClick(aEvent, panel, aEvent.target));
+  // menuitem.addEventListener("click", (aEvent) => menuItemClick(aEvent, panel, aEvent.target));
   menuitem.addEventListener("click", (aEvent) => menuItemRightClick(aEvent, panel, aEvent.target));
 
   let menupopup = document.getElementById('tab-panels-menupopup-view');
@@ -3150,8 +3323,6 @@ addNewPanelInMenu = function(panel, checkIt = false, position = -1) {
         menupopup.appendChild(menuitem);
       }
     }
-  } else {
-    // addTabPanelButton();
   }
   if (checkIt) {
     menuitem.setAttribute("checked", "");
@@ -3218,9 +3389,6 @@ checkPanelInMenu = function(panel) {
   if (menupopup != null) {
     let menuitem = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
     if (menuitem) {
-      menupopup.childNodes.forEach(function(item) {
-        item.removeAttribute("checked");
-      });
       menuitem.setAttribute("checked", "");
     }
   }
@@ -3239,6 +3407,7 @@ checkPanelInMenu = function(panel) {
   if (p) {
     p.disabled = true;
   }
+  let menuitem = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
 }
 
 addMenuItem = function(parentPopup, label, action, isToggle = false, id = null) {
@@ -3353,7 +3522,40 @@ addItemInTabContextMenu = function() {
 
 }
 
-addTabPanelButton = function() {
+
+searchTabs = function() {
+  gTabsPanel.searchTabs();
+}
+
+addNTTSidebarHeader = function() {
+  let mainDiv = document.createElement("div");
+  mainDiv.setAttribute("id", "NTT-header");
+  //Insert on top of sidebar
+  let sidebarMain = document.querySelector(["sidebar-main"]);
+  sidebarMain.parentNode.insertBefore(mainDiv, sidebarMain);
+  addTabPanelButton(mainDiv);
+
+  let searchButton = document.createElement("div");
+  searchButton.setAttribute("id", "search-all-tabs-button");
+
+  searchButton.setAttribute("class", "button-background");
+  let buttonImage = document.createElement("image");
+
+  searchButton.appendChild(buttonImage);
+
+
+  mainDiv.appendChild(searchButton);
+  searchButton.addEventListener("click", function(aEvent) {
+    let button = aEvent.button;
+    if (button != 0) {
+      return;
+    }
+    searchTabs();
+  });
+}
+
+
+addTabPanelButton = function(mainDiv) {
   //Add new tab context menu option
   addItemInTabContextMenu();
   //Create Button
@@ -3386,9 +3588,8 @@ addTabPanelButton = function() {
   tabPanelGroup.appendChild(tabPanelButton);
   tabPanelGroup.appendChild(tabPanelName);
   tabPanelGroup.appendChild(dropDownImg);
-  //Insert on top of sidebar
-  let sidebarMain = document.querySelector(["sidebar-main"]);
-  sidebarMain.parentNode.insertBefore(tabPanelGroup, sidebarMain);
+  mainDiv.appendChild(tabPanelGroup);
+
   //Create popup
   let menupopup = document.createXULElement('panel');
   menupopup.setAttribute('id', 'tab-panels-menupopup');
@@ -3397,8 +3598,8 @@ addTabPanelButton = function() {
   menupopup.setAttribute('orient', 'vertical');
   menupopup.setAttribute('position', 'after_start');
 
-  let mainDiv = document.createElement('div');
-  mainDiv.setAttribute('id', 'tab-panels-menupopup-view');
+  let panelMenuMainDiv = document.createElement('div');
+  panelMenuMainDiv.setAttribute('id', 'tab-panels-menupopup-view');
 
   let subDiv = document.createElement('div');
   subDiv.setAttribute('class', 'add-panel-button');
@@ -3414,8 +3615,8 @@ addTabPanelButton = function() {
 
   subDiv.appendChild(plusIcon);
   subDiv.appendChild(menuitem);
-  mainDiv.appendChild(subDiv);
-  menupopup.appendChild(mainDiv);
+  panelMenuMainDiv.appendChild(subDiv);
+  menupopup.appendChild(panelMenuMainDiv);
 
   subDiv.addEventListener("click", (aEvent) => addNewPanelInput(aEvent, menupopup));
 
@@ -3424,7 +3625,11 @@ addTabPanelButton = function() {
   let previousNextitem = null;
   let helddown = 0;
   let dragStartPos;
-  mainDiv.addEventListener("mousedown", (aEvent) => {
+  panelMenuMainDiv.addEventListener("mousedown", (aEvent) => {
+    let button = aEvent.button;
+    if (button != 0) {
+      return;
+    }
     aEvent.preventDefault();
     let item = aEvent.target.closest("#tab-panels-menupopup-view > menuitem");
     if (item) {
@@ -3444,10 +3649,10 @@ addTabPanelButton = function() {
   handleMousemove = function(aEvent) {
     if (isDragging && draggedItem) {
       helddown++;
-      let itemSibilings = Array.from(mainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)"));
+      let itemSibilings = Array.from(panelMenuMainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)"));
       let nextItem = itemSibilings.find((sibiling) => {
         return (
-          aEvent.clientY - mainDiv.getBoundingClientRect().top <=
+          aEvent.clientY - panelMenuMainDiv.getBoundingClientRect().top <=
           sibiling.offsetTop + sibiling.offsetHeight / 2
         );
       });
@@ -3458,32 +3663,39 @@ addTabPanelButton = function() {
         nextItem.style.marginTop = "5px";
         previousNextitem = nextItem;
       }
-      mainDiv.insertBefore(draggedItem, nextItem);
+      panelMenuMainDiv.insertBefore(draggedItem, nextItem);
     } else {
       document.removeEventListener("mousemove", handleMousemove);
     }
   }
 
-  function dragEnds() {
+  function dragEnds(clickOnly = false) {
     if (draggedItem) {
       draggedItem.style.background = "";
       draggedItem.classList.remove("dragging");
       isDragging = false;
-      let nextItem;
-      let itemSibilings = mainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)");
 
-      itemSibilings.forEach((sibiling) => {
-        sibiling.style.marginTop = "";
-        if (sibiling.previousSibling === draggedItem) {
-          nextItem = sibiling;
-        }
-      });
+
       //Move whole panel tabs in tab strip
       let panelId = draggedItem.getAttribute("panel-id");
+
       let dragEndPos = Array.prototype.indexOf.call(draggedItem.parentNode.children, draggedItem) - 1;
       draggedItem = null;
 
+      if (clickOnly) {
+        nativeTreeTabs.tabPanelShow(panelId);
+        return;
+      }
+
       if (dragStartPos != dragEndPos) {
+        let nextItem;
+        let itemSibilings = panelMenuMainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)");
+        itemSibilings.forEach((sibiling) => {
+          sibiling.style.marginTop = "";
+          if (sibiling.previousSibling === draggedItem) {
+            nextItem = sibiling;
+          }
+        });
         if (nextItem == null) {
           //last position
           window.nativeTreeTabs.movePanel(panelId, null);
@@ -3499,8 +3711,10 @@ addTabPanelButton = function() {
     if (draggedItem) {
       if (helddown > 10) {
         aEvent.preventDefault();
+        dragEnds();
+      } else {
+        dragEnds(clickOnly = true);
       }
-      dragEnds();
     }
     document.removeEventListener("mouseup", handleMouseUp);
   }
@@ -3546,6 +3760,21 @@ addTabPanelButton = function() {
 box:has(>sidebar-main) {
     flex-flow: column!important;
 }
+#NTT-header{
+  max-width:100%;
+  min-width: 0;
+  display: flex;
+}
+#search-all-tabs-button image{
+
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  padding-top:2px;
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  content:url("chrome://global/skin/icons/search-glass.svg");
+}
 #tab-panels-group {
     max-width:80%;
     min-width: 0;
@@ -3574,10 +3803,10 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
 :root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
     padding-inline-start: 12px;
 }
-#tab-panels-group .button-background:hover {
+#NTT-header .button-background:hover {
     background-color: var(--button-background-color);
 }
-#tab-panels-group .button-background {
+#NTT-header .button-background {
     box-sizing: border-box;
     min-height: var(--button-min-height);
     border: none!important;
@@ -3760,8 +3989,8 @@ loadNTTstyle = function() {
     --tab-height: ` + tabHeight + `px;
     --label-font-size: ` + labelFontSize + `px;
     --tab-close-button-padding-custom: 4px;
-    --tab-border-radius-forced: ` + tabBorderRadius  + `px;
-    --group-first-tab-top-margin:  ` + ( 1 +  rootTabTopMargin * 0.7 ) + `px;
+    --tab-border-radius-forced: ` + tabBorderRadius + `px;
+    --group-first-tab-top-margin:  ` + (1 + rootTabTopMargin * 0.7) + `px;
 }
 #vertical-tabs tab[tree-depth="0"] { --tab-indent: 0; }
 #vertical-tabs tab[tree-depth="1"] { --tab-indent: 11; }
