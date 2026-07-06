@@ -1,8 +1,7 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.4
+// @version        0.2.2.5
 // ==/UserScript==
-
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
 const MAX_STACK_SIZE = 30;
@@ -1677,17 +1676,42 @@ window.nativeTreeTabs = {
         //Don't select another panel(hidden one) tabs if a not hidden pinned tab exists
         let newowner = window.gBrowser.tabContainer.findNextTab(aTab, {
           direction: 1,
-          wrap: true,
-          filter: tab => tab.visible && !tab.hasAttribute("tabPanel-hidden"),
+          wrap: false,
+          filter: tab => tab.visible && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
         });
+        if (newowner == null) {
+          newowner = window.gBrowser.tabContainer.findNextTab(aTab, {
+            direction: -1,
+            wrap: false,
+            filter: tab => tab.visible && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
+        if (nativeTreeTabs.hopOverUnloadedTabs == true) {
+          if (newowner == null) {
+            //last chance will go to another panel
+            newowner = window.gBrowser.tabContainer.findNextTab(aTab, {
+              direction: -1,
+              wrap: true,
+              filter: tab => (tab.visible || inNoCollapsedGroup(tab)) && unloadedCheck(tab),
+            });
+          }
+        }
         //second try stay in panel even if tab is hidden (for example collapsed group)?
         if (newowner == null) {
           newowner = window.gBrowser.tabContainer.findNextTab(aTab, {
             direction: 1,
-            wrap: true,
-            filter: tab => visibleOrInGroup(tab) && !tab.hasAttribute("tabPanel-hidden"),
+            wrap: false,
+            filter: tab => visibleOrInGroup(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
           });
         }
+        if (newowner == null) {
+          newowner = window.gBrowser.tabContainer.findNextTab(aTab, {
+            direction: -1,
+            wrap: false,
+            filter: tab => visibleOrInGroup(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+          });
+        }
+
         if (newowner) {
           gBrowser.setSuccessor(aTab, newowner);
         }
@@ -1701,22 +1725,22 @@ window.nativeTreeTabs = {
         let nextTab = getNextTab(aTab);
         if (aTab.selected && previousTab) {
           let tabDepth = getTreeDepth(aTab);
-          let focusNext = (nextTab && getTreeDepth(nextTab) >= tabDepth) ?
+          let focusNext = (nextTab && unloadedCheck(nextTab) && getTreeDepth(nextTab) >= tabDepth) ?
             true : false;
           if (focusNext) {
             gBrowser.setSuccessor(aTab, nextTab);
-          } else if (tabDepth != 0) {
+          } else if (tabDepth != 0 && unloadedCheck(previousTab)) {
             gBrowser.setSuccessor(aTab, previousTab);
           }
           //Don't select another panel(hidden one) tabs
-          if (!nextTab || (nextTab && nextTab.hasAttribute("tabPanel-hidden"))) {
-            if (!previousTab.hasAttribute("tabPanel-hidden")) {
+          if (!nextTab || (nextTab && (nextTab.hasAttribute("tabPanel-hidden") || !unloadedCheck(previousTab)))) {
+            if (!previousTab.hasAttribute("tabPanel-hidden") && unloadedCheck(previousTab)) {
               gBrowser.setSuccessor(aTab, previousTab);
             } else {
               checkForNextInPanel(aTab);
             }
           }
-        } else if (nextTab && nextTab.hasAttribute("tabPanel-hidden")) {
+        } else if (nextTab && (nextTab.hasAttribute("tabPanel-hidden") || !unloadedCheck(nextTab))) {
           checkForNextInPanel(aTab);
         }
       } catch (error) {
@@ -1982,13 +2006,13 @@ window.nativeTreeTabs = {
 
         tab = this.tabContainer.findNextTab(aTab, {
           direction: 1,
-          filter: _tab => eligibleTabs.has(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
+          filter: _tab => eligibleTabs.has(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
         });
 
         if (!tab) {
           tab = this.tabContainer.findNextTab(aTab, {
             direction: -1,
-            filter: _tab => eligibleTabs.has(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
+            filter: _tab => eligibleTabs.has(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
           });
         }
 
@@ -2030,10 +2054,6 @@ window.nativeTreeTabs = {
         return;
       }
     };
-
-
-
-
 
     //Close pinned tab from keyboard selects next in panel if possible
     // og function selects next tab
@@ -2572,7 +2592,7 @@ window.nativeTreeTabs = {
     gBrowser.tabs.forEach(function(aTab) {
       if (aTab.hasAttribute("panel-id")) {
         if (aTab.getAttribute("panel-id") === panelId) {
-          if (panelTopTab == null) {
+          if (panelTopTab == null && ((aTab.visible || inNoCollapsedGroup(aTab)) && unloadedCheck(aTab))) {
             panelTopTab = aTab;
           }
           unHideTab(aTab);
@@ -2586,16 +2606,38 @@ window.nativeTreeTabs = {
       //Show the last selected tab of the panel if it exists
       // else show the first (top) tab of the panel
       let pSTab = panel.selectedTab;
-      if (pSTab == null || pSTab.getAttribute("panel-id") != panel.id || !window.gBrowser.tabs.includes(pSTab)) {
-        while (panel.previousSelectedTab.length > 0 && (pSTab == null || !window.gBrowser.tabs.includes(pSTab) || pSTab.getAttribute("panel-id") != panel.id)) {
+      if (pSTab == null || pSTab.getAttribute("panel-id") != panel.id || !window.gBrowser.tabs.includes(pSTab) || !(pSTab.visible || inNoCollapsedGroup(pSTab))) {
+        while (panel.previousSelectedTab.length > 0 && (pSTab == null || (!window.gBrowser.tabs.includes(pSTab) || pSTab.getAttribute("panel-id") != panel.id || !(pSTab.visible || inNoCollapsedGroup(pSTab))))) {
           pSTab = panel.previousSelectedTab.pop();
         }
       }
-      if (pSTab && window.gBrowser.tabs.includes(pSTab) &&
+      if (pSTab && window.gBrowser.tabs.includes(pSTab) && (pSTab.visible || inNoCollapsedGroup(pSTab)) && unloadedCheck(pSTab) &&
         pSTab.getAttribute("panel-id") === panelId) {
         window.gBrowser.selectedTab = pSTab;
       } else if (panelTopTab != null) {
         window.gBrowser.selectedTab = panelTopTab;
+      } else {
+        let findTab = window.gBrowser.tabContainer.allTabs.find(tab => (tab.visible || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === panelId);
+        if (findTab == null) {
+          findTab = window.gBrowser.tabContainer.allTabs.find(tab => (tab.visible || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === panelId);
+        }
+        if (findTab == null) {
+          findTab = window.gBrowser.tabContainer.allTabs.find(tab => tab.getAttribute("panel-id") === panelId);
+        }
+        if (findTab == null) {
+          let newTab = window.gBrowser.addTab(
+            window.BROWSER_NEW_TAB_URL, {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+            }
+          );
+          if (!newTab) {
+            throw new Error("Could not open new tab.");
+          }
+          setPanel(newTab, panel, window);
+          window.gBrowser.selectedTab = newTab;
+        } else {
+          window.gBrowser.selectedTab = findTab;
+        }
       }
     }
   },
@@ -2915,7 +2957,7 @@ visibleOrInGroup = function(aTab) {
 unloadedCheck = function(aTab) {
   if (nativeTreeTabs.hopOverUnloadedTabs == false)
     return true;
-  if (aTab.hasAttribute("discarded"))
+  if (!aTab.linkedPanel || aTab.hasAttribute("discarded"))
     return false;
   return true;
 }
