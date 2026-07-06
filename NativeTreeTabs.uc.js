@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.5
+// @version        0.2.2.6
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1829,13 +1829,6 @@ window.nativeTreeTabs = {
               wrap: false,
               filter: tab => tab.visible && unloadedCheck(tab),
             });
-            if (nextTab == null) {
-              nextTab = this.findNextTab(startTab, {
-                direction: aDir,
-                wrap: false,
-                filter: tab => tab.visible,
-              });
-            }
           }
           let startTabPanelId = startTab.getAttribute("panel-id");
           if (nextTab == null || (nextTab.hasAttribute("panel-id") && nextTab.getAttribute("panel-id") != startTabPanelId)) {
@@ -4068,8 +4061,12 @@ loadNTTstyle = function() {
 }
 /*TOP tab margin from top*/
 #tabbrowser-arrowscrollbox[orient="vertical"] {
+
     tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"] {
         padding-top: 6px!important;
+    }
+    tab-group + tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"]{
+      padding-top: var(--root-tab-top-margin)!important;
     }
     tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
         padding-top: var(--root-tab-top-margin) !important;
@@ -4265,7 +4262,7 @@ tab-group tab{
   max-width:100%!important;
   min-width:0!important;
   align-self: unset!important;
-  margin-top: var( --root-tab-top-margin)!important;
+  margin-top: 0px!important;
   margin-inline-end:0px!important;
   text-align: left;
   border-radius: var(--tab-border-radius-forced)!important;
@@ -4288,6 +4285,7 @@ tab-group[collapsed] .tab-group-label-container {
   margin-right:0!important;
 }
 .tab-group-label-container {
+  margin-block-start: var( --root-tab-top-margin)!important;
   margin-right:0!important;
   margin-inline: var(--tab-inner-inline-margin)!important;
 }
