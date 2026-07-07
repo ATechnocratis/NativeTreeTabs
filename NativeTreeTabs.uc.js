@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.6
+// @version        0.2.2.7
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -833,11 +833,17 @@ window.nativeTreeTabs = {
     }
 
     //Ignore hidden tabs and tabs selected to move 
-    while (previousTab && (isHidden(previousTab) || previousTab.multiselected)) {
+    while (previousTab && (previousTab.hasAttribute("hidden-child") || previousTab.multiselected)) {
       previousTab = getPreviousTab(previousTab);
     }
-    while (nextTab && (isHidden(nextTab) || nextTab.multiselected)) {
+    while (nextTab && (nextTab.hasAttribute("hidden-child") || nextTab.multiselected)) {
       nextTab = nextTab.nextSibling;
+    }
+    if (previousTab && previousTab.hasAttribute("tabPanel-hidden")) {
+      previousTab = null;
+    }
+    if (nextTab && nextTab.hasAttribute("tabPanel-hidden")) {
+      nextTab = null;
     }
     //We don't care for tabs outside the group if the tab is grouped
     if (inGroup) {
@@ -3801,7 +3807,6 @@ box:has(>sidebar-main) {
   display: flex;
 }
 #search-all-tabs-button image{
-
   display: inline-flex;
   width: 16px;
   height: 16px;
@@ -3828,15 +3833,18 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
   #tab-panels-name{
     display: none;
   }
+  #NTT-header{
+    flex-flow:column;
+  }
 }
-:root:not([customizing])[uidensity="compact"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
-    padding-inline-start: 7px;
+:root:not([customizing])[uidensity="compact"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
+    margin-inline-start: 7px;
 }
-:root:not([customizing]) box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
-    padding-inline-start: 9px;
+:root:not([customizing]) box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
+    margin-inline-start: 9px;
 }
-:root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-button {
-    padding-inline-start: 12px;
+:root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
+    margin-inline-start: 12px;
 }
 #NTT-header .button-background:hover {
     background-color: var(--button-background-color);
@@ -4065,7 +4073,7 @@ loadNTTstyle = function() {
     tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"] {
         padding-top: 6px!important;
     }
-    tab-group + tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"]{
+    tab-group:not(:has(tab[tabPanel-hidden="true"])) + tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"]{
       padding-top: var(--root-tab-top-margin)!important;
     }
     tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
