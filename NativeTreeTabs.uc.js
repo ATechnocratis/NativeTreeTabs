@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.8
+// @version        0.2.2.9
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
 const MAX_STACK_SIZE = 30;
-
-
 
 window.nativeTreeTabs = {
   _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned"],
@@ -75,9 +73,6 @@ window.nativeTreeTabs = {
         e.preventDefault();
         e.stopImmediatePropagation();
         const shift = e.shiftKey;
-        console.log(e);
-        console.log(shift);
-
         nativeTreeTabs.cycleTabPanels(shift ? -1 : 1);
       }
     }, true);
@@ -1592,19 +1587,35 @@ window.nativeTreeTabs = {
         return;
       }
       if (name === "treeTabs.behavior.lockCtrlTabInPanel") {
+        if (Services.prefs.getPrefType("treeTabs.behavior.lockCtrlTabInPanel") != 128) {
+          Services.prefs.setBoolPref("treeTabs.behavior.lockCtrlTabInPanel", nativeTreeTabs.lockCtrlTabInPanel);
+        } else {
         nativeTreeTabs.lockCtrlTabInPanel = Services.prefs.getBoolPref("treeTabs.behavior.lockCtrlTabInPanel");
+        }
         return;
       }
       if (name === "treeTabs.behavior.switchSelectedOnClick") {
+        if (Services.prefs.getPrefType("treeTabs.behavior.switchSelectedOnClick") != 128) {
+          Services.prefs.setBoolPref("treeTabs.behavior.switchSelectedOnClick", nativeTreeTabs.switchSelectedOnClick);
+        } else {
         nativeTreeTabs.switchSelectedOnClick = Services.prefs.getBoolPref("treeTabs.behavior.switchSelectedOnClick");
+        }
         return;
       }
       if (name === "treeTabs.behavior.switchSelectedOnClickStayOnPanel") {
+        if (Services.prefs.getPrefType("treeTabs.behavior.switchSelectedOnClickStayOnPanel") != 128) {
+          Services.prefs.setBoolPref("treeTabs.behavior.switchSelectedOnClickStayOnPanel", nativeTreeTabs.switchSelectedOnClickStayOnPanel);
+        } else {
         nativeTreeTabs.switchSelectedOnClickStayOnPanel = Services.prefs.getBoolPref("treeTabs.behavior.switchSelectedOnClickStayOnPanel");
+        }
         return;
       }
       if (name === "treeTabs.behavior.hopOverUnloadedTabs") {
+        if (Services.prefs.getPrefType("treeTabs.behavior.hopOverUnloadedTabs") != 128) {
+          Services.prefs.setBoolPref("treeTabs.behavior.hopOverUnloadedTabs", nativeTreeTabs.hopOverUnloadedTabs);
+        } else {
         nativeTreeTabs.hopOverUnloadedTabs = Services.prefs.getBoolPref("treeTabs.behavior.hopOverUnloadedTabs");
+        }
         return;
       }
 
@@ -1670,7 +1681,6 @@ window.nativeTreeTabs = {
     } else {
       this.defaultPanelName = Services.prefs.getStringPref("treeTabs.defaultPanelName");
     }
-
     if (Services.prefs.getBoolPref("browser.tabs.insertRelatedAfterCurrent") === false) {
       this.moveNewTabsDirectlyUnderParent = false;
     }
