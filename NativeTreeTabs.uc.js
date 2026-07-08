@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.7
+// @version        0.2.2.8
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -68,6 +68,19 @@ window.nativeTreeTabs = {
     Services.prefs.addObserver("treeTabs.tabHeight", this);
     Services.prefs.addObserver("treeTabs.labelFontSize", this);
     Services.prefs.addObserver("treeTabs.tabBorderRadius", this);
+
+    //add key listener for tab panel cycle
+    window.addEventListener("keydown", function handler(e) {
+      if (e.ctrlKey && (e.key === "," || e.key === "<") && !e.altKey) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const shift = e.shiftKey;
+        console.log(e);
+        console.log(shift);
+
+        nativeTreeTabs.cycleTabPanels(shift ? -1 : 1);
+      }
+    }, true);
 
     //-------------------
     console.log("Native Tree Tabs loaded.");
@@ -1282,7 +1295,7 @@ window.nativeTreeTabs = {
       setPanel(aTab, panel, window);
       foundPanel = true;
       if (aTab.selected) {
-        this.tabPanelShow(panel.id, changeSelectedTab = false);
+        this.tabPanelShow(panel, changeSelectedTab = false);
       }
       if (this.selectedtPanel === panel) {
         unHideTab(aTab);
@@ -1439,7 +1452,7 @@ window.nativeTreeTabs = {
       foundPanel = true;
 
       if (aTab.selected) {
-        this.tabPanelShow(panel.id, changeSelectedTab = false);
+        this.tabPanelShow(panel, changeSelectedTab = false);
       }
       if (this.selectedtPanel === panel) {
         unHideTab(aTab);
@@ -2576,9 +2589,18 @@ window.nativeTreeTabs = {
     }, this);
   },
 
-  tabPanelShow: function(panelId, changeSelectedTab = true) {
-    panelId = panelId.toString();
-    let panel = this.tabPanels.find(x => x.id.toString() === panelId);
+  tabPanelShow: function(panel, changeSelectedTab = true) {
+    let panelId;
+    if (panel.id) {
+      if (!this.tabPanels.includes(panel)) {
+        panel = null;
+      } else {
+        panelId = panel.id.toString();
+      }
+    } else {
+      panelId = panel.toString();
+      panel = this.tabPanels.find(x => x.id.toString() === panelId);
+    }
     if (!panel) {
       return;
     }
@@ -2640,6 +2662,18 @@ window.nativeTreeTabs = {
       }
     }
   },
+  cycleTabPanels: function(dir = 1) {
+    if (this.tabPanels.length < 2) {
+      return;
+    }
+    let nextPanelIndex = this.tabPanels.indexOf(this.selectedtPanel) + dir;
+    if (nextPanelIndex > this.tabPanels.length - 1) {
+      nextPanelIndex = 0;
+    } else if (nextPanelIndex < 0) {
+      nextPanelIndex = this.tabPanels.length - 1;
+    }
+    this.tabPanelShow(this.tabPanels[nextPanelIndex])
+  },
 
   moveTabsToPanel: function(tabsToMove, panel, forceShow = false, group = false) {
     panelId = panel.id.toString();
@@ -2674,7 +2708,7 @@ window.nativeTreeTabs = {
         gBrowser.selectedTab = saveSelectedTab;
       }
       if (forceShow || tabsToMove.includes(gBrowser.selectedTab)) {
-        this.tabPanelShow(panelId, changeSelectedTab = false);
+        this.tabPanelShow(panel, changeSelectedTab = false);
         if (!tabsToMove.includes(gBrowser.selectedTab)) {
           gBrowser.selectedTabs = tabsToMove[0];
           gBrowser.selectedTab = tabsToMove[0];
@@ -2712,7 +2746,7 @@ window.nativeTreeTabs = {
           if (aTab != null) {
             aTab.owner = null;
           }
-          this.tabPanelShow(this.previousSelectedPanel.id);
+          this.tabPanelShow(this.previousSelectedPanel);
         }
       } else if (this.tabPanels.length === 0) {
         //No panels left? when  does this happen?
@@ -3270,7 +3304,7 @@ menuItemClick = function(aEvent, panel, target) {
   if (button != 0) {
     return;
   }
-  nativeTreeTabs.tabPanelShow(panel.id);
+  nativeTreeTabs.tabPanelShow(panel);
 }
 
 makePopupStayOpen = function(popup, action) {
