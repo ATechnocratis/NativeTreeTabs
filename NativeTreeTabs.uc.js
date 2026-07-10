@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.2.9
+// @version        0.2.2.10
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -3765,7 +3765,6 @@ addTabPanelButton = function(mainDiv) {
       let panelId = draggedItem.getAttribute("panel-id");
 
       let dragEndPos = Array.prototype.indexOf.call(draggedItem.parentNode.children, draggedItem) - 1;
-      draggedItem = null;
 
       if (clickOnly) {
         nativeTreeTabs.tabPanelShow(panelId);
@@ -3789,6 +3788,7 @@ addTabPanelButton = function(mainDiv) {
           window.nativeTreeTabs.movePanel(panelId, beforePanelId);
         }
       }
+      draggedItem = null;
     }
   }
 
