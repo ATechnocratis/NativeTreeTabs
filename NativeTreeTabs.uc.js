@@ -788,17 +788,18 @@ window.nativeTreeTabs = {
     }
 
     let tabOriginalDepth = getTreeDepth(aTab);
+    let telemetrySource = (aEvent.detail.metricsContext) ? aEvent.detail.metricsContext.telemetrySource : aEvent.detail.telemetrySource;
 
     //Whole group ungroup
     if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId && prevPosition === newPosition &&
-      aEvent.detail.metricsContext.telemetrySource != "drag") {
+      telemetrySource != "drag") {
       // this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
       return;
     }
 
     //Multiselected group creation keep tree structure
     if (!aEvent.detail.previousTabState.tabGroupId && aEvent.detail.currentTabState.tabGroupId &&
-      aEvent.detail.metricsContext.telemetrySource != "drag" && aTab.multiselected) {
+      telemetrySource != "drag" && aTab.multiselected) {
       if (!aTab.hasAttribute("groupCreationSkip")) {
         //First tab seen, prepare the others
         this.newGroupCreation(aTab, prevPosition, newPosition);
