@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.3.1
+// @version        0.2.3.2
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -87,7 +87,7 @@ window.nativeTreeTabs = {
     }, true);
     //add keyboard shortcut for selected tab moving/indention change
     window.addEventListener("keydown", function handler(e) {
-        if (!e.ctrlKey && e.altKey) {
+        if (!e.ctrlKey || !e.altKey) {
           return;
         }
         let arguments;
