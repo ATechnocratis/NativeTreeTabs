@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.3.2
+// @version        0.2.3.3
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
 const MAX_STACK_SIZE = 30;
 
 window.nativeTreeTabs = {
-  _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned"],
+  _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned", "TabGroupUngroup", "TabGroupCreateByUser"],
   lastId: 0,
   originalRemoveTab: null,
   originalPinTab: null,
@@ -191,6 +191,11 @@ window.nativeTreeTabs = {
           this.tabUnpinned(aEvent.target, aEvent);
           break;
         }
+      case "TabGroupUngroup":
+        {
+          this.tabGroupUngroup(aEvent);
+          break;
+        }
       case "dragstart":
         {
           this.tabDragStart(aEvent);
@@ -289,6 +294,7 @@ window.nativeTreeTabs = {
       }
 
       if (isIngroup) {
+        //don't move collapsed tree children away in group creation
         while (nextTab && nextTab.hasAttribute("hidden-child") && nextTab.getAttribute("hidden-child-rootID") != aTabTreeId) {
           let twistedRootId = nextTab.getAttribute("hidden-child-rootID");
           let nextTrueParent = seenIds.get(twistedRootId);
@@ -606,6 +612,15 @@ window.nativeTreeTabs = {
       this.updateChildrenLite(aTab, oldDepth);
     }
   },
+  tabGroupUngroup: function(aEvent) {
+    console.log(aEvent)
+    let tabs = aEvent.target.tabs;
+    tabs.forEach(function(sTab) {
+      sTab.setAttribute("skipMoveForced", "true");
+    });
+
+  },
+
   newGroupCreation: function(aTab, prevPosition, newPosition) {
     window.gBrowser.selectedTabs.forEach(function(sTab) {
       sTab.setAttribute("groupCreationSkip", "true");
@@ -770,8 +785,16 @@ window.nativeTreeTabs = {
       aTab.removeAttribute("skipMoveForced");
       return;
     }
+
+    let telemetrySource = (aEvent.detail.metricsContext) ? aEvent.detail.metricsContext.telemetrySource : aEvent.detail.telemetrySource;
+    let forceMultiselected = false;
     //Multiple selected case
     if (aTab.multiselected) {
+      if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId && aTab.multiselected &&
+        telemetrySource != "drag") {
+        forceMultiselected = true;
+      }
+
       if (aTab.hasAttribute("multiSelectedAncestorFixed")) {
         aTab.removeAttribute("multiSelectedAncestorFixed");
         return;
@@ -788,14 +811,6 @@ window.nativeTreeTabs = {
     }
 
     let tabOriginalDepth = getTreeDepth(aTab);
-    let telemetrySource = (aEvent.detail.metricsContext) ? aEvent.detail.metricsContext.telemetrySource : aEvent.detail.telemetrySource;
-
-    //Whole group ungroup
-    if (aEvent.detail.previousTabState.tabGroupId && !aEvent.detail.currentTabState.tabGroupId && prevPosition === newPosition &&
-      telemetrySource != "drag") {
-      // this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, aEvent.detail.previousTabState.tabGroupId);
-      return;
-    }
 
     //Multiselected group creation keep tree structure
     if (!aEvent.detail.previousTabState.tabGroupId && aEvent.detail.currentTabState.tabGroupId &&
@@ -805,7 +820,8 @@ window.nativeTreeTabs = {
         this.newGroupCreation(aTab, prevPosition, newPosition);
         //Remove so it can update child depth in updateChildrenFromIndex
         gBrowser.removeFromMultiSelectedTabs(aTab);
-        this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, true);
+        setTreeDepth(aTab, 0);
+        this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, true, forceMultiselected = true);
         return;
       } else {
         aTab.removeAttribute("groupCreationSkip");
@@ -816,7 +832,7 @@ window.nativeTreeTabs = {
           return;
         } else {
           setTreeDepth(aTab, 0);
-          this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, true);
+          this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, true, forceMultiselected = true);
           return;
         }
       }
@@ -854,7 +870,7 @@ window.nativeTreeTabs = {
       aTab.removeAttribute("skipMoveForced");
       if (aTab._tPos == gBrowser.tabs.length - 1) {
         setTreeDepth(aTab, '0');
-        this.updateChildrenFromIndex(aTab, prevPosition, aTab._tPos, tabOriginalDepth);
+        this.updateChildrenFromIndex(aTab, prevPosition, aTab._tPos, tabOriginalDepth, false, forceMultiselected);
         return;
       }
     }
@@ -892,7 +908,7 @@ window.nativeTreeTabs = {
     // dragend will overwrite this if (case 0,1,2 happens)
     if (newPosition == gBrowser.tabs.length - 1 || (isTab(nextTab) && nextTab.hasAttribute("tabPanel-hidden"))) {
       setTreeDepth(aTab, '0');
-      this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth);
+      this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, false, forceMultiselected);
       return;
     }
 
@@ -943,7 +959,7 @@ window.nativeTreeTabs = {
       setTreeDepth(aTab, newDepth);
     }
     //Update children
-    this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth);
+    this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, false, forceMultiselected);
 
     //If aTab became child of twisted tab then unravel it
     if (isTab(previousTab)) {
@@ -3084,8 +3100,7 @@ window.nativeTreeTabs = {
               if (enterGroup || leavingGroup) {
                 setTreeDepth(aTab, 0);
                 removeOpener(aTab);
-              }
-              if (previousTabDepth != null) {
+              } else if (previousTabDepth != null) {
                 //special case if moving under tree
                 setTreeDepth(aTab, previousTabDepth);
                 copyOpener(aTab, previousTab);
