@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.1
+// @version        0.2.4.2
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -5590,7 +5590,13 @@ tab[nestTab]{
      margin-inline-start: var(--tab-icon-start);
   }
 }
+.tab-group-label-container {
+  #tabbrowser-tabs[orient="vertical"] tab-group:not([collapsed]) > &::after, #tabbrowser-tabs[orient="vertical"] tab-group[collapsed][hasactivetab]:not([movingtabgroup]) > &::after{
+    inset-inline: 0px auto!important;
+  }
+}
 .tab-group-label {
+  #tabbrowser-tabs[expanded] & {
   max-width:100%!important;
   min-width:0!important;
   align-self: unset!important;
@@ -5609,22 +5615,32 @@ tab[nestTab]{
   font-size: var(--label-font-size)!important;
   line-height:calc( var(--tab-height) - 1px )!important;
 }
+}
 tab-group[collapsed] .tab-group-label {
+  #tabbrowser-tabs[expanded] & {
   margin-inline-end:0!important;
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill"><path d="M1 3.5C1 2.67157 1.67157 2 2.5 2H6L8 4H13.5C14.3284 4 15 4.67157 15 5.5V12.5C15 13.3284 14.3284 14 13.5 14H2.5C1.67157 14 1 13.3284 1 12.5V3.5Z"/></svg>')!important;
+  }
 }
 tab-group[collapsed] .tab-group-label-container {
+  #tabbrowser-tabs[expanded] & {
   margin-right:0!important;
+  }
 }
+
 .tab-group-label-container {
+  #tabbrowser-tabs[expanded] & {
   margin-block-start: var( --root-tab-top-margin)!important;
   margin-right:0!important;
   margin-inline: var(--tab-inner-inline-margin)!important;
+  }
 }
 .tab-group-label-container {
     tab-group:not([collapsed])>&, tab-group[collapsed][hasactivetab]>& {
+      #tabbrowser-tabs[expanded] & {
         padding-block-end: var(--group-first-tab-top-margin);
     }
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -5641,6 +5657,13 @@ tab-group[collapsed] .tab-group-label-container {
 }
 }
 .popup-main-panel{
+}
+#tabbrowser-tabs[orient="vertical"]:not([expanded]){
+  .tab-child-count{
+    margin-left:-11px;
+    margin-top:20px;
+    padding-bottom:0px!important;
+  }
 }
 tab:hover .tab-child-count{
 display:none;
