@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.4
+// @version        0.2.4.5
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1279,7 +1279,8 @@ window.nativeTreeTabs = {
         nextTab.setAttribute("hidden-child-rootID", rootId);
         SessionStore.setCustomTabValue(nextTab, "hidden-child-rootID", rootId);
       }
-      count++;
+      if (!nextTab.hasAttribute("nestTab"))
+        count++;
       //Don't unravel nested hidden trees
       if (nextTab.hasAttribute("twisted-root")) {
         let treeDepthNested = getTreeDepth(nextTab);
@@ -1289,7 +1290,8 @@ window.nativeTreeTabs = {
           if (nextTabTreeDepthNested == null || nextTabTreeDepthNested <= treeDepthNested) {
             break;
           }
-          count++;
+          if (!nextTab.hasAttribute("nestTab"))
+            count++;
           nextTab = getNextTab(nextTab);
         }
       } else nextTab = getNextTab(nextTab);
@@ -1386,6 +1388,7 @@ window.nativeTreeTabs = {
   tabRestore: function(aTab) {
     let restoredDepth = SessionStore.getCustomTabValue(aTab, "tree-depth");
     let restoredOpenerId = SessionStore.getCustomTabValue(aTab, "opener-id");
+
     if (restoredOpenerId) {
       aTab.setAttribute("opener-id", restoredOpenerId);
     }
@@ -1431,9 +1434,17 @@ window.nativeTreeTabs = {
         }
       }
     }
+    let nestTab = SessionStore.getCustomTabValue(aTab, "nestTab");
+    if (nestTab) {
+      aTab.setAttribute("nestTab", "");
+      aTab.label = nestTab;
+    }
+
     let twistedRoot = SessionStore.getCustomTabValue(aTab, "twisted-root");
     if (twistedRoot) {
       aTab.setAttribute("twisted-root", true);
+    }
+    if (nestTab || twistedRoot) {
       restoreCount(aTab);
     }
 
@@ -1478,12 +1489,6 @@ window.nativeTreeTabs = {
         hideTab(aTab);
       }
     }
-
-    let nestTab = SessionStore.getCustomTabValue(aTab, "nestTab");
-    if (nestTab) {
-      aTab.setAttribute("nestTab", "");
-      aTab.label = nestTab;
-    }
   },
 
   tabOpen: function(aTab) {
@@ -1520,8 +1525,6 @@ window.nativeTreeTabs = {
       aTab.setAttribute("tree-id", restoredId);
     }
 
-
-
     let treeDepth = SessionStore.getCustomTabValue(aTab, "tree-depth");
 
     if (treeDepth && !soloTab) {
@@ -1552,17 +1555,7 @@ window.nativeTreeTabs = {
 
     if (twistedRoot) {
       aTab.setAttribute("twisted-root", true);
-      restoreCount(aTab);
     }
-
-    let hiddenChild = SessionStore.getCustomTabValue(aTab, "hidden-child");
-    let hiddenChildRoot = SessionStore.getCustomTabValue(aTab, "hidden-child-rootID");
-    if (hiddenChild && hiddenChildRoot) {
-      aTab.setAttribute("hidden-child", true);
-      aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
-      increaseChildCount(aTab);
-    }
-
     let nestTab = SessionStore.getCustomTabValue(aTab, "nestTab");
     if (nestTab) {
       aTab.setAttribute("nestTab", "");
@@ -1584,11 +1577,25 @@ window.nativeTreeTabs = {
           event.stopPropagation()
         }
       });
+    }
+    if (nestTab || twistedRoot) {
+      restoreCount(aTab);
+    }
 
+    let previousTab = getPreviousTab(aTab);
+
+    let hiddenChild = SessionStore.getCustomTabValue(aTab, "hidden-child");
+    let hiddenChildRoot = SessionStore.getCustomTabValue(aTab, "hidden-child-rootID");
+    if (hiddenChild && hiddenChildRoot) {
+      aTab.setAttribute("hidden-child", true);
+      aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
+      increaseChildCount(aTab);
+    } else if (isTab(previousTab)) {
+      increaseChildCount(aTab);
     }
 
 
-    let previousTab = getPreviousTab(aTab);
+
     let restorePaneldId = SessionStore.getCustomTabValue(aTab, "panel-id");
     let foundPanel = false;
     //Don't restore panel for out of window dragging
@@ -2516,62 +2523,89 @@ window.nativeTreeTabs = {
     let mainPopupSet = document.getElementById('mainPopupSet');
     mainPopupSet.appendChild(popup);
 
+
+    const lazy = {};
+    ChromeUtils.defineESModuleGetters(lazy, {
+      PageWireframes: "resource:///modules/sessionstore/PageWireframes.sys.mjs",
+      SponsorProtection: "moz-src:///browser/components/newtab/SponsorProtection.sys.mjs",
+      TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
+    });
+
+
     gBrowser.tabContainer.ensureTabPreviewPanelLoaded();
     this.originalPreviewPanelActivate = gBrowser.tabContainer.previewPanel.activate;
 
     gBrowser.tabContainer.previewPanel.activate = function(tabOrGroup) {
 
       try {
-        if (gBrowser.isTab(tabOrGroup) && (tabOrGroup.hasAttribute("twisted-root") || tabOrGroup.hasAttribute("nestTab"))) {
-          let popup = document.getElementById("preview-collapsed-tree");
-          popup.hidePopup();
-          let menuMainDiv = popup.querySelector(".popup-main-panel");
-          while (menuMainDiv.childNodes.length > 0) {
-            menuMainDiv.removeChild(menuMainDiv.lastChild);
-          }
-          let nextTab = tabOrGroup.nextSibling;
-          let rootDepth = getTreeDepth(tabOrGroup);
-          while (isTab(nextTab) && getTreeDepth(nextTab) > rootDepth) {
-            let item = document.createXULElement("toolbarbutton");
-            let img = nextTab.querySelector(".tab-icon-image");
-            if (img) {
-              img = img.src;
+
+        if (gBrowser.isTab(tabOrGroup)) {
+          if (tabOrGroup.hasAttribute("twisted-root") || tabOrGroup.hasAttribute("nestTab")) {
+
+            function noteHover() {
+              tabOrGroup.removeEventListener("TabNoteIconHoverStart", noteHover);
+              gBrowser.tabContainer.previewPanel.deactivate(null, {
+                force: true
+              });
+              popup.hidePopup();
             }
-            let itemTab = nextTab;
-            item.setAttribute("image", img);
-            item.setAttribute("label", nextTab.label);
-            item.setAttribute("class", "tab-preview-item subviewbutton subviewbutton-iconic group-preview-button");
-            item.addEventListener("click", (aEvent) => {
-              if (window.gBrowser.tabs.includes(itemTab))
-                window.gBrowser.selectedTab = itemTab;
-            })
-            menuMainDiv.appendChild(item);
-            nextTab = nextTab.nextSibling;
-          }
-          popup.openPopup(tabOrGroup, "topright topleft", 0, 3, false, false);
 
-          function hidePreviewPopup() {
+            tabOrGroup.addEventListener("TabNoteIconHoverStart", noteHover);
+            let popup = document.getElementById("preview-collapsed-tree");
             popup.hidePopup();
+            let menuMainDiv = popup.querySelector(".popup-main-panel");
+            while (menuMainDiv.childNodes.length > 0) {
+              menuMainDiv.removeChild(menuMainDiv.lastChild);
+            }
+            if (tabOrGroup.hasAttribute("twisted-root")) {
+              let nextTab = tabOrGroup.nextSibling;
+              let rootDepth = getTreeDepth(tabOrGroup);
+              while (isTab(nextTab) && getTreeDepth(nextTab) > rootDepth) {
+                if (!nextTab.hasAttribute("nestTab")) {
+                  let item = document.createXULElement("toolbarbutton");
+                  let img = nextTab.querySelector(".tab-icon-image");
+                  if (img) {
+                    img = img.src;
+                  }
+                  let itemTab = nextTab;
+                  item.setAttribute("image", img);
+                  item.setAttribute("label", nextTab.label);
+                  item.setAttribute("class", "tab-preview-item subviewbutton subviewbutton-iconic group-preview-button");
+                  item.addEventListener("click", (aEvent) => {
+                    if (window.gBrowser.tabs.includes(itemTab))
+                      window.gBrowser.selectedTab = itemTab;
+                  })
+                  menuMainDiv.appendChild(item);
+                }
+                nextTab = nextTab.nextSibling;
+              }
+              popup.openPopup(tabOrGroup, "topright topleft", 0, 3, false, false);
+
+              function hidePreviewPopup() {
+                popup.hidePopup();
+              }
+
+              function addHideOnMouseOut() {
+                popup.removeEventListener("mouseover", addHideOnMouseOut);
+                popup.addEventListener("mouseleave", hidePreviewPopup);
+              }
+
+              window.addEventListener("TabSelect", hidePreviewPopup);
+              nextTab.addEventListener("mouseout", hidePreviewPopup);
+              popup.addEventListener("mouseover", addHideOnMouseOut);
+
+              popup.addEventListener("popuphiding", function(aEvent) {
+                window.removeEventListener("TabSelect", hidePreviewPopup);
+                popup.removeEventListener("mouseover", addHideOnMouseOut);
+                nextTab.removeEventListener("mouseout", hidePreviewPopup);
+                popup.removeEventListener("mouseleave", hidePreviewPopup);
+
+              });
+              nativeTreeTabs.originalPreviewPanelActivate.apply(this, arguments);
+
+            }
+            return;
           }
-
-          function addHideOnMouseOut() {
-            popup.removeEventListener("mouseover", addHideOnMouseOut);
-            popup.addEventListener("mouseleave", hidePreviewPopup);
-          }
-
-          window.addEventListener("TabSelect", hidePreviewPopup);
-          nextTab.addEventListener("mouseout", hidePreviewPopup);
-          popup.addEventListener("mouseover", addHideOnMouseOut);
-
-          popup.addEventListener("popuphiding", function(aEvent) {
-            window.removeEventListener("TabSelect", hidePreviewPopup);
-            popup.removeEventListener("mouseover", addHideOnMouseOut);
-            nextTab.removeEventListener("mouseout", hidePreviewPopup);
-            popup.removeEventListener("mouseleave", hidePreviewPopup);
-
-          });
-
-          return;
         }
         popup.hidePopup();
         nativeTreeTabs.originalPreviewPanelActivate.apply(this, arguments);
@@ -3851,12 +3885,13 @@ unloadedCheck = function(aTab) {
 increaseChildCount = function(aTab) {
 
   let root = getRootTab(aTab);
+  console.log(root);
 
-  while (isTab(root) && !root.hasAttribute("twisted-root")) {
+  while (isTab(root) && (!root.hasAttribute("twisted-root") && !root.hasAttribute("nestTab"))) {
     root = getRootTab(root);
   }
-
-  if (!isTab(root) || !root.hasAttribute("twisted-root")) {
+  console.log(root);
+  if (!isTab(root) || (!root.hasAttribute("twisted-root") && !root.hasAttribute("nestTab"))) {
     return;
   }
 
@@ -3880,10 +3915,11 @@ restoreCount = function(aTab) {
   let count = 0;
   while (isTab(hiddenChild)) {
     let hiddenChildDepth = getTreeDepth(hiddenChild);
-    if (hiddenChildDepth == null || hiddenChildDepth <= aTabDepth || !hiddenChild.hasAttribute("hidden-child")) {
+    if (hiddenChildDepth == null || hiddenChildDepth <= aTabDepth) {
       break;
     }
-    count++;
+    if (!hiddenChild.hasAttribute("nestTab"))
+      count++;
     hiddenChild = hiddenChild.nextSibling;
   }
   addTabChildCount(aTab, count)
@@ -3895,18 +3931,19 @@ addTabChildCount = function(aTab, count, unhide = false) {
     tabChildCount = document.createElement("label");
     tabChildCount.setAttribute("class", "tab-child-count tab-text");
     tabChildCount.style.paddingBottom = "2px";
-    let tabLabel = aTab.querySelector(".tab-close-button");
+    let tabLabel = aTab.querySelector(".tab-note-icon");
     tabLabel.parentNode.insertBefore(tabChildCount, tabLabel);
     // let tabLabel = aTab.querySelector(".tab-label");
     // tabLabel.after(tabChildCount);
     // tabLabel.parentNode.style.flexDirection = "row";
   }
-  if (unhide) {
+  if (unhide && !aTab.hasAttribute("nestTab")) {
     tabChildCount.textContent = "";
   } else {
     tabChildCount.textContent = "(" + count + ")";
   }
 }
+
 setDomainAttr = function(aTab) {
   if (!isTab(aTab)) return;
   let linkedBrowser = aTab.linkedBrowser;
@@ -5689,7 +5726,7 @@ display:none;
 }
 .tab-preview-item{
   max-width:37em;
-  width:100%;
+  width:95%;
   -moz-context-properties: fill, stroke;
   fill: currentColor;
 }
