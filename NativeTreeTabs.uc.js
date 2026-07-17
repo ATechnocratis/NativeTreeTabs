@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.2
+// @version        0.2.4.3
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2501,6 +2501,8 @@ window.nativeTreeTabs = {
     popup.setAttribute('type', 'arrow');
     popup.setAttribute('noautofocus', 'true');
     popup.setAttribute('norolluponanchor', 'true');
+    popup.setAttribute('role', 'menu');
+
     popup.setAttribute("class", "animatable-menupopup toolbar-menupopup");
 
     let menuMainDiv = document.createElement('div');
@@ -2520,23 +2522,29 @@ window.nativeTreeTabs = {
     gBrowser.tabContainer.previewPanel.activate = function(tabOrGroup) {
 
       try {
-        if (gBrowser.isTab(tabOrGroup) && tabOrGroup.hasAttribute("twisted-root")) {
-          let popup = document.getElementById("preview-collapsed-tree")
+        if (gBrowser.isTab(tabOrGroup) && (tabOrGroup.hasAttribute("twisted-root") || tabOrGroup.hasAttribute("nestTab"))) {
+          let popup = document.getElementById("preview-collapsed-tree");
+          popup.hidePopup();
           let menuMainDiv = popup.querySelector(".popup-main-panel");
           while (menuMainDiv.childNodes.length > 0) {
             menuMainDiv.removeChild(menuMainDiv.lastChild);
           }
           let nextTab = tabOrGroup.nextSibling;
           let rootDepth = getTreeDepth(tabOrGroup);
-          while (isTab(nextTab) && nextTab.hasAttribute("hidden-child") && getTreeDepth(nextTab) > rootDepth) {
-            let item = document.createXULElement("menuitem");
+          while (isTab(nextTab) && getTreeDepth(nextTab) > rootDepth) {
+            let item = document.createXULElement("toolbarbutton");
             let img = nextTab.querySelector(".tab-icon-image");
             if (img) {
               img = img.src;
             }
+            let itemTab = nextTab;
             item.setAttribute("image", img);
             item.setAttribute("label", nextTab.label);
-            item.setAttribute("class", "tab-preview-item");
+            item.setAttribute("class", "tab-preview-item subviewbutton subviewbutton-iconic group-preview-button");
+            item.addEventListener("click", (aEvent) => {
+              if (window.gBrowser.tabs.includes(itemTab))
+                window.gBrowser.selectedTab = itemTab;
+            })
             menuMainDiv.appendChild(item);
             nextTab = nextTab.nextSibling;
           }
@@ -2546,15 +2554,26 @@ window.nativeTreeTabs = {
             popup.hidePopup();
           }
 
+          function addHideOnMouseOut() {
+            popup.removeEventListener("mouseover", addHideOnMouseOut);
+            popup.addEventListener("mouseleave", hidePreviewPopup);
+          }
+
           window.addEventListener("TabSelect", hidePreviewPopup);
+          nextTab.addEventListener("mouseout", hidePreviewPopup);
+          popup.addEventListener("mouseover", addHideOnMouseOut);
 
           popup.addEventListener("popuphiding", function(aEvent) {
             window.removeEventListener("TabSelect", hidePreviewPopup);
+            popup.removeEventListener("mouseover", addHideOnMouseOut);
+            nextTab.removeEventListener("mouseout", hidePreviewPopup);
+            popup.removeEventListener("mouseleave", hidePreviewPopup);
+
           });
 
           return;
         }
-
+        popup.hidePopup();
         nativeTreeTabs.originalPreviewPanelActivate.apply(this, arguments);
       } catch (error) {
         console.error(error);
@@ -2567,8 +2586,8 @@ window.nativeTreeTabs = {
     this.originalPreviewPanelDeactivate = gBrowser.tabContainer.previewPanel.deactivate;
     gBrowser.tabContainer.previewPanel.deactivate = function(tabOrGroup) {
       try {
-        popup.hidePopup();
-        Services.focus.activeWindow;
+        // popup.hidePopup();
+        // Services.focus.activeWindow;
         nativeTreeTabs.originalPreviewPanelDeactivate.apply(this, arguments);
       } catch (error) {
         console.error(error);
