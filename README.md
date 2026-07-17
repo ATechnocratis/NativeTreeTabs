@@ -22,16 +22,18 @@
    
  - Tab Groups support
  - Split view support (Will act independent from tree structure)
- - Selecting and moving multiple tab with swift/ctrl + click is possible.
+ - Selecting and moving multiple tab with shift/ctrl + click is possible.
 </details>
 <details>
 <summary> <b> Tab panels (Workspaces)</b></summary>
 
  - Organize tabs in Workspaces for even less clutter
  - Move tabs between panels from the tab context menu (right click menu)
+ - Move a Tab Group in the Manage Group Popup or by selecting all tabs
  - Right click on the name of a panel to rename it
  - Drag panels inside the menu to reorder them
- - Middle click in the Panel Header to instantly open a new panel
+ - Middle click in the Panel Header/button to instantly open a new panel
+ - Scroll on the Panel header/button to cycle the opened panels
 </details>
 <details>
 <summary> <b> Expand on hover support</b></summary>
@@ -46,6 +48,7 @@
    
  - Hide unused trees to save space
  - Closing a collapsed tree parent tab, will close the whole tree
+ - A popup will be show on hove with the collapsed children which are also clickable for faster tab switching
 </details>
 <details>
 <summary> <b> Drag and drop support.</b></summary>
@@ -57,20 +60,37 @@
  - Children (descendants) follow parent tab
 </details>
 <details>
+<summary> <b> Keyboard shortcuts.</b></summary>
+
+ - `Ctrl + Comma(,)` to switch to the next panel or `Ctrl + Shift + Comma(,)` for reverse order
+ - `Ctrl + Alt + Comma(,)` to create a new panel
+ - `Ctrl + Alt + Left/Right arrow` to change the tab indention level
+ - `Ctrl + Alt + Up/Down arrow` to move the tab and change indention level
+</details>
+<details>
+<summary> <b> Organize with Nest tabs.</b></summary>
+
+ - Right click a tab/s and select `Nest tabs`
+ - Select a name
+ - A new tree root will be created and all the selected tabs/trees will be under it
+ - Nest tabs will collapsed/show the tree on click just like Tab Groups
+ - Right click to rename them
+</details>
+<details>
 <summary> <b> Session Restore friendly*</b></summary>
 
  - Saves the tree structure and the Tab panels
  - *Enable the option to restore session from Firefox settings to not loose you organized structure and panels between restarts
 </details>
 <details>
-<summary> <b> Customizable</b></summary>
+<summary> <b> Customizable and Extras</b></summary>
 
  - Search for `treeTabs.` in `about:config`.
  - Change tab style and margins
  - Enable extra functionalities
-
-**Optional:**
-Domain based tab color, add you custom rules in the end of the CSS style in the file.
+ - Tab flip: switch to previous selected tab when the current selected tab is clicked in the tab strip
+enable `treeTabs.behavior.switchSelectedOnClick`
+ - Domain based tab color, add you custom rules in the end of the CSS style in the file.
 </details>
       
 
