@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.5
+// @version        0.2.4.6
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1651,7 +1651,7 @@ window.nativeTreeTabs = {
                 }
               }
             }
-          } else if (!previousTab && nativeTreeTabs.tabPanels.indexOf(panel) != 0) {
+          } else if (!aTab.pinned && !previousTab && nativeTreeTabs.tabPanels.indexOf(panel) != 0) {
             //Case of no previous tab in strip (excluding pinned tabs)
             // Panel should be first in the array but isn't => move it
             let menupopup = document.getElementById('tab-panels-menupopup-view');
