@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.6
+// @version        0.2.4.7
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1629,10 +1629,11 @@ window.nativeTreeTabs = {
       } else {
         //Panel exists
         if (!findPanelInMenu(panel)) {
+          //usually for the first panel
           addNewPanelInMenu(panel, checkIt = false);
         } else {
           //Panel is in menu
-          if (previousTab && previousTab.hasAttribute("panel-id") && previousTab.hasAttribute("tabPanel-hidden")) {
+          if (!aTab.pinned && previousTab && previousTab.hasAttribute("panel-id") && previousTab.getAttribute("panel-id") != panel.id.toString()) {
             let previousPanelId = previousTab.getAttribute("panel-id");
             let previousPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === previousPanelId);
             if (previousPanelIndex && nativeTreeTabs.tabPanels.indexOf(panel) < previousPanelIndex) {
@@ -1647,7 +1648,6 @@ window.nativeTreeTabs = {
                 let prevPanelItemInmenu = menupopup.querySelector('[panel-id="' + previousPanelId + '"]');
                 if (panelItemInmenu && panelItemInmenu) {
                   prevPanelItemInmenu.after(panelItemInmenu)
-                  // menupopup.insertBefore(prevPanelItemInmenu,panelItemInmenu);
                 }
               }
             }
@@ -3018,7 +3018,7 @@ window.nativeTreeTabs = {
           //last
           position = null;
         } else {
-          while (position == null || indexOfBeforePanel > 0) {
+          while (position == null && indexOfBeforePanel > 0) {
             let previousBeforePanel = this.tabPanels[indexOfBeforePanel - 1];
             let previousBeforePanelId = previousBeforePanel.id.toString();
             pTab = gBrowser.tabs.find(tab => !tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === previousBeforePanelId);
@@ -3033,6 +3033,9 @@ window.nativeTreeTabs = {
             //top of tab strip move
             position = window.gBrowser.tabs[window.gBrowser.pinnedTabCount];
             if (position.getAttribute("panel-id") === panelId) {
+              //tabs already in correct position only array is wrong
+              let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
+              moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, indexOfBeforePanel);
               return;
             }
           }
@@ -3885,12 +3888,9 @@ unloadedCheck = function(aTab) {
 increaseChildCount = function(aTab) {
 
   let root = getRootTab(aTab);
-  console.log(root);
-
   while (isTab(root) && (!root.hasAttribute("twisted-root") && !root.hasAttribute("nestTab"))) {
     root = getRootTab(root);
   }
-  console.log(root);
   if (!isTab(root) || (!root.hasAttribute("twisted-root") && !root.hasAttribute("nestTab"))) {
     return;
   }
