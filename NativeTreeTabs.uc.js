@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.3
+// @version        0.2.4.4
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -5688,6 +5688,8 @@ tab:hover .tab-child-count{
 display:none;
 }
 .tab-preview-item{
+  max-width:37em;
+  width:100%;
   -moz-context-properties: fill, stroke;
   fill: currentColor;
 }
