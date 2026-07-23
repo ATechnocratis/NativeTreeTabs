@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.8
+// @version        0.2.4.9
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -3685,6 +3685,12 @@ getNextTab = function(aTab) {
 
   let nextTab = aTab.nextSibling;
 
+  if (aTab.splitview) {
+    if (aTab.splitview.tabs.indexOf(aTab) === 1) {
+      nextTab = aTab.splitview.nextSibling;
+    }
+  }
+
   if (aTab.group) {
     if (aTab.group.tabs.indexOf(aTab) === aTab.group.tabs.length - 1) {
       nextTab = aTab.group.nextSibling;
@@ -3694,10 +3700,6 @@ getNextTab = function(aTab) {
     nextTab = nextTab.tabs[0];
   }
 
-  // while (nextTab && (nextTab.splitview || nextTab.splitViewId)) {
-  //   if (!isTab(nextTab) && nextTab.tagName != "tab-split-view-wrapper") return null;
-  //   nextTab = nextTab.nextSibling;
-  // }
   if (nextTab && nextTab.splitViewId) return nextTab.tabs[0];
   if (!isTab(nextTab)) return null;
   return nextTab;
@@ -3708,21 +3710,24 @@ getPreviousTab = function(aTab) {
   if (aTab == null) {
     return;
   }
-
   let previousTab = aTab.previousSibling;
+
+  if (aTab.splitview) {
+    if (aTab.splitview.tabs.indexOf(aTab) === 0) {
+      previousTab = aTab.splitview.previousSibling;
+    }
+  }
 
   if (aTab.group) {
     if (aTab.group.tabs.indexOf(aTab) === 0) {
       previousTab = aTab.group.previousSibling;
     }
   }
+
   if (previousTab && previousTab.tagName === "tab-group") {
     previousTab = previousTab.tabs[previousTab.tabs.length - 1];
   }
-  // while (previousTab && (previousTab.splitview || previousTab.splitViewId)) {
-  //   if (!isTab(previousTab) && previousTab.tagName != "tab-split-view-wrapper") return null;
-  //   previousTab = previousTab.previousSibling;
-  // }
+
   if (previousTab && previousTab.splitViewId) return previousTab.tabs[1];
   if (!isTab(previousTab)) return null;
   return previousTab;
