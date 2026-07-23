@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.7
+// @version        0.2.4.8
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2048,11 +2048,11 @@ window.nativeTreeTabs = {
         let nextTab = getNextTab(aTab);
         if (aTab.selected && previousTab) {
           let tabDepth = getTreeDepth(aTab);
-          let focusNext = (nextTab && unloadedCheck(nextTab) && !nextTab.hasAttribute("nestTab") && getTreeDepth(nextTab) >= tabDepth) ?
+          let focusNext = (nextTab && unloadedCheck(nextTab) && !nextTab.hasAttribute("nestTab") && getTreeDepth(nextTab) >= tabDepth && tabVisible(nextTab)) ?
             true : false;
           if (focusNext) {
             gBrowser.setSuccessor(aTab, nextTab);
-          } else if (tabDepth != 0 && unloadedCheck(previousTab)) {
+          } else if (tabDepth != 0 && unloadedCheck(previousTab) && tabVisible(previousTab)) {
             gBrowser.setSuccessor(aTab, previousTab);
           }
           //Don't select another panel(hidden one) tabs
@@ -2523,15 +2523,6 @@ window.nativeTreeTabs = {
     let mainPopupSet = document.getElementById('mainPopupSet');
     mainPopupSet.appendChild(popup);
 
-
-    const lazy = {};
-    ChromeUtils.defineESModuleGetters(lazy, {
-      PageWireframes: "resource:///modules/sessionstore/PageWireframes.sys.mjs",
-      SponsorProtection: "moz-src:///browser/components/newtab/SponsorProtection.sys.mjs",
-      TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
-    });
-
-
     gBrowser.tabContainer.ensureTabPreviewPanelLoaded();
     this.originalPreviewPanelActivate = gBrowser.tabContainer.previewPanel.activate;
 
@@ -2582,6 +2573,7 @@ window.nativeTreeTabs = {
               popup.openPopup(tabOrGroup, "topright topleft", 0, 3, false, false);
 
               function hidePreviewPopup() {
+                tabOrGroup.removeEventListener("TabNoteIconHoverStart", noteHover);
                 popup.hidePopup();
               }
 
@@ -5575,13 +5567,15 @@ tab[soundplaying] .tab-background {
 }
 #tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden] *::before,
 #tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden],
-#tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden] * {
+#tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden] *,
+#tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has(>tab[tabPanel-hidden]) {
     max-height: 0px!important;
     min-height: 0px!important;
     margin-block: 0!important;
     margin-top: 0!important;
     margin-block-start: 0!important;
     border:none!important;
+    padding: 0!important;
 }
 #pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden] *::before,
 #pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden],
@@ -5721,7 +5715,7 @@ tab-group[collapsed] .tab-group-label-container {
     padding-bottom:0px!important;
   }
 }
-tab:hover .tab-child-count{
+tab:not([tab-note],[selected]):hover .tab-child-count{
 display:none;
 }
 .tab-preview-item{
