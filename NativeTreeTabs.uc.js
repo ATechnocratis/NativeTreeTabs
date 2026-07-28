@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.2.4.9
+// @version        0.2.4.10
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -3927,7 +3927,6 @@ addTabChildCount = function(aTab, count, unhide = false) {
   if (tabChildCount == null) {
     tabChildCount = document.createElement("label");
     tabChildCount.setAttribute("class", "tab-child-count tab-text");
-    tabChildCount.style.paddingBottom = "2px";
     let tabLabel = aTab.querySelector(".tab-note-icon");
     tabLabel.parentNode.insertBefore(tabChildCount, tabLabel);
     // let tabLabel = aTab.querySelector(".tab-label");
@@ -5272,7 +5271,6 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
 }
 #tab-panels-menupopup-view:has(menuitem[checked]) {
     padding-top: 7px!important;
-
 }
 #tab-panels-menupopup menuitem {
     font-size: 14px;
@@ -5535,10 +5533,6 @@ tab[soundplaying] .tab-background {
   }
 }
 
-#tabbrowser-arrowscrollbox[orient="vertical"] tab[hidden-child] *, #tabbrowser-arrowscrollbox[orient="vertical"] tab[hidden-child] {
-    max-height: 0px!important;
-    min-height: 0px!important;
-}
 /* ABSOLUTE CINEMA */
 #tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='0']:not([twisted-root]):has(+tab:not([tree-depth='0'])) .tab-icon-image:hover {
     content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
@@ -5570,10 +5564,13 @@ tab[soundplaying] .tab-background {
 #tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='9']:not([twisted-root]):has(+tab[tree-depth='2']) .tab-icon-image:hover {
     content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
 }
-#tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden] *::before,
-#tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden],
-#tabbrowser-arrowscrollbox[orient="vertical"] tab[tabPanel-hidden] *,
-#tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has(>tab[tabPanel-hidden]) {
+#tabbrowser-arrowscrollbox[orient="vertical"]{
+ tab[hidden-child] ,
+ tab[hidden-child] *,
+ tab[tabPanel-hidden] *::before,
+ tab[tabPanel-hidden],
+ tab[tabPanel-hidden] *,
+ tab-split-view-wrapper:has(>tab[tabPanel-hidden]) {
     max-height: 0px!important;
     min-height: 0px!important;
     margin-block: 0!important;
@@ -5581,6 +5578,7 @@ tab[soundplaying] .tab-background {
     margin-block-start: 0!important;
     border:none!important;
     padding: 0!important;
+ }
 }
 #pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden] *::before,
 #pinned-tabs-container[orient="vertical"] tab[tabPanel-hidden],
@@ -5713,15 +5711,22 @@ tab-group[collapsed] .tab-group-label-container {
 }
 .popup-main-panel{
 }
+tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
+  padding-bottom:2px;
+}
 #tabbrowser-tabs[orient="vertical"]:not([expanded]){
-  .tab-child-count{
+ tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
     margin-left:-11px;
     margin-top:20px;
     padding-bottom:0px!important;
   }
 }
 tab:not([tab-note],[selected]):hover .tab-child-count{
-display:none;
+  display:none;
+}
+tab[tabPanel-hidden]  .tab-child-count,
+tab[hidden-child] .tab-child-count{
+  display:none!important;
 }
 .tab-preview-item{
   max-width:37em;
