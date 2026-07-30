@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.0
+// @version        0.3.0.1
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -6032,6 +6032,10 @@ let modifyCustomizePage = {
       margin-left:6px;
       margin-right:6px;
     }
+    .ntt-input:has(input[type="number"]) label{
+      max-width:40%;
+      min-width:40%;
+    }
     .ntt-input:has(input[type="text"]) label{
       max-width:40%;
       min-width:40%;
@@ -6421,6 +6425,15 @@ loadNTTstyle = function() {
   let tabHeight = checkOrSetPref("treeTabs.tabHeight", "30");
   let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "1");
 
+  let closeButtonPadding;
+  if (tabHeight > 20)
+    closeButtonPadding = 4;
+  else if (tabHeight > 15)
+    closeButtonPadding = 3;
+  else if (tabHeight > 12)
+    closeButtonPadding = 1;
+  else
+    closeButtonPadding = 0;
 
   let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
     Ci.nsIStyleSheetService
@@ -6431,7 +6444,7 @@ loadNTTstyle = function() {
     --branch-tab-top-margin:  ` + branchTabTopMargin + `px;
     --tab-height: ` + tabHeight + `px;
     --label-font-size: ` + labelFontSize + `px;
-    --tab-close-button-padding-custom: 4px;
+    --tab-close-button-padding: ` + closeButtonPadding + `px!important;
     --tab-border-radius-forced: ` + tabBorderRadius + `px;
     --group-first-tab-top-margin:  ` + (1 + rootTabTopMargin * 0.7) + `px;
     --tree-tab-default-color: rgb(130, 120, 140);
@@ -6466,6 +6479,22 @@ loadNTTstyle = function() {
 #vertical-tabs tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden]) {
     padding-top: var(--branch-tab-top-margin)!important;
 }
+#vertical-tabs tab:not([pinned])
+  .tab-background {
+    margin-block: 0!important;
+    min-height:var(--tab-height)!important;
+}
+.tab-close-button{
+  max-height:var(--tab-height)!important;
+  max-width:var(--tab-height)!important;
+}
+.tab-throbber, .tab-icon-pending, .tab-icon-image, .tab-sharing-icon-overlay, .tab-icon-overlay
+{
+  max-height:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
+  max-width:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
+  min-height:10px!important;
+  min-width:10px!important;
+}
 #tabbrowser-arrowscrollbox[orient="vertical"]>tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"], #tabbrowser-arrowscrollbox[orient="vertical"]>tab-split-view-wrapper {
     padding-top: var(--root-tab-top-margin) !important;
     margin-bottom: 0px!important;
@@ -6496,9 +6525,7 @@ loadNTTstyle = function() {
     display: none!important;
 }
 /*Close button style */
-#tabbrowser-arrowscrollbox[orient="vertical"]>tab .tab-close-button {
-    padding: var(--tab-close-button-padding-custom)!important;
-}
+
 /*default favicon loading*/
 #vertical-tabs tab[pendingicon="true"] .tab-icon-image {
     opacity: 0!important;
@@ -6514,6 +6541,12 @@ loadNTTstyle = function() {
   width: 100%!important;
   margin-inline: 0px!important;
 }
+#tabbrowser-tabs[orient="vertical"][expanded] 
+/*if text enalbed 
+#tabs-newtab-button{
+  padding-left:  var(--tab-inline-padding)!important;
+}
+*/
 #tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button, #vertical-tabs-newtab-button {
   &:hover {
     background-color: transparent!important;
@@ -6526,13 +6559,13 @@ loadNTTstyle = function() {
 }
 #tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button::before, #vertical-tabs-newtab-button::before {
   content:"";
+  position: absolute;
   display: block;
   width: calc (100% - var(--tab-inner-inline-margin));
+  height:var(--tab-min-height);
   left: var(--tab-inner-inline-margin);
   right: var(--tab-inner-inline-margin);
   border-radius: var(--tab-border-radius);
-  position: absolute;
-  height: 32px;
 }
 /* Audio playing icon enlarge */
 .tab-audio-button {
@@ -6741,15 +6774,14 @@ tab[nestTab]{
 .tab-group-label {
   #tabbrowser-tabs[expanded] & {
   max-width:100%!important;
-  min-width:0!important;
   align-self: unset!important;
   margin-top: 0px!important;
   margin-inline-end:0px!important;
   text-align: left!important;
   border-radius: var(--tab-border-radius-forced)!important;
-  text-indent: calc( var(--tab-icon-end-margin) + 20px)!important;
+  text-indent: calc( var(--tab-icon-end-margin) + 16px)!important;
   background-image: url("chrome://global/skin/icons/folder.svg")!important;
-  background-size: 18px!important;
+  background-size:  clamp(0px, 16px, calc( var(--tab-height) - var(--tab-close-button-padding) )) auto;
   -moz-context-properties: fill, fill-opacity, stroke!important;
   fill: silver!important;
   background-repeat: no-repeat!important;
