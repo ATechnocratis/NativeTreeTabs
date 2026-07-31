@@ -12,22 +12,19 @@
 ## Features
 (click to expand)
 <details>
-<summary> <b> Fast&Lightweight </b> </summary>
+<summary> <b> Fast & Lightweight & Native </b> </summary>
 
  - Only extends the native tabs.
  - No extra resources.
-</details >
-<details>
-<summary> <b> No interference with native features </b> </summary>
-   
  - Tab Groups support
  - Split view support (Will act independent from tree structure)
- - Selecting and moving multiple tab with shift/ctrl + click is possible.
-</details>
+ - Keeps and extends the native Context menu 
+ - Selecting and moving multiple tabs with shift/ctrl + click is possible.
+</details >
 <details>
 <summary> <b> Tab panels (Workspaces)</b></summary>
 
- - Organize tabs in Workspaces for even less clutter
+- Organize tabs in Workspaces for even less clutter
  - Move tabs between panels from the tab context menu (right click menu)
  - Move a Tab Group in the Manage Group Popup or by selecting all tabs
  - Right click on the name of a panel to rename it
@@ -36,19 +33,26 @@
  - Scroll on the Panel header/button to cycle the opened panels
 </details>
 <details>
-<summary> <b> Expand on hover support</b></summary>
-
- - Just enable the expand sidebar on hover option in Firefox sidebar settings
+<summary> <b> Expand on hover support and more</b></summary>
+<p>
+   
+  Just enable the expand sidebar on hover option in Firefox sidebar settings.
+  
+  Or enable the window size mode aware, Smart sidebar resizer in the script settings section.*
+  With this the Sidebar will be full sized on maximized windows and collapsed at normal windows to prioritize browsed content
+  *(Found at the bottom of customize sidebar settings)
+</p>
 </details>
 <details>
-<summary> <b> Middle click the close button to close the whole tree</b></summary>
+<summary> <b> Middle click the close button to close the whole tree under a tab</b></summary>
 </details>
 <details>
 <summary> <b> Collapse tree on favicon click</b></summary>
    
  - Hide unused trees to save space
- - Closing a collapsed tree parent tab, will close the whole tree
- - A popup will be show on hove with the collapsed children which are also clickable for faster tab switching
+ - A popup will be show on hover with the collapsed children which are also clickable for faster tab switching
+ - Clicking the close button on a collapsed tree parent tab, will close the whole tree
+ - Option to automatically collapse trees/groups in settings
 </details>
 <details>
 <summary> <b> Drag and drop support.</b></summary>
