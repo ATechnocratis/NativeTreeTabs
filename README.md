@@ -62,16 +62,17 @@
 <details>
 <summary> <b> Keyboard shortcuts.</b></summary>
 
+ - Modify/remove keyboard shortcuts on Sidebar Settings (Customize sidebar option)
  - `Ctrl + Comma(,)` to switch to the next panel or `Ctrl + Shift + Comma(,)` for reverse order
  - `Ctrl + Alt + Comma(,)` to create a new panel
  - `Ctrl + Alt + Left/Right arrow` to change the tab indention level
  - `Ctrl + Alt + Up/Down arrow` to move the tab and change indention level
+ - `Ctrl + Shift + F` to switch to previous active tab
 </details>
 <details>
 <summary> <b> Organize with Nest tabs.</b></summary>
 
- - Right click a tab/s and select `Nest tabs`
- - Select a name
+ - Right click a tab(s) and select `Nest tabs`
  - A new tree root will be created and all the selected tabs/trees will be under it
  - Nest tabs will collapsed/show the tree on click just like Tab Groups
  - Right click to rename them
@@ -83,14 +84,17 @@
  - *Enable the option to restore session from Firefox settings to not loose you organized structure and panels between restarts
 </details>
 <details>
-<summary> <b> Customizable and Extras</b></summary>
+<summary> <b>Settings and Extras</b></summary>
 
- - Search for `treeTabs.` in `about:config`.
+ - Open the Customize Sidebar settings* and find the Tree Tabs section
+ - (*Cog icon at the bottom of the Sidebar or right click the Sidebar)
  - Change tab style and margins
- - Enable extra functionalities
- - Tab flip: switch to previous selected tab when the current selected tab is clicked in the tab strip
-enable `treeTabs.behavior.switchSelectedOnClick`
- - Domain based tab color, add you custom rules in the end of the CSS style in the file.
+ - Change script behavior
+ - Modify/remove keyboard shortcuts
+ - Enable extra functionalities:
+ - Smart Sidebar resize based on window size mode(Maximized/Normal)
+ - Automatically collapse trees/groups
+ - Tab flip: switch to previous active tab when the current active tab is clicked in the tab strip
 </details>
       
 
@@ -102,15 +106,6 @@ enable `treeTabs.behavior.switchSelectedOnClick`
  and put it inside `chrome/JS/` folder in your Firefox profile.
 - Restart Firefox
 - Done!
+- You can customized the script style and behavior in Firefox Customize Sidebar settings
 
-For no conflicts, make sure no addons that manage tabs are enabled.
-
-**Important:** You have to keep your  userchrome.js loader up to date with Firefox releases.
-
-**Note:**
-The following prefs are set by the script automatically
-
-`browser.tabs.dragDrop.createGroup.enabled`
-`browser.tabs.groups.smart.enabled`
-`browser.tabs.selectOwnerOnClose`
-
+To avoid conflicts, make sure no addons that manage tabs are enabled.
