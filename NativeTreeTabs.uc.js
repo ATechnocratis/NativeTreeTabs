@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.1
+// @version        0.3.0.2
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -146,14 +146,6 @@ window.nativeTreeTabs = {
 
     this.addTabGroupCreateListeners();
     this.customStyle.push(loadNTTstyle());
-
-    this.observeTopic("treeTabs.rootTabTopMargin");
-    this.observeTopic("treeTabs.branchTabTopMargin");
-    this.observeTopic("treeTabs.tabHeight");
-    this.observeTopic("treeTabs.labelFontSize");
-    this.observeTopic("treeTabs.tabBorderRadius");
-    this.observeTopic("treeTabs.style.tabIconStart");
-
 
 
     //add keyboard shortcuts
@@ -1120,7 +1112,13 @@ window.nativeTreeTabs = {
       if (trueNext && trueNext.hasAttribute("tree-depth") && getTreeDepth(trueNext) != 0) {
         let direction = 'up';
         if (newPosition > prevPosition) direction = 'down';
-        nativeTreeTabs.moveTabBefore(aTab.splitview, getClosestZeroDepthTab(trueNext, direction));
+        let closestZero = getClosestZeroDepthTab(trueNext, direction);
+        if (closestZero == null){
+          closestZero = gBrowser.tabs[gBrowser.tabs.length-1];
+          nativeTreeTabs.moveTabAfter(aTab.splitview, closestZero);
+        }
+        else
+          nativeTreeTabs.moveTabBefore(aTab.splitview, closestZero);
       }
       return;
     }
@@ -2165,14 +2163,18 @@ window.nativeTreeTabs = {
     this.observeTopic("treeTabs.behavior.smartResizeSidebar", this.autohideSidebar, this.autohideSidebar.value);
     this.observeTopic("treeTabs.behavior.changePanelOnScroll", this.changePanelOnScroll, this.changePanelOnScroll.value);
 
+    this.observeTopic("treeTabs.rootTabTopMargin");
+    this.observeTopic("treeTabs.branchTabTopMargin");
+    this.observeTopic("treeTabs.tabHeight");
+    this.observeTopic("treeTabs.labelFontSize");
+    this.observeTopic("treeTabs.tabBorderRadius");
+    this.observeTopic("treeTabs.style.tabIconStart");
+
     this.observeTopic("treeTabs.style.collapsedChildrenCounter", null, true);
     this.observeTopic("treeTabs.style.customText", null, true);
     this.observeTopic("treeTabs.style.customBackground", null, true);
     this.observeTopic("treeTabs.style.customGroups", null, true);
-
-
-
-
+    this.observeTopic("treeTabs.style.hideContainerLine", null, true);
 
     this.observeTopic("treeTabs.defaultPanelName", this.defaultPanelName, this.defaultPanelName.value);
     this.observeTopic("browser.tabs.insertRelatedAfterCurrent", this.moveNewTabsDirectlyUnderParent);
@@ -2533,13 +2535,11 @@ window.nativeTreeTabs = {
         ) {
           return aTab.owner;
         }
-
         // Try to find a remaining tab that comes after the given tab
         let remainingTabs = Array.prototype.filter.call(
           this.visibleTabs,
           tab => !excludeTabs.has(tab)
         );
-
         if (Services.prefs.getBoolPref("browser.tabs.selectMRUOnClose", false)) {
           let mruTab = remainingTabs
             .filter(t => t !== aTab)
@@ -2552,13 +2552,10 @@ window.nativeTreeTabs = {
             return mruTab;
           }
         }
-
-
         let tab = this.tabContainer.findNextTab(aTab, {
           direction: 1,
           filter: _tab => remainingTabs.includes(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
         });
-
         if (tab == null) {
           tab = this.tabContainer.findNextTab(aTab, {
             direction: -1,
@@ -2569,50 +2566,41 @@ window.nativeTreeTabs = {
         if (tab) {
           return tab;
         }
-
         // If no qualifying visible tab was found, see if there is a tab in
         // a collapsed tab group that could be selected.
         let eligibleTabs = new Set(this.tabsInCollapsedTabGroups).difference(
           excludeTabs
         );
-
         tab = this.tabContainer.findNextTab(aTab, {
           direction: 1,
           filter: _tab => eligibleTabs.has(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
         });
-
         if (!tab) {
           tab = this.tabContainer.findNextTab(aTab, {
             direction: -1,
             filter: _tab => eligibleTabs.has(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
           });
         }
-
         if (tab) {
           return tab;
         }
-
         tab = this.tabContainer.findNextTab(aTab, {
           direction: -1,
           filter: _tab => remainingTabs.includes(_tab),
         });
-
         if (!tab) {
           tab = this.tabContainer.findNextTab(aTab, {
             direction: 1,
             filter: _tab => remainingTabs.includes(_tab),
           });
         }
-
         if (tab) {
           return tab;
         }
-
         tab = this.tabContainer.findNextTab(aTab, {
           direction: -1,
           filter: _tab => eligibleTabs.has(_tab),
         });
-
         if (!tab) {
           tab = this.tabContainer.findNextTab(aTab, {
             direction: 1,
@@ -4301,14 +4289,17 @@ getPositionUnderRoot = function(rootTab) {
   return newPosition;
 }
 
-getClosestZeroDepthTab = function(aTab, direction) {
-  let getFollowingTab = getNextTab;
-  if (direction == "up") getFollowingTab = getPreviousTab;
+getClosestZeroDepthTab = function(aTab, direction, skipSplitViews = true) {
+  let getFollowingTab = (direction == "up") ? getNextTab : getPreviousTab;
   let followingTab = getFollowingTab(aTab);
-  while (followingTab) {
-    followingTabTreeDepth = getTreeDepth(followingTab);
-    if (followingTabTreeDepth == null || followingTabTreeDepth == 0) {
-      return followingTab;
+  while (followingTab!=null) {
+    if (followingTab.splitview && skipSplitViews) {
+    }
+    else{ 
+      followingTabTreeDepth = getTreeDepth(followingTab);
+      if (followingTabTreeDepth == null || followingTabTreeDepth == 0) {
+        return followingTab;
+      }
     }
     followingTab = getFollowingTab(followingTab);
   }
@@ -5964,6 +5955,7 @@ let modifyCustomizePage = {
     createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
     createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
     createCheckBox("treeTabs.style.customGroups", "Tab Groups styling", extra);
+    createCheckBox("treeTabs.style.hideContainerLine", "Hide container indicator", extra);
 
     createTitleDiv("Keyboard Shortcuts", "(click to change)", extra);
     createKeyInputBox("treeTabs.shortcuts.createPanel", "Create new Tab Panel:", extra);
@@ -6419,11 +6411,11 @@ checkOrSetPref = function(topic, value) {
 loadNTTstyle = function() {
 
   let rootTabTopMargin = checkOrSetPref("treeTabs.rootTabTopMargin", "10");
-  let branchTabTopMargin = checkOrSetPref("treeTabs.branchTabTopMargin", "2");
+  let branchTabTopMargin = checkOrSetPref("treeTabs.branchTabTopMargin", "4");
   let labelFontSize = checkOrSetPref("treeTabs.labelFontSize", "13.4");
   let tabBorderRadius = checkOrSetPref("treeTabs.tabBorderRadius", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius')));
   let tabHeight = checkOrSetPref("treeTabs.tabHeight", "30");
-  let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "1");
+  let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "1.5");
 
   let closeButtonPadding;
   if (tabHeight > 20)
@@ -6476,7 +6468,7 @@ loadNTTstyle = function() {
     padding-block-start: 0px!important;
     padding-block-end: 0px!important;
 }
-#vertical-tabs tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden]) {
+#vertical-tabs tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]) {
     padding-top: var(--branch-tab-top-margin)!important;
 }
 #vertical-tabs tab:not([pinned])
@@ -6495,20 +6487,27 @@ loadNTTstyle = function() {
   min-height:10px!important;
   min-width:10px!important;
 }
-#tabbrowser-arrowscrollbox[orient="vertical"]>tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"], #tabbrowser-arrowscrollbox[orient="vertical"]>tab-split-view-wrapper {
+#tabbrowser-arrowscrollbox[orient="vertical"]>tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]{
     padding-top: var(--root-tab-top-margin) !important;
     margin-bottom: 0px!important;
+}
+#tabbrowser-arrowscrollbox[orient="vertical"]>tab-split-view-wrapper{
+  margin-top: var(--root-tab-top-margin) !important;
+}
+#tabbrowser-arrowscrollbox[orient="vertical"]>tab-split-view-wrapper tab{
+  padding-top: 0px!important;
+
 }
 /*TOP tab margin from top*/
 #tabbrowser-arrowscrollbox[orient="vertical"] {
 
-    tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"] {
+    tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab,tab-split-view-wrapper tab)[tree-depth="0"] {
         padding-top: 6px!important;
     }
-    tab-group:not(:has(tab[tabPanel-hidden="true"])) + tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab)[tree-depth="0"]{
+    tab-group:not(:has(tab[tabPanel-hidden="true"])) + tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab, tab-group tab,tab-split-view-wrapper tab)[tree-depth="0"]{
       padding-top: var(--root-tab-top-margin)!important;
     }
-    tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"] {
+    tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden],tab-split-view-wrapper tab)[tree-depth="0"] {
         padding-top: var(--root-tab-top-margin) !important;
     }
 }
@@ -6521,8 +6520,10 @@ loadNTTstyle = function() {
     font-size: var(--label-font-size)!important;
 }
 /*No container line*/
+@media -moz-pref("treeTabs.style.hideContainerLine") {
 #vertical-tabs .tab-context-line {
     display: none!important;
+}
 }
 /*Close button style */
 
