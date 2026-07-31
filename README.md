@@ -87,7 +87,7 @@
 <summary> <b>Settings and Extras</b></summary>
 
  - Open the Customize Sidebar settings* and find the Tree Tabs section
- - (*Cog icon at the bottom of the Sidebar or right click the Sidebar)
+ - (*Gear icon at the bottom of the Sidebar or right click the Sidebar)
  - Change tab style and margins
  - Change script behavior
  - Modify/remove keyboard shortcuts
