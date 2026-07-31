@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.2
+// @version        0.3.0.3
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -75,6 +75,12 @@ window.nativeTreeTabs = {
     onEnable: smartSidebarResize,
     onDisable: smartSidebarResize,
   },
+  autohideSidebarNormalModeAutoExpand: {
+    value: false,
+    onEnable: toggleSidebars,
+    onDisable: toggleSidebars,
+  },
+
 
   init: function() {
     let version;
@@ -1244,7 +1250,7 @@ window.nativeTreeTabs = {
       });
       return;
     } else {
-      if (aEvent.target.closest(".tab-icon-stack")) {
+      if (aEvent.target.closest(".tab-icon-stack")&&SidebarController._sidebarMain.expanded) {
         let isAncestor = false;
         let root = getRootTab(gBrowser.selectedTab);
         while (isTab(root)) {
@@ -2142,7 +2148,9 @@ window.nativeTreeTabs = {
       }
       if (customVar.hasOwnProperty('onEnable') && topicValue != false &&
         (topicValue == true || setValue == true)) {
-        customVar.onEnable.call(this, true);
+        setTimeout(() => {
+          customVar.onEnable.call(this, true);
+        }, 100);
       }
     } else if (setValue != null) {
       setPref(topic, setValue);
@@ -2161,6 +2169,7 @@ window.nativeTreeTabs = {
     this.observeTopic("treeTabs.behavior.collapseTreesAutomatically", this.collapseTreesAutomatically, this.collapseTreesAutomatically.value);
     this.observeTopic("treeTabs.behavior.collapseGroupsAutomatically", this.collapseGroupsAutomatically, this.collapseGroupsAutomatically.value);
     this.observeTopic("treeTabs.behavior.smartResizeSidebar", this.autohideSidebar, this.autohideSidebar.value);
+    this.observeTopic("treeTabs.behavior.smartResizeSidebarNormalModeAutoExpand", this.autohideSidebarNormalModeAutoExpand, this.autohideSidebarNormalModeAutoExpand.value);
     this.observeTopic("treeTabs.behavior.changePanelOnScroll", this.changePanelOnScroll, this.changePanelOnScroll.value);
 
     this.observeTopic("treeTabs.rootTabTopMargin");
@@ -5548,10 +5557,14 @@ function toggleSidebars() {
   if (nativeTreeTabs.autohideSidebar.value) {
     if (window.windowState === 1) {
       SidebarController._state.updateVisibility(false, true);
-      Services.prefs.setStringPref("sidebar.visibility", "always-show");
+      if(nativeTreeTabs.autohideSidebarNormalModeAutoExpand.value)
+        Services.prefs.setStringPref("sidebar.visibility", "always-show");
 
     } else if (window.windowState === 3) {
-      Services.prefs.setStringPref("sidebar.visibility", "expand-on-hover");
+      if(nativeTreeTabs.autohideSidebarNormalModeAutoExpand.value)
+        Services.prefs.setStringPref("sidebar.visibility", "expand-on-hover");
+      else
+        Services.prefs.setStringPref("sidebar.visibility", "always-show");
       SidebarController._state.updateVisibility(false, false);
     }
   }
@@ -5917,7 +5930,10 @@ let modifyCustomizePage = {
     createCheckBox("treeTabs.behavior.collapseTreesAutomatically", "Automatically Collapse Trees", extra);
     createCheckBox("treeTabs.behavior.collapseGroupsAutomatically", "Automatically Collapse Tab Groups", extra);
     createCheckBox("treeTabs.style.collapsedChildrenCounter", "Show collapsed children counter", extra);
-    createCheckBox("treeTabs.behavior.smartResizeSidebar", "Smart expand/collapse sidebar on window size mode change", extra);
+    let n3 = createCheckBox("treeTabs.behavior.smartResizeSidebar", "Smart expand/collapse sidebar on window size mode change", extra);
+    createCheckBox("treeTabs.behavior.smartResizeSidebarNormalModeAutoExpand", "Auto expand on normal mode", extra,n3);
+
+
     createTitleDiv("Style options", null, extra);
 
     createNumberInputBox("treeTabs.tabHeight", {
@@ -6845,6 +6861,7 @@ tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
     padding-bottom:0px!important;
   }
 }
+#tabbrowser-tabs[orient="vertical"][expanded]
 tab:not([tab-note],[selected]):hover .tab-child-count{
   display:none;
 }
