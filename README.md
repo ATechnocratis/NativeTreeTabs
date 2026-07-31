@@ -66,12 +66,13 @@
 <details>
 <summary> <b> Keyboard shortcuts.</b></summary>
 
- - Modify/remove keyboard shortcuts on Sidebar Settings (Customize sidebar option)
  - `Ctrl + Comma(,)` to switch to the next panel or `Ctrl + Shift + Comma(,)` for reverse order
  - `Ctrl + Alt + Comma(,)` to create a new panel
  - `Ctrl + Alt + Left/Right arrow` to change the tab indention level
  - `Ctrl + Alt + Up/Down arrow` to move the tab and change indention level
  - `Ctrl + Shift + F` to switch to previous active tab
+- Modify/remove keyboard shortcuts on Sidebar Settings (Customize sidebar option)
+
 </details>
 <details>
 <summary> <b> Organize with Nest tabs.</b></summary>
@@ -91,7 +92,6 @@
 <summary> <b>Settings and Extras</b></summary>
 
  - Open the Customize Sidebar settings* and find the Tree Tabs section
- - (*Gear icon at the bottom of the Sidebar or right click the Sidebar)
  - Change tab style and margins
  - Change script behavior
  - Modify/remove keyboard shortcuts
@@ -99,6 +99,7 @@
  - Smart Sidebar resize based on window size mode(Maximized/Normal)
  - Automatically collapse trees/groups
  - Tab flip: switch to previous active tab when the current active tab is clicked in the tab strip
+<p>*(Gear icon at the bottom of the Sidebar or right click the Sidebar)</p>
 </details>
       
 
