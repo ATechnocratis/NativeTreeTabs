@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.5
+// @version        0.3.0.6
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -81,7 +81,6 @@ window.nativeTreeTabs = {
     onDisable: toggleSidebars,
   },
 
-
   init: function() {
     let version;
     try {
@@ -113,21 +112,16 @@ window.nativeTreeTabs = {
     }
     Services.prefs.addObserver("treeTabs.enabled", this);
 
-
     this.addDefaultPanel();
     // TabContextMenu.DYNAMIC_MENU_ITEM_SELECTORS.push("[custom-context-item]");
 
     //initialize Tab Panels 
-    let [NTTheader, menupopup, contextSubMenu, NTTstyle] = addNTTSidebarHeader();
-    this.domElements.push(NTTheader);
-    this.domElements.push(contextSubMenu);
-    this.domElements.push(menupopup);
+    let [tabpanelsElements, NTTstyle] = addNTTSidebarHeader();
+    this.domElements.push(...tabpanelsElements);
     this.customStyle.push(NTTstyle);
 
     let nestTabElements = addNestTabsInTabContextMenu();
-    nestTabElements.forEach(function(element) {
-      this.domElements.push(element);
-    }, this);
+    this.domElements.push(...nestTabElements);
 
     this.initPreferences();
 
@@ -152,7 +146,6 @@ window.nativeTreeTabs = {
 
     this.addTabGroupCreateListeners();
     this.customStyle.push(loadNTTstyle());
-
 
     //add keyboard shortcuts
     this.addKeyboardShortcuts();
@@ -1062,7 +1055,6 @@ window.nativeTreeTabs = {
     let nextTab = aTab.nextSibling;
     let aTabTreeId = aTab.getAttribute("tree-id");
 
-
     //illegal move
     // twisted root tab moved under its own hidden tree
     if (aTab.hasAttribute("twisted-root")) {
@@ -1841,8 +1833,6 @@ window.nativeTreeTabs = {
       increaseChildCount(aTab);
     }
 
-
-
     let restorePaneldId = SessionStore.getCustomTabValue(aTab, "panel-id");
     let foundPanel = false;
     //Don't restore panel for out of window dragging
@@ -2209,7 +2199,6 @@ window.nativeTreeTabs = {
     //  Makes use of browser.tabs.selectOwnerOnClose
     // Wrapper is used because the selected tab changes
     //  before the closing tab is fully closed
-
 
     this.originalRemoveTabs = gBrowser.removeTabs;
     gBrowser.removeTabs = function(tabs, aOptions) {
@@ -4249,7 +4238,6 @@ function compareDomains(url1, url2) {
   return false;
 }
 
-
 function checkNest(nestTab, tabs) {
   if (!isTab(nestTab)) {
     return false;
@@ -4565,7 +4553,6 @@ function createInput(target, replace = false, value = '', placeholder = '', widt
   return input;
 }
 
-
 function switchPanelOnScroll(enable) {
   function onScroll(aEvent) {
     //change selected panel on scroll
@@ -4873,8 +4860,6 @@ addMenuItem = function(parentPopup, label, action, isToggle = false, id = null) 
   return item;
 }
 
-
-
 nestTabs = function(label) {
   let contextTab = nativeTreeTabs.contextTab;
   let tabs = (contextTab.multiselected) ?
@@ -4991,10 +4976,7 @@ nestTabs = function(label) {
   if (tabs.includes(window.gBrowser.selectedTab)) {
     window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
   }
-
 }
-
-
 
 addNestTabsInTabContextMenu = function() {
 
@@ -5014,10 +4996,8 @@ addNestTabsInTabContextMenu = function() {
     let title = document.createXULElement("menuitem");
     title.setAttribute("label", label);
     title.setAttribute("class", "miniPopup-title");
-
     title.style.fontWeight = "600";
     title.style.fontSize = "15px";
-
     menuMainDiv.appendChild(title);
 
     let inputItem = document.createXULElement("hbox");
@@ -5105,7 +5085,6 @@ addNestTabsInTabContextMenu = function() {
   nestContext.setAttribute("custom-context-item", "");
 
   //Insert in correct position
-
   let context_position = (getPref("browser.tabs.contextmenu.altstructure.enabled") == true) ?
     document.getElementById("context_moveTabToSplitView").previousSibling :
     document.getElementById("moveTopanel-tab-submenu");
@@ -5224,7 +5203,10 @@ addMoveToPanelMenuInTabContextMenu = function() {
   let tabContextMenu = document.getElementById("tabContextMenu");
   if (!tabContextMenu) return;
 
+  let elementsCreated = new Array();
+
   let submenu = document.createXULElement("menu");
+  elementsCreated.push(submenu);
   submenu.setAttribute("id", "moveTopanel-tab-submenu");
   submenu.setAttribute("custom-context-item", "");
   try {
@@ -5239,6 +5221,7 @@ addMoveToPanelMenuInTabContextMenu = function() {
   submenu.setAttribute("accesskey", "a");
 
   let menupopup = document.createXULElement("menupopup");
+  elementsCreated.push(menupopup);
   menupopup.setAttribute("id", "tab-context-panel-actions");
 
   addMenuItem(menupopup, "Create New Panel", (aTab, aEvent) => {
@@ -5250,6 +5233,7 @@ addMoveToPanelMenuInTabContextMenu = function() {
   }, isToggle = false, id = "tab-context-create-new-panel");
   //Insert before tab Group entry
   submenu.appendChild(menupopup);
+
   let context_moveTabToGroup = document.getElementById("context_moveTabToGroup");
   if (context_moveTabToGroup) {
     tabContextMenu.insertBefore(submenu, context_moveTabToGroup.nextSibling);
@@ -5257,14 +5241,15 @@ addMoveToPanelMenuInTabContextMenu = function() {
 
   let tabGroupMoveToWindow = document.getElementById("tabGroupEditor_moveGroupToNewWindow");
   if (tabGroupMoveToWindow) {
-
     let tabGroupMoveToPanel = document.createXULElement("menu");
+    elementsCreated.push(tabGroupMoveToPanel);
     tabGroupMoveToPanel.setAttribute("id", "moveTopanel-tabgroup-submenu");
+    tabGroupMoveToPanel.setAttribute("class", "subviewbutton");
     tabGroupMoveToPanel.setAttribute("label", "Move to Panel...");
     tabGroupMoveToPanel.setAttribute("accesskey", "a");
 
-
     let groupSubPopup = document.createXULElement("menupopup");
+    elementsCreated.push(groupSubPopup);
     groupSubPopup.setAttribute("id", "tabgroup-context-panel-actions");
     addMenuItem(groupSubPopup, "Create New Panel", (aTab, aEvent) => {
       let forceShow = (aEvent.ctrlKey) ? true : false;
@@ -5276,13 +5261,11 @@ addMoveToPanelMenuInTabContextMenu = function() {
       group.forEach(function(tab) {
         tab.removeAttribute("skipMoveForced");
       });
-
       setTimeout(() => {
         gBrowser.tabGroupMenu.close();
       }, 30);
       panelNameRightClick();
     }, isToggle = false, id = "tab-context-create-new-panel");
-
 
     groupSubPopup.addEventListener("popupshowing", function(aEvent) {
       while (groupSubPopup.childNodes.length > 1) {
@@ -5311,7 +5294,7 @@ addMoveToPanelMenuInTabContextMenu = function() {
     tabGroupMoveToPanel.appendChild(groupSubPopup);
     tabGroupMoveToWindow.parentNode.insertBefore(tabGroupMoveToPanel, tabGroupMoveToWindow);
   }
-  return submenu;
+  return elementsCreated;
 }
 
 searchTabs = function() {
@@ -5319,12 +5302,15 @@ searchTabs = function() {
 }
 
 addNTTSidebarHeader = function() {
+  let elementsCreated = new Array();
   let mainDiv = document.createElement("div");
   mainDiv.setAttribute("id", "NTT-header");
+  elementsCreated.push(mainDiv);
   //Insert on top of sidebar
   let sidebarMain = document.querySelector(["sidebar-main"]);
   sidebarMain.parentNode.insertBefore(mainDiv, sidebarMain);
-  let [contextSubMenu, menupopup, style] = addTabPanelButton(mainDiv);
+  let [elements, style] = addTabPanelButton(mainDiv);
+  elementsCreated.push(...elements);
 
   // let searchButton = document.createElement("div");
   // searchButton.setAttribute("id", "search-all-tabs-button");
@@ -5343,15 +5329,17 @@ addNTTSidebarHeader = function() {
   //   searchTabs();
   // });
 
-  return [mainDiv, menupopup, contextSubMenu, style];
+  return [elementsCreated, style];
 }
-
 
 addTabPanelButton = function(mainDiv) {
   //Add new tab context menu option
-  let contextSubMenu = addMoveToPanelMenuInTabContextMenu();
+  let elementsCreated = new Array();
+  let contextElements = addMoveToPanelMenuInTabContextMenu();
+  elementsCreated.push(...contextElements);
   //Create Button
   let tabPanelGroup = document.createElement("div");
+  elementsCreated.push(tabPanelGroup);
   tabPanelGroup.setAttribute("id", "tab-panels-group");
 
   let tabPanelName = document.createElement("h1");
@@ -5384,6 +5372,7 @@ addTabPanelButton = function(mainDiv) {
 
   //Create popup
   let menupopup = document.createXULElement("panel");
+  elementsCreated.push(menupopup);
   menupopup.setAttribute('id', 'tab-panels-menupopup');
   menupopup.setAttribute('type', 'arrow');
   menupopup.setAttribute('class', 'panel-no-padding');
@@ -5476,7 +5465,6 @@ addTabPanelButton = function(mainDiv) {
         nativeTreeTabs.tabPanelShow(panelId);
         return;
       }
-
       if (dragStartPos != dragEndPos) {
         let nextItem;
         let itemSibilings = panelMenuMainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)");
@@ -5519,8 +5507,6 @@ addTabPanelButton = function(mainDiv) {
     panelNameRightClick(aEvent);
   });
 
-
-
   tabPanelGroup.addEventListener("click", function(aEvent) {
     if (aEvent.target !== tabPanelButton && !tabPanelButton.contains(aEvent.target)) {
       let foundInput = tabPanelGroup.querySelectorAll(":scope > input");
@@ -5541,8 +5527,9 @@ addTabPanelButton = function(mainDiv) {
   });
 
   makePopupStayOpen(menupopup, dragEnds);
+
   let style = loadTabPanelsstyle();
-  return [contextSubMenu, menupopup, style];
+  return [elementsCreated, style];
 }
 
 function smartSidebarResize(enable) {
@@ -5602,7 +5589,6 @@ let modifyCustomizePage = {
     let window = document.defaultView;
     this.load(document);
   },
-
 
   updateElement: function(element, name) {
     let prefValue = getPref(name);
@@ -5941,9 +5927,7 @@ let modifyCustomizePage = {
     let n3 = createCheckBox("treeTabs.behavior.smartResizeSidebar", "Smart expand/collapse sidebar on window size mode change", extra);
     createCheckBox("treeTabs.behavior.smartResizeSidebarNormalModeAutoExpand", "Auto expand on normal mode", extra, n3);
 
-
     createTitleDiv("Style options", null, extra);
-
     createNumberInputBox("treeTabs.tabHeight", {
       min: 10,
       step: 1,
@@ -5974,7 +5958,6 @@ let modifyCustomizePage = {
       step: 0.5,
       max: 99
     }, "Tab Icon start:", extra)
-
 
     createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
     createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
@@ -6404,6 +6387,13 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
   border-bottom: none;
   margin-bottom: 0px;
 }
+menu.subviewbutton{
+  &:not([disabled]):hover {
+    color: var(--button-text-color-menu-hover);
+    background-color: var(--button-background-color-menu-hover)!important;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
     .tab-group-editor-swatches label {
         filter: saturate(1.2) brightness(0.6) contrast(1.4)!important;
@@ -6889,12 +6879,10 @@ tab[hidden-child] .tab-child-count{
   fill: currentColor;
 }
 
-
 /*Styling*/
 #vertical-tabs tab .tab-background {
     border-radius: var(--tab-border-radius-forced)!important;
 }
-
 
 @media -moz-pref("treeTabs.style.customText") {
 
