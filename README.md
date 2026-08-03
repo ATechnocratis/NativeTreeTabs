@@ -91,7 +91,7 @@
 <details>
 <summary> <b>Settings and Extras</b></summary>
 
- - Open the Customize Sidebar settings* and find the Tree Tabs section
+ - [Open the Customize Sidebar settings](https://support.mozilla.org/en-US/kb/use-sidebar-access-tools-and-vertical-tabs#w_turn-on-vertical-tabs:~:text=Customize%20sidebar%20and%20vertical%20tabs,-After) and find the Tree Tabs section
  - Change tab style and margins
  - Change script behavior
  - Modify/remove keyboard shortcuts
@@ -99,12 +99,11 @@
  - Smart Sidebar resize based on window size mode(Maximized/Normal)
  - Automatically collapse trees/groups
  - Tab flip: switch to previous active tab when the current active tab is clicked in the tab strip
-<p>*(Gear icon at the bottom of the Sidebar or right click the Sidebar)</p>
 </details>
       
 
 ## Installation
-- Turn on Vertical Tabs in Firefox
+- [Turn on Vertical Tabs in Firefox](https://support.mozilla.org/en-US/kb/use-sidebar-access-tools-and-vertical-tabs#w_turn-on-vertical-tabs:~:text=Turn%20on%20vertical%20tabs,-Right)
 - Install a userchrome.js loader
   - An updated one is [fx-autoconfig by MrOtherGuy](https://github.com/MrOtherGuy/fx-autoconfig)
 - Download the `NativeTreeTabs.uc.js` file from this repository
