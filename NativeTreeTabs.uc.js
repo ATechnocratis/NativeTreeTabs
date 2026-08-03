@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.4
+// @version        0.3.0.5
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -6254,7 +6254,10 @@ box:has(>sidebar-main) {
     min-width: 100%;
     overflow: clip;
     display: flex;
-    align-items: center;
+    align-items:center;
+}
+box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-group {
+  justify-content:center;
 }
 #tab-panels-button img {
     -moz-context-properties: fill, fill-opacity, stroke;
@@ -6271,12 +6274,7 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     flex-flow:column;
   }
 }
-:root:not([customizing])[uidensity="compact"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
-    margin-inline-start: 7px;
-}
-:root:not([customizing]) box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
-    margin-inline-start: 9px;
-}
+
 :root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
     margin-inline-start: 12px;
 }
