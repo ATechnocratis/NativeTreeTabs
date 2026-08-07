@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.6
+// @version        0.3.0.7
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -15,6 +15,7 @@ window.nativeTreeTabs = {
   originalRemoveTabs: null,
   originalPinTab: null,
   originalAddTabSplitView: null,
+  originalUpdateContextMenu: null,
   originalAddToMultiSelectedTabs: null,
   originalAdvanceSelectedTab: null,
   original_findTabToBlurTo: null,
@@ -130,7 +131,7 @@ window.nativeTreeTabs = {
     gBrowser.tabs.forEach(this.initTab, this);
 
     //Add listeners
-    gBrowser.addTabsProgressListener(this);
+    // gBrowser.addTabsProgressListener(this);
     this._tabEvents.forEach(function(aEvent) {
       gBrowser.tabContainer.addEventListener(aEvent, this);
     }, this);
@@ -165,7 +166,7 @@ window.nativeTreeTabs = {
 
   uninit: function() {
     //Remove listeners and observers
-    gBrowser.removeTabsProgressListener(this);
+    // gBrowser.removeTabsProgressListener(this);
     this._tabEvents.forEach(function(aEvent) {
       gBrowser.tabContainer.removeEventListener(aEvent, this);
     }, this);
@@ -189,6 +190,7 @@ window.nativeTreeTabs = {
     gBrowser.removeTabs = this.originalRemoveTabs;
     gBrowser.pinTab = this.originalPinTab;
     gBrowser.addTabSplitView = this.originalAddTabSplitView;
+    TabContextMenu.updateContextMenu = this.originalUpdateContextMenu;
     gBrowser.addToMultiSelectedTabs = this.originalAddToMultiSelectedTabs;
     gBrowser.tabContainer.advanceSelectedTab = this.originalAdvanceSelectedTab;
     gBrowser._findTabToBlurTo = this.original_findTabToBlurTo;
@@ -470,7 +472,7 @@ window.nativeTreeTabs = {
 
     while (nextTab) {
       //skip multiselected
-      while (nextTab && nextTab.multiselected && !forceMultiselected && (!multiSelectIllegalMove && nextTab != aTab)) {
+      while (isTab(nextTab) && nextTab.multiselected && !forceMultiselected && (!multiSelectIllegalMove && nextTab != aTab)) {
         nextTabTreeDepth = getTreeDepth(nextTab);
         if (nextTabTreeDepth == null || nextTabTreeDepth <= tabOriginalDepth) {
           break;
@@ -480,7 +482,7 @@ window.nativeTreeTabs = {
 
       if (isIngroup) {
         //don't move collapsed tree children away in group creation
-        while (nextTab && nextTab.hasAttribute("hidden-child") && nextTab.getAttribute("hidden-child-rootID") != aTabTreeId) {
+        while (isTab(nextTab) && nextTab.hasAttribute("hidden-child") && nextTab.getAttribute("hidden-child-rootID") != aTabTreeId) {
           let twistedRootId = nextTab.getAttribute("hidden-child-rootID");
           let nextTrueParent = seenIds.get(twistedRootId);
           if (nextTrueParent == null) {
@@ -1052,7 +1054,7 @@ window.nativeTreeTabs = {
 
     let inGroup = (aTab.group && aEvent.detail.previousTabState.tabGroupId === aEvent.detail.currentTabState.tabGroupId) ? true : false;
     let previousTab = aTab.previousSibling;
-    let nextTab = aTab.nextSibling;
+    let nextTab = getNextTab(aTab);
     let aTabTreeId = aTab.getAttribute("tree-id");
 
     //illegal move
@@ -2356,7 +2358,36 @@ window.nativeTreeTabs = {
       aTab.removeAttribute("skipMoveForced");
 
     };
+    //tab context menu enable split view for pinned
+    this.originalUpdateContextMenu = TabContextMenu.updateContextMenu;
+    TabContextMenu.updateContextMenu = function(aPopupMenu) {
+      try {
+        nativeTreeTabs.originalUpdateContextMenu.apply(this, arguments);
+        let splitViewEnabled = Services.prefs.getBoolPref(
+          "browser.tabs.splitView.enabled",
+          false
+        );
+        if (splitViewEnabled != false) {
+          let contextMoveTabToNewSplitView = document.getElementById(
+            "context_moveTabToSplitView"
+          );
+          if (contextMoveTabToNewSplitView.disabled == true) {
+            let pinnedTabs = this.contextTabs.filter(t => t.pinned);
+            if (pinnedTabs.length) {
+              let customizeTabs = this.contextTabs.filter(t =>
+                t.hasAttribute("customizemode"));
+              contextMoveTabToNewSplitView.disabled =
+                TabContextMenu.contextTabs.length > 2 ||
+                customizeTabs.length;
+            }
+          }
+        }
 
+      } catch (error) {
+        console.error(error);
+        return;
+      }
+    };
     //Split View creation
     this.originalAddTabSplitView = gBrowser.addTabSplitView;
     gBrowser.addTabSplitView = function(tabsToAdd, {
@@ -2364,6 +2395,10 @@ window.nativeTreeTabs = {
       trigger,
     }) {
       try {
+        let pinnedTabs = tabsToAdd.filter(t => t.pinned);
+        tabsToAdd.forEach(function(t) {
+          gBrowser.unpinTab(t);
+        });
         nativeTreeTabs.moveSplitView(tabsToAdd, insertBefore);
       } catch (error) {
         console.error(error);
@@ -2762,7 +2797,6 @@ window.nativeTreeTabs = {
     menuMainDiv.setAttribute("class", "popup-main-panel");
     menuMainDiv.style.display = "flex";
     menuMainDiv.style.flexFlow = "column";
-    menuMainDiv.style.alignItems = "start";
 
     popup.appendChild(menuMainDiv);
 
@@ -2829,17 +2863,29 @@ window.nativeTreeTabs = {
                 popup.addEventListener("mouseleave", hidePreviewPopup);
               }
 
+              function mousoverElement(e) {
+                let t = e.target;
+                let popupTarget = t.closest("panel");
+                let tab = t.closest("tab");
+                let splitter = t.closest("splitter");
+                if (popupTarget != popup && tab != tabOrGroup && splitter == null) {
+                  hidePreviewPopup();
+                }
+              }
+
+              window.addEventListener("mouseover", mousoverElement);
               window.addEventListener("TabSelect", hidePreviewPopup);
               nextTab.addEventListener("mouseout", hidePreviewPopup);
               popup.addEventListener("mouseover", addHideOnMouseOut);
 
               popup.addEventListener("popuphiding", function(aEvent) {
+                window.removeEventListener("mouseover", mousoverElement);
                 window.removeEventListener("TabSelect", hidePreviewPopup);
                 popup.removeEventListener("mouseover", addHideOnMouseOut);
                 nextTab.removeEventListener("mouseout", hidePreviewPopup);
                 popup.removeEventListener("mouseleave", hidePreviewPopup);
-
               });
+
               nativeTreeTabs.originalPreviewPanelActivate.apply(this, arguments);
 
             }
@@ -4212,9 +4258,10 @@ setDomainAttr = function(aTab) {
   if (linkedBrowser == null) return;
   let uri = aTab.linkedBrowser.currentURI;
   let spec = uri.spec;
-  let bakedPatterns = ["about", "resource", "chrome", "wyciwyg", "file", "blob", "moz-extension", "jar"];
+  let bakedPatterns = ["about", "resource", "chrome", "wyciwyg", "file", "blob", "moz-extension", "jar", "moz-icon"];
   let baked = bakedPatterns.some(p => spec.startsWith(p));
   try {
+    //BrowserUtils.formatURIForDisplay(uri));
     if (baked) {
       aTab.setAttribute("domain", spec.split(":")[0]);
     } else {
@@ -4378,7 +4425,7 @@ outlineTree = function(aTab, outlineToggle) {
 
 checkInsideMove = function(rootTab, nextTab, rootlDepth) {
   while (isTab(nextTab)) {
-    while (nextTab && nextTab.multiselected) {
+    while (isTab(nextTab) && nextTab.multiselected) {
       nextTab = nextTab.nextSibling;
     }
     nextTabTreeDepth = getTreeDepth(nextTab);
@@ -4387,14 +4434,12 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
         break;
       }
     }
-
     if (rootTab.multiselected)
       toCheck = nextTab;
     else
       //previousSibling is used because 
       //moving at the end of the tree is allowed
       toCheck = nextTab.previousSibling;
-
     if (toCheck === rootTab) {
       return false;
     }
@@ -5169,7 +5214,6 @@ addNestTabsInTabContextMenu = function() {
     originalNestContextRemove.apply(this, arguments);
   }
   nestContext.addEventListener("click", (aEvent) => {
-
     let contextTab = TabContextMenu.contextTab;
     nativeTreeTabs.contextTab = contextTab;
     menupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
@@ -5180,7 +5224,6 @@ addNestTabsInTabContextMenu = function() {
       textbox.focus();
       textbox.select();
     }, 50);
-
   });
 
   renameNestContext.addEventListener("click", (aEvent) => {
@@ -5919,7 +5962,7 @@ let modifyCustomizePage = {
     createCheckBox("treeTabs.behavior.hopOverCollapsedTabsInlcudeRestored", "Include session restored tabs", extra, n2);
     let n1 = createCheckBox("treeTabs.behavior.switchSelectedOnClick", "Click active tab to switch to previous selected", extra);
     createCheckBox("treeTabs.behavior.switchSelectedOnClickStayOnPanel", "Lock flip in Panel", extra, n1);
-    createCheckBox("treeTabs.behavior.changePanelOnScroll", "Scroll Panel header to cycle between tab Panels", extra);
+    createCheckBox("treeTabs.behavior.changePanelOnScroll", "Scroll Panel header to cycle between Panels", extra);
     createCheckBox("browser.tabs.insertRelatedAfterCurrent", "Open new tabs directly under active, if related.", extra);
     createCheckBox("treeTabs.behavior.collapseTreesAutomatically", "Automatically Collapse Trees", extra);
     createCheckBox("treeTabs.behavior.collapseGroupsAutomatically", "Automatically Collapse Tab Groups", extra);
@@ -6846,6 +6889,7 @@ tab-group[collapsed] .tab-group-label-container {
 }
 }
 .popup-main-panel{
+  max-width: var(--menuitem-max-width);
 }
 tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
   padding-bottom:2px;
@@ -6874,7 +6918,6 @@ tab[hidden-child] .tab-child-count{
 }
 .tab-preview-item{
   max-width:37em;
-  width:95%;
   -moz-context-properties: fill, stroke;
   fill: currentColor;
 }
