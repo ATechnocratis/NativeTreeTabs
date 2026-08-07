@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.0.7
+// @version        0.3.0.8
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -131,7 +131,9 @@ window.nativeTreeTabs = {
     gBrowser.tabs.forEach(this.initTab, this);
 
     //Add listeners
-    // gBrowser.addTabsProgressListener(this);
+    //Used for onlocation change to set tab domain attribute
+    gBrowser.addTabsProgressListener(this);
+
     this._tabEvents.forEach(function(aEvent) {
       gBrowser.tabContainer.addEventListener(aEvent, this);
     }, this);
@@ -166,7 +168,7 @@ window.nativeTreeTabs = {
 
   uninit: function() {
     //Remove listeners and observers
-    // gBrowser.removeTabsProgressListener(this);
+    gBrowser.removeTabsProgressListener(this);
     this._tabEvents.forEach(function(aEvent) {
       gBrowser.tabContainer.removeEventListener(aEvent, this);
     }, this);
