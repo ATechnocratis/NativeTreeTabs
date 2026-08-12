@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.0
+// @version        0.3.1.1
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -5457,6 +5457,9 @@ nestTabs = function(label) {
   let tabsToMove = new Array();
 
   tabs.forEach(function(aTab) {
+    if(aTab.splitview){
+      aTab= aTab.splitview;
+    }
     if (aTab.hasAttribute("moving-to-nest")) {
       return;
     }
@@ -5498,6 +5501,9 @@ nestTabs = function(label) {
   });
 
   tabs.forEach(function(aTab) {
+    if(aTab.splitview){
+      aTab= aTab.splitview;
+    }
     if (!aTab.hasAttribute("moving-to-nest"))
       return;
     aTab.removeAttribute("moving-to-nest");
@@ -7039,7 +7045,6 @@ loadNTTstyle = function() {
       margin-inline: 0px !important;
       justify-items: center!important;
 }
-
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper tab:first-child .tab-background {
       margin-inline: 0px !important;
 }
