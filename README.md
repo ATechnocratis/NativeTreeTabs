@@ -17,7 +17,7 @@
  - Only extends the native tabs.
  - No extra resources.
  - Tab Groups support
- - Split view support (Will act independent from tree structure)
+ - Split views support
  - Keeps and extends the native Context menu 
  - Selecting and moving multiple tabs with shift/ctrl + click is possible.
 </details >
