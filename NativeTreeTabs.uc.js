@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.1
+// @version        0.3.1.2
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1653,7 +1653,7 @@ window.nativeTreeTabs = {
       return;
     }
     let aTab = aEvent.target.closest('tab');
-    if (!aTab.hasAttribute("nestTab")) {
+    if (!aTab.hasAttribute("nestTab") && !aTab.splitview) {
       this.toggleTwist(aTab);
     }
   },
@@ -5457,8 +5457,8 @@ nestTabs = function(label) {
   let tabsToMove = new Array();
 
   tabs.forEach(function(aTab) {
-    if(aTab.splitview){
-      aTab= aTab.splitview;
+    if (aTab.splitview) {
+      aTab = aTab.splitview;
     }
     if (aTab.hasAttribute("moving-to-nest")) {
       return;
@@ -5501,8 +5501,8 @@ nestTabs = function(label) {
   });
 
   tabs.forEach(function(aTab) {
-    if(aTab.splitview){
-      aTab= aTab.splitview;
+    if (aTab.splitview) {
+      aTab = aTab.splitview;
     }
     if (!aTab.hasAttribute("moving-to-nest"))
       return;
@@ -7235,40 +7235,24 @@ tab[soundplaying] .tab-background {
     padding: 0!Important;
     margin-left: -10px;
   }
-  
 }
 
 /* ABSOLUTE CINEMA */
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='0']:not([twisted-root]):has(+tab:not([tree-depth='0'])) .tab-icon-image:hover {
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='0']:not([twisted-root]):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='1']:not([twisted-root]):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='2']:not([twisted-root]):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='3']:not([twisted-root]):has(+tab[tree-depth='4'],+tab-split-view-wrapper tab[tree-depth='4']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='4']:not([twisted-root]):has(+tab[tree-depth='5'],+tab-split-view-wrapper tab[tree-depth='5']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='5']:not([twisted-root]):has(+tab[tree-depth='6'],+tab-split-view-wrapper tab[tree-depth='6']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='6']:not([twisted-root]):has(+tab[tree-depth='7'],+tab-split-view-wrapper tab[tree-depth='7']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='7']:not([twisted-root]):has(+tab[tree-depth='8'],+tab-split-view-wrapper tab[tree-depth='8']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='8']:not([twisted-root]):has(+tab[tree-depth='9'],+tab-split-view-wrapper tab[tree-depth='9']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='9']:not([twisted-root]):has(+tab[tree-depth='10'],+tab-split-view-wrapper tab[tree-depth='10']){
+ .tab-icon-image:hover {
     content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
+  }
 }
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='1']:not([twisted-root]):has(+tab[tree-depth='2']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='2']:not([twisted-root]):has(+tab[tree-depth='3']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='3']:not([twisted-root]):has(+tab[tree-depth='4']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='4']:not([twisted-root]):has(+tab[tree-depth='5']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='5']:not([twisted-root]):has(+tab[tree-depth='6']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='6']:not([twisted-root]):has(+tab[tree-depth='7']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='7']:not([twisted-root]):has(+tab[tree-depth='8']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='8']:not([twisted-root]):has(+tab[tree-depth='9']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='9']:not([twisted-root]):has(+tab[tree-depth='2']) .tab-icon-image:hover {
-    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
-}
+
 #tabbrowser-arrowscrollbox[orient="vertical"]{
  tab[hidden-child] ,
  tab[hidden-child] *,
@@ -7364,6 +7348,9 @@ tab[nestTab]{
      margin-inline-start: var(--tab-icon-start);
   }
 }
+.tab-group-label {
+  margin-block:0!important;
+}
 .tab-group-label-container {
   #tabbrowser-tabs[orient="vertical"] tab-group:not([collapsed]) > &::after, #tabbrowser-tabs[orient="vertical"] tab-group[collapsed][hasactivetab]:not([movingtabgroup]) > &::after{
     inset-inline: 0px auto!important;
@@ -7391,6 +7378,12 @@ tab[nestTab]{
   line-height:calc( var(--tab-height) - 1px )!important;
 }
 }
+.tab-group-label-hover-highlight {
+  block-size: clamp(0px, 16px, calc( var(--tab-height) - var(--tab-close-button-padding) )) auto!important;
+  #tabbrowser-tabs[orient="vertical"][expanded] & {
+    margin-inline-end: 0px!important;
+  }
+}
 tab-group[collapsed] .tab-group-label {
   #tabbrowser-tabs[expanded] & {
   margin-inline-end:0!important;
@@ -7400,14 +7393,17 @@ tab-group[collapsed] .tab-group-label {
 tab-group[collapsed] .tab-group-label-container {
   #tabbrowser-tabs[expanded] & {
   margin-right:0!important;
+  margin-inline-end: var(--tab-inner-inline-margin)!important;
   }
 }
-
 .tab-group-label-container {
   #tabbrowser-tabs[expanded] & {
+  margin-block-end: 0!Important;
   margin-block-start: var( --root-tab-top-margin)!important;
   margin-right:0!important;
-  margin-inline: var(--tab-inner-inline-margin)!important;
+  margin-inline-start: var(--tab-inner-inline-margin)!important;
+  margin-inline-end: var(--tab-inner-inline-margin)!important;
+
   }
 }
 .tab-group-label-container {
