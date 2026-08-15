@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.2
+// @version        0.3.1.3
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -244,9 +244,10 @@ window.nativeTreeTabs = {
       aTab.removeAttribute("hidden-child");
       aTab.removeAttribute("hidden-child-rootID");
       let tCC = aTab.querySelector(".tab-child-count");
-      if (tCC != null) {
-        tCC.remove()
-      }
+      if (tCC != null) tCC.remove()
+      let tCC2 = aTab.querySelector(".tab-child-count2");
+      if (tCC2 != null) tCC2.remove()
+
     }, this);
 
     this._initialized = false;
@@ -1362,6 +1363,11 @@ window.nativeTreeTabs = {
         //Makes favicon/twisty click to not select tab
         // (if not ancestor)
         let nextTab = getNextTab(aTab);
+        if (aTab.splitview) {
+          if (aTab.splitview.firstChild != aTab)
+            return;
+          nextTab = getNextTab(aTab.splitview);
+        }
         if (nextTab && getTreeDepth(nextTab) > getTreeDepth(aTab) && !checkIfIsAncestor(gBrowser.selectedTab, aTab)) {
           // aEvent.preventDefault();
           aEvent.stopPropagation();
@@ -1369,7 +1375,6 @@ window.nativeTreeTabs = {
         }
       }
       this.clickedActiveTab = aTab && aTab.selected ? aTab : null;
-
     }
   },
 
@@ -1391,7 +1396,6 @@ window.nativeTreeTabs = {
       nativeTreeTabs.clickedActiveTab = null;
       return;
     }
-
     gBrowser.selectedTab = pSTab;
     nativeTreeTabs.clickedActiveTab = null;
   },
@@ -1459,7 +1463,14 @@ window.nativeTreeTabs = {
       }
       let pSTab = nativeTreeTabs.selectedTab;
       if (window.gBrowser.tabs.includes(pSTab) && pSTab.closing == false) {
-        gBrowser.selectedTab = pSTab;
+        if (!pSTab.splitview) {
+          gBrowser.selectedTab = pSTab;
+        } else {
+          setTimeout(() => {
+            gBrowser.selectedTab = pSTab;
+          }, 10);
+        }
+
       }
 
       return;
@@ -1575,7 +1586,12 @@ window.nativeTreeTabs = {
   },
 
   toggleTwist: function(aTab, forced = false) {
-    let nextTab = getNextTab(aTab);
+    let nextTab;
+    if (aTab.splitview) {
+      aTab = aTab.splitview.tabs[0];
+      nextTab = getNextTab(aTab.splitview);
+    } else nextTab = getNextTab(aTab);
+
     let treeDepth = getTreeDepth(aTab);
     //Only for tabs with children
     if (!isTab(nextTab) || !hasTreeDepth(nextTab) ||
@@ -1615,6 +1631,23 @@ window.nativeTreeTabs = {
       if (nextTab.hasAttribute("twisted-root")) {
         let treeDepthNested = getTreeDepth(nextTab);
         nextTab = getNextTab(nextTab);
+        if (nextTab.splitview && nextTab.splitview.tabs.length > 1) {
+          if (unhide) {
+            nextTab.removeAttribute("hidden-child");
+            nextTab.removeAttribute("hidden-child-rootID");
+            deleteCustomTabValue(nextTab, "hidden-child");
+            deleteCustomTabValue(nextTab, "hidden-child-rootID");
+          } else {
+            if (!nextTab.selected || forced) {
+              nextTab.setAttribute("hidden-child", true);
+              setCustomTabValue(nextTab, "hidden-child", 'true');
+            }
+            nextTab.setAttribute("hidden-child-rootID", rootId);
+            setCustomTabValue(nextTab, "hidden-child-rootID", rootId);
+          }
+          count++;
+          nextTab = getNextTab(nextTab);
+        }
         while (nextTab) {
           nextTabTreeDepthNested = getTreeDepth(nextTab);
           if (nextTabTreeDepthNested == null || nextTabTreeDepthNested <= treeDepthNested) {
@@ -1655,6 +1688,8 @@ window.nativeTreeTabs = {
     let aTab = aEvent.target.closest('tab');
     if (!aTab.hasAttribute("nestTab") && !aTab.splitview) {
       this.toggleTwist(aTab);
+    } else if (aTab.splitview && aTab.splitview.firstChild == aTab) {
+      this.toggleTwist(aTab);
     }
   },
 
@@ -1663,7 +1698,11 @@ window.nativeTreeTabs = {
       let panelId = aTab.getAttribute("panel-id");
       window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
     }
-    if (aTab.splitview) {} else {
+    if (aTab.splitview) {
+      if (aTab.splitview.tabs.length > 1 && aTab.splitview.tabs[0] == aTab && aTab.hasAttribute("twisted-root")) {
+        this.toggleTwist(aTab);
+      }
+    } else {
       this.tabLeaveStrip(aTab);
     }
   },
@@ -1794,8 +1833,6 @@ window.nativeTreeTabs = {
     let twistedRoot = getCustomTabValue(aTab, "twisted-root");
     if (twistedRoot) {
       aTab.setAttribute("twisted-root", true);
-    }
-    if (twistedRoot) {
       restoreCount(aTab);
     }
 
@@ -1927,15 +1964,14 @@ window.nativeTreeTabs = {
 
     if (twistedRoot) {
       aTab.setAttribute("twisted-root", true);
+      restoreCount(aTab);
     }
+
     let nestTab = getCustomTabValue(aTab, "nestTab");
     if (nestTab) {
       aTab.setAttribute("nestTab", "");
       aTab.label = nestTab;
       aTab.addEventListener("click", this.nestClick);
-    }
-    if (twistedRoot) {
-      restoreCount(aTab);
     }
 
     let previousTab = getPreviousTab(aTab);
@@ -1946,10 +1982,7 @@ window.nativeTreeTabs = {
       aTab.setAttribute("hidden-child", true);
       aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
       increaseChildCount(aTab);
-    } else if (isTab(previousTab)) {
-      increaseChildCount(aTab);
     }
-
     let restorePaneldId = getCustomTabValue(aTab, "panel-id");
     let foundPanel = false;
     //Don't restore panel for out of window dragging
@@ -2320,6 +2353,9 @@ window.nativeTreeTabs = {
     nativeTreeTabs.originalReverseTabs.set(splitview.splitViewId, originalReverseTabs);
     splitview.reverseTabs = function(trigger = null) {
       try {
+        if (splitview.tabs.length > 1 && splitview.tabs[0].hasAttribute("twisted-root")) {
+          nativeTreeTabs.toggleTwist(splitview.tabs[0]);
+        }
         splitview.tabs.forEach(function(sTab) {
           skipNextMoveCheck(sTab);
         }, this);
@@ -2400,7 +2436,13 @@ window.nativeTreeTabs = {
           firstTab = splitview.tabs[0];
           saveFirstTabChildren = getFirstSplitViewTabChildren(splitview);
         }
+        splitview.tabs.forEach(function(sTab) {
+          skipNextMoveCheck(sTab);
+        }, this);
         originalUnsplitTabs.apply(this, arguments);
+        splitview.tabs.forEach(function(sTab) {
+          removeSkipNextMoveCheck(sTab);
+        }, this);
         maybeMoveSplitChildren(saveFirstTabChildren, firstTab);
       } catch (error) {
         console.error(error);
@@ -3083,7 +3125,6 @@ window.nativeTreeTabs = {
 
         if (gBrowser.isTab(tabOrGroup)) {
           if (tabOrGroup.hasAttribute("twisted-root") || tabOrGroup.hasAttribute("nestTab")) {
-
             function noteHover() {
               tabOrGroup.removeEventListener("TabNoteIconHoverStart", noteHover);
               gBrowser.tabContainer.previewPanel.deactivate(null, {
@@ -3091,7 +3132,6 @@ window.nativeTreeTabs = {
               });
               popup.hidePopup();
             }
-
             tabOrGroup.addEventListener("TabNoteIconHoverStart", noteHover);
             let popup = document.getElementById("preview-collapsed-tree");
             popup.hidePopup();
@@ -3100,7 +3140,7 @@ window.nativeTreeTabs = {
               menuMainDiv.removeChild(menuMainDiv.lastChild);
             }
             if (tabOrGroup.hasAttribute("twisted-root")) {
-              let nextTab = getNextTab(tabOrGroup);
+              let nextTab = (tabOrGroup.splitview) ? getNextTab(tabOrGroup.splitview) : getNextTab(tabOrGroup);
               let rootDepth = getTreeDepth(tabOrGroup);
               while (nextTab && getTreeDepth(nextTab) > rootDepth) {
                 if (!nextTab.hasAttribute("nestTab")) {
@@ -3121,7 +3161,12 @@ window.nativeTreeTabs = {
                 }
                 nextTab = getNextTab(nextTab);
               }
-              popup.openPopup(tabOrGroup, "topright topleft", 0, 3, false, false);
+              if (tabOrGroup.splitview)
+                popup.openPopup(tabOrGroup,
+                  SidebarController._positionStart ? "topright topleft" : "topleft topright", 0, 3, false, false);
+              else
+                popup.openPopup(tabOrGroup,
+                  SidebarController._positionStart ? "topright topleft" : "topleft topright", 0, 3, false, false);
 
               function hidePreviewPopup() {
                 tabOrGroup.removeEventListener("TabNoteIconHoverStart", noteHover);
@@ -3334,7 +3379,7 @@ window.nativeTreeTabs = {
     tabs = newArray.slice();
 
     tabs.forEach(function(cTab, index) {
-      if (cTab.hasAttribute("twisted-root")) {
+      if (cTab.hasAttribute("twisted-root") || (cTab.splitViewId && cTab.tabs[0].hasAttribute("twisted-root"))) {
         let cTabtreeDepth = getTreeDepth(cTab);
         let nextTab = getNextTab(cTab);
         while (nextTab) {
@@ -3371,6 +3416,11 @@ window.nativeTreeTabs = {
     if (!group) {
       tabs.slice().reverse().forEach(function(cTab, index) {
         if (!cTab.hasAttribute("twisted-root") && !cTab.hasAttribute("hidden-child") && !cTab.hasAttribute("nestTab") && !cTab.hasAttribute("nestMove")) {
+          if (cTab.splitViewId) {
+            cTab.tabs.forEach(function(sTab) {
+              this.tabLeaveStrip(sTab);
+            }, this);
+          }
           this.tabLeaveStrip(cTab);
         }
       }, this);
@@ -4604,6 +4654,8 @@ multiSelected = function(aTab) {
   if (aTab.splitViewId == null) {
     return aTab.multiselected;
   }
+  if (aTab.tabs.length == 1)
+    return aTab.tabs[0].multiselected;
   return (aTab.tabs[0].multiselected || aTab.tabs[1].multiselected)
 }
 
@@ -4650,31 +4702,21 @@ unloadedCheck = function(aTab) {
 }
 
 increaseChildCount = function(aTab) {
-
   let root = getRootTab(aTab);
   while (isTab(root) && (!root.hasAttribute("twisted-root"))) {
     root = getRootTab(root);
+    if (root && root.splitview) {
+      root = root.splitview.firstChild;
+    }
   }
   if (!isTab(root) || (!root.hasAttribute("twisted-root"))) {
     return;
   }
-
-  let tabChildCount = root.querySelector(".tab-child-count");
-  if (tabChildCount == null || tabChildCount.textContent == null) {
-    addTabChildCount(root, 1, false);
-  } else {
-    let currentCount = tabChildCount.textContent.replace(/\(|\)/g, "");
-    if (isNaN(parseInt(currentCount))) {
-      tabChildCount.textContent = "(1)";
-    } else {
-      currentCount++;
-      tabChildCount.textContent = "(" + currentCount + ")";
-    }
-  }
+  restoreCount(root);
 }
 
 restoreCount = function(aTab) {
-  let hiddenChild = getNextTab(aTab);
+  let hiddenChild = (aTab.splitview) ? getNextTab(aTab.splitview) : getNextTab(aTab);
   let aTabDepth = getTreeDepth(aTab);
   let count = 0;
   while (hiddenChild) {
@@ -4686,16 +4728,22 @@ restoreCount = function(aTab) {
       count++;
     hiddenChild = getNextTab(hiddenChild);
   }
-  addTabChildCount(aTab, count)
+  addTabChildCount(aTab, count);
 }
 
 addTabChildCount = function(aTab, count, unhide = false) {
   let tabChildCount = aTab.querySelector(".tab-child-count");
+  let tabChildCount2 = aTab.querySelector(".tab-child-count2");
+
   if (tabChildCount == null) {
     tabChildCount = document.createElement("label");
     tabChildCount.setAttribute("class", "tab-child-count tab-text");
+    tabChildCount2 = document.createElement("label");
+    tabChildCount2.setAttribute("class", "tab-child-count2 tab-text");
+    let tabIcon = aTab.querySelector(".tab-icon-image");
+    tabIcon.after(tabChildCount);
     let tabLabel = aTab.querySelector(".tab-note-icon");
-    tabLabel.parentNode.insertBefore(tabChildCount, tabLabel);
+    tabLabel.parentNode.insertBefore(tabChildCount2, tabLabel);
     // let tabLabel = aTab.querySelector(".tab-label");
     // tabLabel.after(tabChildCount);
     // tabLabel.parentNode.style.flexDirection = "row";
@@ -4704,10 +4752,12 @@ addTabChildCount = function(aTab, count, unhide = false) {
   //maybe add an option to awlays show on nesttab
   ///(would need general update when a new child is added)
   if (unhide) {
-
     tabChildCount.textContent = "";
+    tabChildCount2.textContent = "";
+
   } else {
     tabChildCount.textContent = "(" + count + ")";
+    tabChildCount2.textContent = "(" + count + ")";
   }
 }
 
@@ -4846,6 +4896,9 @@ getTreeRoot = function(aTab) {
 function checkIfIsAncestor(aTab, possibleRoot) {
   if (getTreeDepth(possibleRoot) >= getTreeDepth(aTab))
     return false;
+  if (possibleRoot.splitview && possibleRoot.splitview.tabs.length > 1) {
+    possibleRoot = possibleRoot.splitview.tabs[1];
+  }
   let isAncestor = false;
   let root = getRootTab(aTab);
   while (isTab(root)) {
@@ -7016,13 +7069,6 @@ loadNTTstyle = function() {
     padding-inline-start: calc( ( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1%) !important;
 }
 
-@container (min-width: 260px) {
-  #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-group  > tab,
-    #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab {
-        padding-inline-start: calc(var(--tab-indent) * 1px)!important;
-    }
-}
-
 #vertical-tabs{
   tab-split-view-wrapper:has(tab[tree-depth="0"]){ --tab-indent: 0; }
   tab-split-view-wrapper:has(tab[tree-depth="1"]){ --tab-indent: 11; }
@@ -7039,12 +7085,23 @@ loadNTTstyle = function() {
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
     margin-inline: 0px !important;
     max-width: calc(100% - var(--tab-indent))!important;
-    padding-inline-start: calc( ( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1%) !important;
+    padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-inner-inline-margin)) !important;
 }
 #tabbrowser-tabs:not([expanded]) #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
       margin-inline: 0px !important;
       justify-items: center!important;
 }
+
+@container (min-width: 260px) {
+  #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-group  > tab,
+    #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab {
+        padding-inline-start: calc(var(--tab-indent) * 1px)!important;
+    }
+  #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
+        padding-inline-start: calc(var(--tab-indent) * 1px + var(--tab-inner-inline-margin))!important;
+  }
+}
+
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper tab:first-child .tab-background {
       margin-inline: 0px !important;
 }
@@ -7197,12 +7254,12 @@ tab[soundplaying] .tab-background {
 /*Twisty */
 #tabbrowser-arrowscrollbox[orient="vertical"] tab[twisted-root]:not([hidden-child],[tabPanel-hidden],[nestTab]) .tab-icon-stack::before {
     content: url("chrome://global/skin/icons/arrow-right-12.svg")!important;
-    transform: scale(1.4)!important;
+    transform: scaleX(1.4) scaleY(1)!important;
     -moz-context-properties: fill, stroke!important;
     min-width: fit-content!important;
     min-height: 20px!important;
     display: block!important;
-    margin-top: 3px!important;
+    margin-top: 2px!important;
     margin-left: -20px!important;
     fill: black!important;
     background: transparent!important;
@@ -7252,7 +7309,20 @@ tab[soundplaying] .tab-background {
     content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
   }
 }
-
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='0']:first-child:not([twisted-root])):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='1']:first-child:not([twisted-root])):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='2']:first-child:not([twisted-root])):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='3']:first-child:not([twisted-root])):has(+tab[tree-depth='4'],+tab-split-view-wrapper tab[tree-depth='4']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='4']:first-child:not([twisted-root])):has(+tab[tree-depth='5'],+tab-split-view-wrapper tab[tree-depth='5']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='5']:first-child:not([twisted-root])):has(+tab[tree-depth='6'],+tab-split-view-wrapper tab[tree-depth='6']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='6']:first-child:not([twisted-root])):has(+tab[tree-depth='7'],+tab-split-view-wrapper tab[tree-depth='7']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='7']:first-child:not([twisted-root])):has(+tab[tree-depth='8'],+tab-split-view-wrapper tab[tree-depth='8']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='8']:first-child:not([twisted-root])):has(+tab[tree-depth='9'],+tab-split-view-wrapper tab[tree-depth='9']),
+#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='9']:first-child:not([twisted-root])):has(+tab[tree-depth='10'],+tab-split-view-wrapper tab[tree-depth='10']){
+ tab:first-child .tab-icon-image:hover {
+    content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
+  }
+}
 #tabbrowser-arrowscrollbox[orient="vertical"]{
  tab[hidden-child] ,
  tab[hidden-child] *,
@@ -7432,26 +7502,51 @@ tab-group[collapsed] .tab-group-label-container {
   max-width: var(--menuitem-max-width);
 }
 tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
-  padding-bottom:2px;
+  margin-left: -12px !important;
+  margin-top: 7px;
+  position: absolute;
+  font-size: 10px;
 }
 #tabbrowser-tabs[orient="vertical"]:not([expanded]){
  tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
-    margin-left:-11px;
-    margin-top:20px;
     padding-bottom:0px!important;
   }
-}
-#tabbrowser-tabs[orient="vertical"][expanded]
-tab:not([tab-note],[selected]):hover .tab-child-count{
-  display:none;
 }
 tab[tabPanel-hidden] .tab-child-count,
 tab[hidden-child] .tab-child-count{
   display:none!important;
 }
+tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count2{
+  padding-bottom:2px;
+}
+#tabbrowser-tabs[orient="vertical"]:not([expanded]){
+ tab .tab-child-count2{
+    display:none;
+  }
+}
+#tabbrowser-tabs[orient="vertical"][expanded]
+tab:not([tab-note],[selected]):hover .tab-child-count2{
+  display:none;
+}
+tab[tabPanel-hidden] .tab-child-count2,
+tab[hidden-child] .tab-child-count2{
+  display:none!important;
+}
+#tabbrowser-tabs[orient="vertical"][expanded]
+.tab-child-count{
+  display:none;
+}
+tab-split-view-wrapper tab{
+   .tab-child-count2{
+    display:none!important;
+  }
+   .tab-child-count{
+    display:block!important;
+  }
+}
 
 @media not -moz-pref("treeTabs.style.collapsedChildrenCounter") {
- .tab-child-count{
+ .tab-child-count,.tab-child-count2{
   opacity:0;
     display:none!important;
   }
