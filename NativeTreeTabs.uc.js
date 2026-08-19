@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.3
+// @version        0.3.1.4
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2282,8 +2282,8 @@ window.nativeTreeTabs = {
   },
 
   observeTopic: function(topic, customVar = null, setValue = null) {
+    let topicValue = getPref(topic);
     if (customVar != null) {
-      let topicValue = getPref(topic);
       if (topicValue != null) {
         customVar.value = topicValue;
         if (customVar.hasOwnProperty('keys')) {
@@ -2306,7 +2306,8 @@ window.nativeTreeTabs = {
         }, 100);
       }
     } else if (setValue != null) {
-      setPref(topic, setValue);
+      if (topicValue == null)
+        setPref(topic, setValue);
     }
     this.observedPrefs.set(topic, customVar);
     Services.prefs.addObserver(topic, this);
@@ -2331,11 +2332,13 @@ window.nativeTreeTabs = {
     this.observeTopic("treeTabs.labelFontSize");
     this.observeTopic("treeTabs.tabBorderRadius");
     this.observeTopic("treeTabs.style.tabIconStart");
+    this.observeTopic("treeTabs.style.pinnedTabWidth");
 
     this.observeTopic("treeTabs.style.collapsedChildrenCounter", null, true);
     this.observeTopic("treeTabs.style.customText", null, true);
     this.observeTopic("treeTabs.style.customBackground", null, true);
     this.observeTopic("treeTabs.style.customGroups", null, true);
+    this.observeTopic("treeTabs.style.alternativeTwisty", null, false);
     this.observeTopic("treeTabs.style.hideContainerLine", null, true);
 
     this.observeTopic("treeTabs.defaultPanelName", this.defaultPanelName, this.defaultPanelName.value);
@@ -4752,9 +4755,8 @@ addTabChildCount = function(aTab, count, unhide = false) {
   //maybe add an option to awlays show on nesttab
   ///(would need general update when a new child is added)
   if (unhide) {
-    tabChildCount.textContent = "";
-    tabChildCount2.textContent = "";
-
+    tabChildCount.remove();
+    tabChildCount2.remove();
   } else {
     tabChildCount.textContent = "(" + count + ")";
     tabChildCount2.textContent = "(" + count + ")";
@@ -6555,10 +6557,18 @@ let modifyCustomizePage = {
       step: 0.5,
       max: 99
     }, "Tab Icon start:", extra)
+    createNumberInputBox("treeTabs.style.pinnedTabWidth", {
+      min: 1,
+      step: 1,
+      max: 99
+    }, "Pinned Tab Width:", extra)
+
+
 
     createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
     createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
     createCheckBox("treeTabs.style.customGroups", "Tab Groups styling", extra);
+    createCheckBox("treeTabs.style.alternativeTwisty", "Alternative twisty", extra);
     createCheckBox("treeTabs.style.hideContainerLine", "Hide container indicator", extra);
 
     createTitleDiv("Keyboard Shortcuts", "(click to change)", extra);
@@ -7025,6 +7035,9 @@ loadNTTstyle = function() {
   let tabBorderRadius = checkOrSetPref("treeTabs.tabBorderRadius", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius')));
   let tabHeight = checkOrSetPref("treeTabs.tabHeight", "30");
   let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "1.5");
+  let pinnedTabWidth = checkOrSetPref("treeTabs.style.pinnedTabWidth", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-pinned-expanded-background-width')));
+  // --tab-pinned-expanded-background-width
+  // --tab-pinned-min-width-expanded
 
   let closeButtonPadding;
   if (tabHeight > 20)
@@ -7050,6 +7063,7 @@ loadNTTstyle = function() {
     --group-first-tab-top-margin:  ` + (1 + rootTabTopMargin * 0.7) + `px;
     --tree-tab-default-color: rgb(130, 120, 140);
     --tab-icon-start: ` + tabIconStart + `px;
+    --tab-pinned-expanded-background-width: ` + pinnedTabWidth + `px!important;
 }
 #vertical-tabs {
  tab[tree-depth="0"] { --tab-indent: 0; }
@@ -7254,13 +7268,13 @@ tab[soundplaying] .tab-background {
 /*Twisty */
 #tabbrowser-arrowscrollbox[orient="vertical"] tab[twisted-root]:not([hidden-child],[tabPanel-hidden],[nestTab]) .tab-icon-stack::before {
     content: url("chrome://global/skin/icons/arrow-right-12.svg")!important;
-    transform: scaleX(1.4) scaleY(1)!important;
+    transform: scaleX(1.3) scaleY(0.9)!important;
     -moz-context-properties: fill, stroke!important;
     min-width: fit-content!important;
     min-height: 20px!important;
     display: block!important;
     margin-top: 2px!important;
-    margin-left: -20px!important;
+    margin-left: -17px!important;
     fill: black!important;
     background: transparent!important;
     position: absolute!important;
@@ -7273,55 +7287,102 @@ tab[soundplaying] .tab-background {
 
 #tabbrowser-tabs[orient="vertical"][expanded] tab[twisted-root]:not([pinned],[nestTab]) {
   .tab-icon-stack {
-    margin-left: 25px!important;
+    margin-left: 17px!important;
   }
   .tab-icon-image {
-    margin-left: -2px!important;
+    margin-left: 0px!important;
   }
 }
+
 #tabbrowser-tabs[orient="vertical"]:not([expanded]) tab[twisted-root]:not([pinned],[nestTab]) {
+ .tab-icon-stack::before {
+    display:none!important;
+  }
   .tab-icon-stack {
-    margin-left: 22px!important;
-    margin-top: -18px!important;
+    margin-left: 0px!important;
+    margin-top: 0px!important;
   }
   .tab-icon-image {
-    display: none!important;
+    display: inherit!important;
+    margin-left: 0px!important;
+    margin-inline-start: var(--tab-icon-start)!important;
   }
   .tab-note-icon-overlay{
     inset-inline-end: 0!Important;
     padding: 0!Important;
-    margin-left: -10px;
+    top:9px!important;
+    margin-left: -6px;
+  }
+}
+@media not -moz-pref("treeTabs.style.alternativeTwisty") {
+#tabbrowser-arrowscrollbox[orient="vertical"] tab[twisted-root]:not([hidden-child],[tabPanel-hidden],[nestTab]):hover{
+  .tab-icon-image {
+     content: url("chrome://global/skin/icons/arrow-right-12.svg")!important;
   }
 }
 
+#tabbrowser-arrowscrollbox[orient="vertical"] tab[twisted-root]:not([hidden-child],[tabPanel-hidden],[nestTab]) .tab-icon-stack::before {
+    display:none!important;
+}
+#tabbrowser-tabs[orient="vertical"][expanded] tab[twisted-root]:not([pinned],[nestTab]) {
+  .tab-icon-stack {
+    margin-left: 0px!important;
+  }
+  .tab-icon-image {
+    margin-left: 0px!important;
+    margin-inline-start: var(--tab-icon-start)!important;
+  }
+}
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) tab[twisted-root]:not([pinned],[nestTab]) {
+ .tab-icon-stack::before {
+    display:none!important;
+  }
+  .tab-icon-stack {
+    margin-left: 0px!important;
+    margin-top: 0px!important;
+  }
+  .tab-icon-image {
+    display: inherit!important;
+  }
+  .tab-note-icon-overlay{
+    inset-inline-end: 0!Important;
+    padding: 0!Important;
+    top:9px!important;
+    margin-left: -6px;
+  }
+}
+}
+
 /* ABSOLUTE CINEMA */
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='0']:not([twisted-root]):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='1']:not([twisted-root]):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='2']:not([twisted-root]):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='3']:not([twisted-root]):has(+tab[tree-depth='4'],+tab-split-view-wrapper tab[tree-depth='4']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='4']:not([twisted-root]):has(+tab[tree-depth='5'],+tab-split-view-wrapper tab[tree-depth='5']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='5']:not([twisted-root]):has(+tab[tree-depth='6'],+tab-split-view-wrapper tab[tree-depth='6']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='6']:not([twisted-root]):has(+tab[tree-depth='7'],+tab-split-view-wrapper tab[tree-depth='7']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='7']:not([twisted-root]):has(+tab[tree-depth='8'],+tab-split-view-wrapper tab[tree-depth='8']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='8']:not([twisted-root]):has(+tab[tree-depth='9'],+tab-split-view-wrapper tab[tree-depth='9']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab[tree-depth='9']:not([twisted-root]):has(+tab[tree-depth='10'],+tab-split-view-wrapper tab[tree-depth='10']){
+#tabbrowser-arrowscrollbox[orient="vertical"][expanded]{
+tab[tree-depth='0']:not([twisted-root]):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
+tab[tree-depth='1']:not([twisted-root]):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
+tab[tree-depth='2']:not([twisted-root]):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
+tab[tree-depth='3']:not([twisted-root]):has(+tab[tree-depth='4'],+tab-split-view-wrapper tab[tree-depth='4']),
+tab[tree-depth='4']:not([twisted-root]):has(+tab[tree-depth='5'],+tab-split-view-wrapper tab[tree-depth='5']),
+tab[tree-depth='5']:not([twisted-root]):has(+tab[tree-depth='6'],+tab-split-view-wrapper tab[tree-depth='6']),
+tab[tree-depth='6']:not([twisted-root]):has(+tab[tree-depth='7'],+tab-split-view-wrapper tab[tree-depth='7']),
+tab[tree-depth='7']:not([twisted-root]):has(+tab[tree-depth='8'],+tab-split-view-wrapper tab[tree-depth='8']),
+tab[tree-depth='8']:not([twisted-root]):has(+tab[tree-depth='9'],+tab-split-view-wrapper tab[tree-depth='9']),
+tab[tree-depth='9']:not([twisted-root]):has(+tab[tree-depth='10'],+tab-split-view-wrapper tab[tree-depth='10']){
  .tab-icon-image:hover {
     content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
   }
 }
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='0']:first-child:not([twisted-root])):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='1']:first-child:not([twisted-root])):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='2']:first-child:not([twisted-root])):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='3']:first-child:not([twisted-root])):has(+tab[tree-depth='4'],+tab-split-view-wrapper tab[tree-depth='4']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='4']:first-child:not([twisted-root])):has(+tab[tree-depth='5'],+tab-split-view-wrapper tab[tree-depth='5']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='5']:first-child:not([twisted-root])):has(+tab[tree-depth='6'],+tab-split-view-wrapper tab[tree-depth='6']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='6']:first-child:not([twisted-root])):has(+tab[tree-depth='7'],+tab-split-view-wrapper tab[tree-depth='7']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='7']:first-child:not([twisted-root])):has(+tab[tree-depth='8'],+tab-split-view-wrapper tab[tree-depth='8']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='8']:first-child:not([twisted-root])):has(+tab[tree-depth='9'],+tab-split-view-wrapper tab[tree-depth='9']),
-#tabbrowser-tabs[orient="vertical"][expanded] tab-split-view-wrapper:has(tab[tree-depth='9']:first-child:not([twisted-root])):has(+tab[tree-depth='10'],+tab-split-view-wrapper tab[tree-depth='10']){
+tab-split-view-wrapper:has(tab[tree-depth='0']:first-child:not([twisted-root])):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
+tab-split-view-wrapper:has(tab[tree-depth='1']:first-child:not([twisted-root])):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
+tab-split-view-wrapper:has(tab[tree-depth='2']:first-child:not([twisted-root])):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
+tab-split-view-wrapper:has(tab[tree-depth='3']:first-child:not([twisted-root])):has(+tab[tree-depth='4'],+tab-split-view-wrapper tab[tree-depth='4']),
+tab-split-view-wrapper:has(tab[tree-depth='4']:first-child:not([twisted-root])):has(+tab[tree-depth='5'],+tab-split-view-wrapper tab[tree-depth='5']),
+tab-split-view-wrapper:has(tab[tree-depth='5']:first-child:not([twisted-root])):has(+tab[tree-depth='6'],+tab-split-view-wrapper tab[tree-depth='6']),
+tab-split-view-wrapper:has(tab[tree-depth='6']:first-child:not([twisted-root])):has(+tab[tree-depth='7'],+tab-split-view-wrapper tab[tree-depth='7']),
+tab-split-view-wrapper:has(tab[tree-depth='7']:first-child:not([twisted-root])):has(+tab[tree-depth='8'],+tab-split-view-wrapper tab[tree-depth='8']),
+tab-split-view-wrapper:has(tab[tree-depth='8']:first-child:not([twisted-root])):has(+tab[tree-depth='9'],+tab-split-view-wrapper tab[tree-depth='9']),
+tab-split-view-wrapper:has(tab[tree-depth='9']:first-child:not([twisted-root])):has(+tab[tree-depth='10'],+tab-split-view-wrapper tab[tree-depth='10']){
  tab:first-child .tab-icon-image:hover {
     content: url("chrome://global/skin/icons/arrow-down-12.svg")!important;
   }
+}
 }
 #tabbrowser-arrowscrollbox[orient="vertical"]{
  tab[hidden-child] ,
@@ -7516,6 +7577,7 @@ tab[tabPanel-hidden] .tab-child-count,
 tab[hidden-child] .tab-child-count{
   display:none!important;
 }
+
 tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count2{
   padding-bottom:2px;
 }
@@ -7536,6 +7598,7 @@ tab[hidden-child] .tab-child-count2{
 .tab-child-count{
   display:none;
 }
+
 tab-split-view-wrapper tab{
    .tab-child-count2{
     display:none!important;
@@ -7543,6 +7606,52 @@ tab-split-view-wrapper tab{
    .tab-child-count{
     display:block!important;
   }
+}
+tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
+  margin-left: 12px !important;
+  margin-top: 7px;
+}
+@media not -moz-pref("treeTabs.style.alternativeTwisty") {
+  .tab-child-count2{
+    font-size:0px;
+    right:0px;
+    position: absolute!important;
+  }
+  .tab-child-count2::before{
+    display:none!important;
+    content: url("chrome://global/skin/icons/resizer.svg")!important;
+    transform: scaleX(1.4) scaleY(1)!important;
+    transform: scaleX(1.3) scaleY(0.9)!important;
+    -moz-context-properties: fill, stroke!important;
+    min-width: fit-content!important;
+    min-height: 20px!important;
+    display: block!important;
+    margin-top: -1px!important;
+    margin-left: calc( ( -1 * var(--tab-inner-inline-margin) ) - 18px )!important;
+    fill: black!important;
+    background: transparent!important;
+    position: absolute!important;
+  }
+  @media (prefers-color-scheme: dark) {
+    .tab-child-count2::before{
+      filter:invert(1);
+    }
+  }
+  #tabbrowser-tabs[orient="vertical"][expanded]
+  tab:not([tab-note],[selected]):hover .tab-child-count2{
+    display:inherit!important;
+  }
+  tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
+    display:inherit!important;
+    margin-left: 12px !important;
+    margin-top: 7px;
+  }
+
+}
+#tabbrowser-tabs[orient="vertical"]:not([expanded])
+  tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
+    margin-left: 12px !important;
+    margin-top: 7px;
 }
 
 @media not -moz-pref("treeTabs.style.collapsedChildrenCounter") {
