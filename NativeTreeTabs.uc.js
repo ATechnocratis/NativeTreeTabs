@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.7
+// @version        0.3.1.8
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1413,6 +1413,7 @@ window.nativeTreeTabs = {
     if (aEvent.button !== 2 || aEvent.ctrlKey || aEvent.shiftKey || aEvent.altKey || aEvent.metaKey) {
       return;
     }
+
     function addToHovertabs(tab) {
       if (!tab.hidden && !(tab.group && tab.group.collapsed)) {
         nativeTreeTabs.hoverTabs.push(tab);
@@ -1428,6 +1429,9 @@ window.nativeTreeTabs = {
 
     let handleMousemove = function(aEvent) {
       if (ogout) {
+        nativeTreeTabs.getHoverTabsSorted().forEach((t) => {
+          t.removeAttribute("multiselected");
+        });
         addToHovertabs(ogTab);
         ogout = false;
       }
@@ -2872,7 +2876,6 @@ window.nativeTreeTabs = {
       }
       nativeTreeTabs.originalPinTab.apply(this, arguments);
       removeSkipNextMoveCheck(aTab);
-
     };
 
     //Used for right click mouseover selected
@@ -2884,10 +2887,15 @@ window.nativeTreeTabs = {
         return _contextTabs;
       },
       set(value) {
-        if (nativeTreeTabs.hoverTabs.length > 1) {
-          _contextTabs = nativeTreeTabs.getHoverTabsSorted();
-        } else {
+        try {
+          if (nativeTreeTabs.hoverTabs.length > 1) {
+            _contextTabs = nativeTreeTabs.getHoverTabsSorted();
+          } else {
+            _contextTabs = value;
+          }
+        } catch (error) {
           _contextTabs = value;
+          console.error(error);
         }
       }
     });
@@ -2899,10 +2907,15 @@ window.nativeTreeTabs = {
         return _multiselected;
       },
       set(value) {
-        if (nativeTreeTabs.hoverTabs.length > 1) {
-          _multiselected = true
-        } else {
+        try {
+          if (nativeTreeTabs.hoverTabs.length > 1) {
+            _multiselected = true
+          } else {
+            _multiselected = value;
+          }
+        } catch (error) {
           _multiselected = value;
+          console.error(error);
         }
       }
     });
@@ -2917,15 +2930,23 @@ window.nativeTreeTabs = {
       console.error("selectedTabs is not a getter on gBrowser");
     } else {
       const originalGet = originalDesc.get;
+      const originalSet = originalDesc.set;
       let _selectedTabs = gBrowser.selectedTabs || null;
       Object.defineProperty(gBrowser, "selectedTabs", {
         configurable: true,
         enumerable: true,
         get() {
-          if (nativeTreeTabs.hoverTabs.length > 1) {
-            return nativeTreeTabs.getHoverTabsSorted();
+          try {
+            if (nativeTreeTabs.hoverTabs.length > 1) {
+              return nativeTreeTabs.getHoverTabsSorted();
+            }
+          } catch (error) {
+            console.error(error);
           }
           return originalGet.call(this);
+        },
+        set(tabs){
+          return originalSet.call(this,arguments);
         }
       });
     }
