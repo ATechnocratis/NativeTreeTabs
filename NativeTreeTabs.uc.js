@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.5
+// @version        0.3.1.6
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2616,7 +2616,7 @@ window.nativeTreeTabs = {
                   if (possibleSwitch.hasAttribute("tabPanel-hidden"))
                     break;
                   let depth = getTreeDepth(possibleSwitch);
-                  if (depth < activeDepth)
+                  if (depth <= activeDepth)
                     break;
                   if (unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
                     return possibleSwitch;
