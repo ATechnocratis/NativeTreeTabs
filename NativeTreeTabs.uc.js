@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.8
+// @version        0.3.1.9
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1461,14 +1461,14 @@ window.nativeTreeTabs = {
             nativeTreeTabs.hoverTabs.splice(i, 1);
           }
         } else if (!nativeTreeTabs.hoverTabs.includes(aTab)) {
-          let lastAdded = nativeTreeTabs.hoverTabs[nativeTreeTabs.hoverTabs.length - 1]._tPos;
-          if (aTab._tPos < ogTab._tPos) {
-            for (var i = lastAdded - 1; i >= aTab._tPos; i--) {
+          let lastAdded = getPosition(nativeTreeTabs.hoverTabs[nativeTreeTabs.hoverTabs.length - 1]);
+          if (getPosition(aTab) < getPosition(ogTab)) {
+            for (var i = lastAdded - 1; i >= getPosition(aTab); i--) {
               let t = gBrowser.tabs[i];
               addToHovertabs(t);
             }
           } else {
-            for (var i = lastAdded + 1; i <= aTab._tPos; i++) {
+            for (var i = lastAdded + 1; i <= getPosition(aTab); i++) {
               let t = gBrowser.tabs[i];
               addToHovertabs(t);
             }
@@ -4812,9 +4812,11 @@ getCustomTabValue = function(aTab, valueName) {
 
 getPosition = function(aTab) {
   if (aTab.splitViewId == null) {
-    return aTab._tPos;
+    if(aTab._tPos)
+      return aTab._tPos;
+    return aTab.index;
   }
-  return aTab.tabs[0]._tPos;
+  return getPosition(aTab.tabs[0]);
 }
 
 skipNextMoveCheck = function(aTab) {
@@ -5097,7 +5099,7 @@ setDomainAttr = function(aTab) {
   if (linkedBrowser == null) return;
   let uri = aTab.linkedBrowser.currentURI;
   let spec = uri.spec;
-  let bakedPatterns = ["about", "resource", "chrome", "wyciwyg", "file", "blob", "moz-extension", "jar", "moz-icon"];
+  let bakedPatterns = ["about", "resource", "chrome", "wyciwyg", "file", "blob", "moz-extension", "jar", "moz-icon","view-source"];
   let baked = bakedPatterns.some(p => spec.startsWith(p));
   try {
     //BrowserUtils.formatURIForDisplay(uri));
