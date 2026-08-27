@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.9
+// @version        0.3.1.10
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -1551,7 +1551,7 @@ window.nativeTreeTabs = {
 
     let aTab = aEvent.target.closest(".tabbrowser-tab");
 
-    if (SidebarController._sidebarMain.__expanded) {
+    if (SidebarController._sidebarMain.expanded) {
       if (aEvent.target.closest(".tab-icon-stack") && !aTab.pinned) {
         return;
       }
@@ -1817,7 +1817,7 @@ window.nativeTreeTabs = {
   },
 
   twistyClick: function(aEvent) {
-    if (!SidebarController._sidebarMain.__expanded) {
+    if (!SidebarController._sidebarMain.expanded) {
       return;
     }
     let aTab = aEvent.target.closest('tab');
@@ -8232,7 +8232,8 @@ tab[soundplaying] .tab-background {
 }
 
 /* ABSOLUTE CINEMA */
-#tabbrowser-arrowscrollbox[orient="vertical"][expanded]{
+#tabbrowser-tabs[expanded]
+#tabbrowser-arrowscrollbox[orient="vertical"]{
 tab[tree-depth='0']:not([twisted-root]):has(+tab:not([tree-depth='0']),+tab-split-view-wrapper tab:not([tree-depth='0'])),
 tab[tree-depth='1']:not([twisted-root]):has(+tab[tree-depth='2'],+tab-split-view-wrapper tab[tree-depth='2']),
 tab[tree-depth='2']:not([twisted-root]):has(+tab[tree-depth='3'],+tab-split-view-wrapper tab[tree-depth='3']),
