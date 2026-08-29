@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.11
+// @version        0.3.1.12
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -20,6 +20,7 @@ window.nativeTreeTabs = {
   originalAddTabSplitView: null,
   originalUnsplitTabs: new Map(),
   originalReverseTabs: new Map(),
+  originalAddTabs: new Map(),
   originalUpdateContextMenu: null,
   originalAddToMultiSelectedTabs: null,
   originalAdvanceSelectedTab: null,
@@ -230,14 +231,20 @@ window.nativeTreeTabs = {
     window.gBrowser.splitViews.forEach(function(splitview) {
       let originalReverseTabs = this.originalReverseTabs.get(splitview.splitViewId);
       let originalUnsplitTabs = this.originalUnsplitTabs.get(splitview.splitViewId);
+      let originalAddTabs = this.originalAddTabs.get(splitview.splitViewId);
+
       if (originalUnsplitTabs != null) {
         splitview.unsplitTabs = originalUnsplitTabs;
       }
       if (originalReverseTabs != null) {
         splitview.reverseTabs = originalReverseTabs;
       }
+      if (originalAddTabs != null) {
+        splitview.addTabs = originalAddTabs;
+      }
     }, this);
     this.originalReverseTabs.clear();
+    this.originalAddTabs.clear();
     this.originalUnsplitTabs.clear();
 
     nativeTreeTabs.hoverTabs.forEach((aTab) => {
@@ -1713,6 +1720,24 @@ window.nativeTreeTabs = {
     }
   },
 
+  removeTree: function(aTab) {
+    let nextTab = getNextTab(aTab);
+    let treeDepth = getTreeDepth(aTab);
+    if (!isTab(nextTab) || !hasTreeDepth(nextTab) ||
+      (getTreeDepth(nextTab) <= treeDepth)) return;
+    let tabsToRemove = new Array();
+    tabsToRemove.push(aTab);
+    while (nextTab) {
+      nextTabTreeDepth = getTreeDepth(nextTab);
+      if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
+        break;
+      }
+      tabsToRemove.push(nextTab);
+      nextTab = getNextTab(nextTab);
+    }
+    window.gBrowser.removeTabs(tabsToRemove, animate = false, suppressWarnAboutClosingWindow = true);
+  },
+
   //Closes the tree under a tab
   // when middle click is pressed
   // on close button
@@ -1721,21 +1746,7 @@ window.nativeTreeTabs = {
     let button = aEvent.button;
     let aTab = aEvent.target.closest('tab');
     if (button == 1 || (button == 0 && aTab.hasAttribute("twisted-root"))) {
-      let nextTab = getNextTab(aTab);
-      let treeDepth = getTreeDepth(aTab);
-      if (!isTab(nextTab) || !hasTreeDepth(nextTab) ||
-        (getTreeDepth(nextTab) <= treeDepth)) return;
-      let tabsToRemove = new Array();
-      tabsToRemove.push(aTab);
-      while (nextTab) {
-        nextTabTreeDepth = getTreeDepth(nextTab);
-        if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
-          break;
-        }
-        tabsToRemove.push(nextTab);
-        nextTab = getNextTab(nextTab);
-      }
-      window.gBrowser.removeTabs(tabsToRemove, animate = false, suppressWarnAboutClosingWindow = true);
+      this.removeTree(aTab);
       aEvent.preventDefault();
     }
   },
@@ -2077,12 +2088,13 @@ window.nativeTreeTabs = {
     aTab.addEventListener("dragend", this);
     aTab.addEventListener("dragstart", this);
     aTab.querySelector(".tab-icon-stack").addEventListener("click", this);
-    aTab.querySelector(".tab-close-button").addEventListener("click", this);
+    aTab.querySelector(".tab-close-button").addEventListener("click", this, true);
 
     if (aTab.splitview) {
       if (this.originalUnsplitTabs.get(aTab.splitview.splitViewId) == null) {
         this.overwriteUnsplitFunction(aTab.splitview);
         this.overwriteReverseSplitFunction(aTab.splitview);
+        this.overwriteSplitViewAddTabs(aTab.splitview);
       }
     }
   },
@@ -2092,7 +2104,7 @@ window.nativeTreeTabs = {
       aTab.removeEventListener("dragend", this);
       aTab.removeEventListener("dragstart", this);
       aTab.querySelector(".tab-icon-stack").removeEventListener("click", this);
-      aTab.querySelector(".tab-close-button").removeEventListener("click", this);
+      aTab.querySelector(".tab-close-button").removeEventListener("click", this, true);
       aTab.removeEventListener("click", this.previousSwitch, true);
       if (aTab.hasAttribute("nestTab"))
         aTab.removeEventListener("click", this.nestClick);
@@ -2551,6 +2563,69 @@ window.nativeTreeTabs = {
 
   },
 
+  overwriteSplitViewAddTabs: function(splitview) {
+
+    let originalAddTabs = splitview.addTabs;
+    nativeTreeTabs.originalAddTabs.set(splitview.splitViewId, originalAddTabs);
+    splitview.addTabs = function(tabs, {
+      isSessionRestore = false,
+      indexOfReplacedTab = -1
+    } = {}) {
+      try {
+        let splitDepth;
+        let ogTabs = splitview.tabs.slice();
+        let replacingTab = false;
+        if (indexOfReplacedTab > -1 && splitview.tabs.length > 0 && tabs.length == 1 && !tabs[0].pinned) {
+          replacingTab = true;
+          movingTab = tabs[0];
+          movingOldPosition = getPosition(movingTab);
+          movingOldDepth = getTreeDepth(movingTab);
+          insertBefore = splitview.tabs[0];
+          insertOldPosition = getPosition(insertBefore);
+          insertOldDepth = getTreeDepth(insertBefore);
+
+          function makeSureOpenerIsSet(t) {
+            let tDepth = getTreeDepth(t);
+            let tNext = getNextTab(t);
+            while (tNext) {
+              tNextDepth = getTreeDepth(tNext);
+              if (tDepth == null || tNextDepth <= tDepth) {
+                break;
+              }
+              if (tNextDepth == tDepth + 1) {
+                setOpener(tNext, t);
+              }
+              tNext = getNextTab(tNext);
+            }
+          }
+          isAncestor = (checkIfIsAncestor(insertBefore, movingTab)) ?
+            true : false;
+          skipNextMoveCheck(movingTab);
+          makeSureOpenerIsSet(movingTab);
+        }
+        if (splitview.tabs.length > 0) {
+          splitDepth = getTreeDepth(splitview.tabs[0]);
+        }
+        originalAddTabs.apply(this, arguments);
+        splitview.tabs.forEach(function(sTab) {
+          if (splitDepth != null && getTreeDepth(sTab) != splitDepth)
+            setTreeDepth(sTab, splitDepth);
+        }, this);
+        if (replacingTab) {
+          removeSkipNextMoveCheck(movingTab);
+          if (isAncestor) {
+            nativeTreeTabs.updateChildrenFromIndex(insertBefore, insertOldPosition, getPosition(insertBefore), insertOldDepth, groupState = false, forceMultiselected = false, splitViewCreation = true);
+          }
+          nativeTreeTabs.updateChildrenFromIndex(movingTab, movingOldPosition, getPosition(movingTab), movingOldDepth, groupState = false, forceMultiselected = false, splitViewCreation = true);
+        }
+      } catch (error) {
+        console.error(error);
+        originalAddTabs.apply(this, arguments);
+        return;
+      }
+    };
+  },
+
   overwriteReverseSplitFunction: function(splitview) {
 
     let originalReverseTabs = splitview.reverseTabs;
@@ -2567,7 +2642,6 @@ window.nativeTreeTabs = {
         splitview.tabs.forEach(function(sTab) {
           removeSkipNextMoveCheck(sTab);
         }, this);
-
       } catch (error) {
         console.error(error);
         originalReverseTabs.apply(this, arguments);
@@ -2772,129 +2846,133 @@ window.nativeTreeTabs = {
         }
         return foundTab;
       }
+      checkForNextNestClose(aTab);
+      if (aTab.hasAttribute("tabPanel-hidden")) {
+        return;
+      }
+      if (aTab.selected) {
+        function findPossibleSwitch(aTab, switchOnClose, previousChecked = -1) {
+          let previousTab = getPreviousTab(aTab);
+          let nextTab = getNextTab(aTab);
+          let activeDepth = getTreeDepth(aTab);
+          let foundTab;
+          let i = 0;
 
-      try {
-        checkForNextNestClose(aTab);
-        if (aTab.hasAttribute("tabPanel-hidden")) {
-          return;
-        }
-        if (aTab.selected) {
-          function findPossibleSwitch(aTab, switchOnClose, previousChecked = -1) {
-            let previousTab = getPreviousTab(aTab);
-            let nextTab = getNextTab(aTab);
-            let activeDepth = getTreeDepth(aTab);
-            let foundTab;
-            let i = 0;
-
-            function findNextTabByCase(aTab, val) {
-              let possibleSwitch;
-              if (val === 0) {
-                possibleSwitch = nextTab;
-                while (isTab(possibleSwitch)) {
-                  if (possibleSwitch.hasAttribute("tabPanel-hidden"))
-                    break;
-                  let depth = getTreeDepth(possibleSwitch);
-                  if (depth <= activeDepth)
-                    break;
-                  if (unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
-                    return possibleSwitch;
-                  possibleSwitch = getNextTab(possibleSwitch);
-                }
-              } else if (val === 1) {
-                if (activeDepth > 0) {
-                  possibleSwitch = previousTab;
-                  while (isTab(possibleSwitch)) {
-                    if (possibleSwitch.hasAttribute("tabPanel-hidden"))
-                      break;
-                    let depth = getTreeDepth(possibleSwitch);
-                    if (depth < activeDepth)
-                      break;
-                    if (depth == activeDepth && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
-                      return possibleSwitch;
-                    possibleSwitch = getPreviousTab(possibleSwitch)
-                  }
-                }
-              } else if (val === 2) {
-                if (activeDepth > 0) {
-                  possibleSwitch = nextTab;
-                  while (isTab(possibleSwitch)) {
-                    if (possibleSwitch.hasAttribute("tabPanel-hidden"))
-                      break;
-                    let depth = getTreeDepth(possibleSwitch);
-                    if (depth < activeDepth)
-                      break;
-                    if (depth == activeDepth && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
-                      return possibleSwitch;
-                    possibleSwitch = getNextTab(possibleSwitch);
-                  }
-                }
-              } else if (val === 3) {
-                if (activeDepth > 0) {
-                  possibleSwitch = previousTab;
-                  while (isTab(possibleSwitch)) {
-                    if (possibleSwitch.hasAttribute("tabPanel-hidden"))
-                      break;
-                    let depth = getTreeDepth(possibleSwitch);
-                    if (depth < activeDepth && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
-                      return possibleSwitch;
-                    if (depth < activeDepth)
-                      break;
-                    possibleSwitch = getPreviousTab(possibleSwitch)
-                  }
-                }
-              } else if (val === 4) {
-                possibleSwitch = getTabByDirection(aTab, -1);
-                if (possibleSwitch != null) {
+          function findNextTabByCase(aTab, val) {
+            let possibleSwitch;
+            if (val === 0) {
+              possibleSwitch = nextTab;
+              while (isTab(possibleSwitch)) {
+                if (possibleSwitch.hasAttribute("tabPanel-hidden"))
+                  break;
+                let depth = getTreeDepth(possibleSwitch);
+                if (depth <= activeDepth)
+                  break;
+                if (unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
                   return possibleSwitch;
-                }
-              } else if (val === 5) {
-                possibleSwitch = getTabByDirection(aTab, 1);
-                if (possibleSwitch != null) {
-                  return possibleSwitch;
-                }
-              } else if (val === 6 || val === 7) {
-                let source = (val === 7) ? nativeTreeTabs.selectedtPanel.previousSelectedTab : nativeTreeTabs.previousSelectedTab;
-                let pSTab = source.pop();
-                while (source.length > 0 && (pSTab == null || pSTab === aTab || !window.gBrowser.tabs.includes(pSTab))) {
-                  pSTab = source.pop();
-                }
-                if (pSTab && pSTab != aTab && !pSTab.closing) {
-                  return pSTab;
-                }
-              } else if (val === 8) {
+                possibleSwitch = getNextTab(possibleSwitch);
+              }
+            } else if (val === 1) {
+              if (activeDepth > 0) {
                 possibleSwitch = previousTab;
                 while (isTab(possibleSwitch)) {
                   if (possibleSwitch.hasAttribute("tabPanel-hidden"))
                     break;
                   let depth = getTreeDepth(possibleSwitch);
-                  if (depth == 0 && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
+                  if (depth < activeDepth)
+                    break;
+                  if (depth == activeDepth && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
                     return possibleSwitch;
                   possibleSwitch = getPreviousTab(possibleSwitch)
                 }
-              } else if (val === 9) {
+              }
+            } else if (val === 2) {
+              if (activeDepth > 0) {
                 possibleSwitch = nextTab;
                 while (isTab(possibleSwitch)) {
                   if (possibleSwitch.hasAttribute("tabPanel-hidden"))
                     break;
                   let depth = getTreeDepth(possibleSwitch);
-                  if (depth == 0 && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
+                  if (depth < activeDepth)
+                    break;
+                  if (depth == activeDepth && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
                     return possibleSwitch;
-                  possibleSwitch = getNextTab(possibleSwitch)
+                  possibleSwitch = getNextTab(possibleSwitch);
                 }
               }
+            } else if (val === 3) {
+              if (activeDepth > 0) {
+                possibleSwitch = previousTab;
+                while (isTab(possibleSwitch)) {
+                  if (possibleSwitch.hasAttribute("tabPanel-hidden"))
+                    break;
+                  let depth = getTreeDepth(possibleSwitch);
+                  if (depth < activeDepth && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
+                    return possibleSwitch;
+                  if (depth < activeDepth)
+                    break;
+                  possibleSwitch = getPreviousTab(possibleSwitch)
+                }
+              }
+            } else if (val === 4) {
+              possibleSwitch = getTabByDirection(aTab, -1);
+              if (possibleSwitch != null) {
+                return possibleSwitch;
+              }
+            } else if (val === 5) {
+              possibleSwitch = getTabByDirection(aTab, 1);
+              if (possibleSwitch != null) {
+                return possibleSwitch;
+              }
+            } else if (val === 6 || val === 7) {
+              let source = (val === 7) ? nativeTreeTabs.selectedtPanel.previousSelectedTab : nativeTreeTabs.previousSelectedTab;
+              let pSTab = source.pop();
+              while (source.length > 0 && (pSTab == null || pSTab === aTab || !window.gBrowser.tabs.includes(pSTab))) {
+                pSTab = source.pop();
+              }
+              if (pSTab && pSTab != aTab && !pSTab.closing) {
+                return pSTab;
+              }
+            } else if (val === 8) {
+              possibleSwitch = previousTab;
+              while (isTab(possibleSwitch)) {
+                if (possibleSwitch.hasAttribute("tabPanel-hidden"))
+                  break;
+                let depth = getTreeDepth(possibleSwitch);
+                if (depth == 0 && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
+                  return possibleSwitch;
+                possibleSwitch = getPreviousTab(possibleSwitch)
+              }
+            } else if (val === 9) {
+              possibleSwitch = nextTab;
+              while (isTab(possibleSwitch)) {
+                if (possibleSwitch.hasAttribute("tabPanel-hidden"))
+                  break;
+                let depth = getTreeDepth(possibleSwitch);
+                if (depth == 0 && unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
+                  return possibleSwitch;
+                possibleSwitch = getNextTab(possibleSwitch)
+              }
             }
-            while (foundTab == null && i < switchOnClose.length - 1) {
-              foundTab = findNextTabByCase(aTab, parseInt(switchOnClose[i], 10));
-              i++;
-            }
-            return foundTab;
           }
-          let switchOnClose = nativeTreeTabs.switchOnClose.value;
-          switchOnClose = switchOnClose.split(",");
-          let findTab = findPossibleSwitch(aTab, switchOnClose);
-          if (findTab != null) {
-            gBrowser.setSuccessor(aTab, findTab);
+          while (foundTab == null && i < switchOnClose.length - 1) {
+            foundTab = findNextTabByCase(aTab, parseInt(switchOnClose[i], 10));
+            i++;
           }
+          return foundTab;
+        }
+        let switchOnClose = nativeTreeTabs.switchOnClose.value;
+        switchOnClose = switchOnClose.split(",");
+        let findTab = findPossibleSwitch(aTab, switchOnClose);
+        if (findTab != null) {
+          gBrowser.setSuccessor(aTab, findTab);
+        }
+      }
+      try {
+        if (aTab.hasAttribute("twisted-root") && aOptions && aOptions.metricsContext && aOptions.metricsContext && aOptions.metricsContext.telemetrySource &&
+          gBrowser.TabMetrics.METRIC_SOURCE.MIDDLE_CLICK == aOptions.metricsContext.telemetrySource) {
+          nativeTreeTabs.removeTree(aTab);
+          return;
         }
         nativeTreeTabs.originalRemoveTab.apply(this, arguments);
       } catch (error) {
@@ -3138,6 +3216,7 @@ window.nativeTreeTabs = {
           //Overwrite unsplit and tab reverse functions of the object
           nativeTreeTabs.overwriteUnsplitFunction(splitview);
           nativeTreeTabs.overwriteReverseSplitFunction(splitview);
+          nativeTreeTabs.overwriteSplitViewAddTabs(splitview);
         }
         // if(tabsToAdd[0]&& tabsToAdd[0].splitview)
         // tabsToAdd[0].splitview.addEventListener("dragend", window.nativeTreeTabs);
@@ -7357,7 +7436,7 @@ let modifyCustomizePage = {
     createKeyInputBox("treeTabs.shortcuts.moveTabDown", "Move tab down:", extra);
     createKeyInputBox("treeTabs.shortcuts.indentTabOut", "Indent tab:", extra);
     createKeyInputBox("treeTabs.shortcuts.indentTab", "Outdent tab:", extra);
-    createKeyInputBox("treeTabs.shortcuts.flipActive", "Switch to previous active tab:", extra);
+    createKeyInputBox("treeTabs.shortcuts.flipActive", "Switch to last active tab:", extra);
 
     modifyCustomizePage.observeTopic("treeTabs.enabled", extra);
 
