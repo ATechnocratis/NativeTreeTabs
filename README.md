@@ -113,3 +113,5 @@
 - You can customized the script style and behavior in Firefox Customize Sidebar settings
 
 To avoid conflicts, make sure no addons that manage tabs are enabled.
+## Compatibility 
+Expected to work on latest stable Firefox release. For Firefox Nightly, make sure to keep the script updated to the latest version to avoid breakage. Non-guaranteed support and expected conflicts with forks that heavy modify Firefox (Zen and Floorp).
