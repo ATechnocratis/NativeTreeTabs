@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.12
+// @version        0.3.1.13
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -3154,7 +3154,9 @@ window.nativeTreeTabs = {
     };
 
     //Split View creation
+
     this.originalAddTabSplitView = gBrowser.addTabSplitView;
+    if(AppConstants.MOZ_APP_BASENAME!="Floorp"){
     gBrowser.addTabSplitView = function(tabsToAdd, {
       insertBefore,
       trigger,
@@ -3227,6 +3229,7 @@ window.nativeTreeTabs = {
         return;
       }
     };
+  }
     //Multiselect ignore hidden tabs
     this.originalAddToMultiSelectedTabs = gBrowser.addToMultiSelectedTabs;
     gBrowser.addToMultiSelectedTabs = function(aTab) {
@@ -8099,9 +8102,11 @@ loadNTTstyle = function() {
 }
 
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
-    margin-inline: 0px !important;
     max-width: calc(100% - var(--tab-indent))!important;
     padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-inner-inline-margin)) !important;
+}
+#tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab-split-view-wrapper{
+    margin-inline: 0px !important;
 }
 #tabbrowser-tabs:not([expanded]) #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
       margin-inline: 0px !important;
@@ -8514,7 +8519,6 @@ tab-group > tab-split-view-wrapper tab{
 tab-group > tab-split-view-wrapper {
  margin-inline-start:var(--space-medium)!important;
 }
-
 &:not([expanded])
 tab-group > tab-split-view-wrapper
 {
