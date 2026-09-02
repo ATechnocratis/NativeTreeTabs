@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.13
+// @version        0.3.1.14
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -751,7 +751,6 @@ window.nativeTreeTabs = {
   },
 
   tabDragEnd: function(aEvent) {
-
     let aTab = aEvent.target;
     let rect = aTab.getBoundingClientRect().top;
     setTimeout(() => {
@@ -1362,8 +1361,8 @@ window.nativeTreeTabs = {
     //If aTab became child of twisted tab then unravel it
     if (isTab(previousTab)) {
       previousTabDepth = getTreeDepth(previousTab);
-      if (previousTab.hasAttribute("twisted-root") && previousTabDepth < newDepth) {
-        this.toggleTwist(previousTab);
+      if (telemetrySource != "drag"&&previousTab.hasAttribute("twisted-root") && previousTabDepth < newDepth) {
+          this.toggleTwist(previousTab);
       }
     }
   },
@@ -2550,6 +2549,7 @@ window.nativeTreeTabs = {
     this.observeTopic("treeTabs.style.collapsedChildrenCounter", null, true);
     this.observeTopic("treeTabs.style.customText", null, true);
     this.observeTopic("treeTabs.style.customBackground", null, true);
+    this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true);
     this.observeTopic("treeTabs.style.customGroups", null, true);
     this.observeTopic("treeTabs.style.twistyStyle", null, 0);
     this.observeTopic("treeTabs.style.hideContainerLine", null, true);
@@ -5705,6 +5705,16 @@ panelNameRightClick = function(aEvent) {
   addInputListeners(input, finishEdit, replaceInputWithNew, finishEdit);
 }
 
+menuItemRightClickNew = function(aEvent, panel, target) {
+  let button = aEvent.button;
+  if (button == 1 || button == 0) {
+    return;
+  }
+  aEvent.preventDefault();
+  menupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
+  makePopupStayOpen(menupopup, null);
+}
+
 menuItemRightClick = function(aEvent, panel, target) {
   let button = aEvent.button;
   if (button == 1 || button == 0) {
@@ -6480,7 +6490,7 @@ addTabPanelButton = function(mainDiv) {
   tabPanelGroup.appendChild(dropDownImg);
   mainDiv.appendChild(tabPanelGroup);
 
-  //Create popup
+  //Create Panel list popup
   let menupopup = document.createXULElement("panel");
   elementsCreated.push(menupopup);
   menupopup.setAttribute('id', 'tab-panels-menupopup');
@@ -6488,19 +6498,17 @@ addTabPanelButton = function(mainDiv) {
   menupopup.setAttribute('class', 'panel-no-padding');
   menupopup.setAttribute('orient', 'vertical');
   menupopup.setAttribute('position', 'after_start');
+  let mainPopupSet = document.getElementById('mainPopupSet');
+  mainPopupSet.appendChild(menupopup);
 
   let panelMenuMainDiv = document.createElement('div');
   panelMenuMainDiv.setAttribute('id', 'tab-panels-menupopup-view');
 
+  //Create new Panel, menuitem
   let subDiv = document.createElement('div');
   subDiv.setAttribute('class', 'add-panel-button');
-  // menupopup.setAttribute('onpopupshowing', null);
-
-  document.getElementById('mainPopupSet').appendChild(menupopup);
-
   let plusIcon = document.createElement('img');
   let menuitem = document.createXULElement('menuitem');
-
   menuitem.setAttribute('id', 'add-panel-button-menuitem');
   menuitem.setAttribute('label', 'Create a New Panel');
 
@@ -6511,6 +6519,7 @@ addTabPanelButton = function(mainDiv) {
 
   subDiv.addEventListener("click", (aEvent) => addNewPanelInput(aEvent, menupopup));
 
+  //Panel dragging in menu to reorder
   let isDragging = false;
   let draggedItem = null;
   let previousNextitem = null;
@@ -7416,7 +7425,8 @@ let modifyCustomizePage = {
       max: 99
     }, "Pinned tabs min width:", extra);
     createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
-    createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
+    let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
+    createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
     createCheckBox("treeTabs.style.customGroups", "Tab Groups styling", extra);
     createSelectBox("treeTabs.style.twistyStyle", "Collapsed tree root tab style", [{
       label: "1",
@@ -8040,7 +8050,7 @@ loadNTTstyle = function() {
   let labelFontSize = checkOrSetPref("treeTabs.labelFontSize", "13.4");
   let tabBorderRadius = checkOrSetPref("treeTabs.tabBorderRadius", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius')));
   let tabHeight = checkOrSetPref("treeTabs.tabHeight", "30");
-  let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "1.5");
+  let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "2");
   let pinnedTabWidth = checkOrSetPref("treeTabs.style.pinnedTabWidth", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-pinned-expanded-background-width')));
   // --tab-pinned-expanded-background-width
   // --tab-pinned-min-width-expanded
@@ -8785,11 +8795,17 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
   }
   #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
       backdrop-filter: blur(5px);
-      outline: none!important;
-      border: 2px solid transparent!important;
-      background: linear-gradient( color-mix( in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, rgba(130, 120, 140)) 40%, rgb(20, 20, 20))) 33%, rgba(2, 2, 2, 0.95))) padding-box, linear-gradient(96deg, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent))) border-box;
       opacity: 0.8;
   }
+
+  @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
+    #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
+      outline: none!important;
+      border: 2px solid transparent!important;
+      background: linear-gradient( color-mix( in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, rgba(130, 120, 140)) 40%, rgb(20, 20, 20))) 33%, rgba(2, 2, 2, 0.95))) padding-box, linear-gradient(96deg, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent))) border-box!important;
+    }
+  }
+
   #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) .tab-background:not([selected]) {
       background: transparent!important;
       border: none!important;
@@ -8807,9 +8823,13 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
   }
   #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
       backdrop-filter: blur(5px);
+      opacity: 0.8;
+  }
+  @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
+    #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
       outline: none!important;
       border: 2px solid transparent!important;
-      opacity: 0.8;
+    }
   }
 
   #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) {
