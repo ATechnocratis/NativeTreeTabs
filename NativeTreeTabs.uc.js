@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.1.14
+// @version        0.3.2.0
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -282,8 +282,6 @@ window.nativeTreeTabs = {
 
     }, this);
 
-    modifyCustomizePage.unload();
-
     this._initialized = false;
 
   },
@@ -294,6 +292,7 @@ window.nativeTreeTabs = {
   },
 
   handleEvent: function(aEvent) {
+
     switch (aEvent.type) {
       case "TabOpen":
         {
@@ -1361,8 +1360,8 @@ window.nativeTreeTabs = {
     //If aTab became child of twisted tab then unravel it
     if (isTab(previousTab)) {
       previousTabDepth = getTreeDepth(previousTab);
-      if (telemetrySource != "drag"&&previousTab.hasAttribute("twisted-root") && previousTabDepth < newDepth) {
-          this.toggleTwist(previousTab);
+      if (telemetrySource != "drag" && previousTab.hasAttribute("twisted-root") && previousTabDepth < newDepth) {
+        this.toggleTwist(previousTab);
       }
     }
   },
@@ -1640,11 +1639,14 @@ window.nativeTreeTabs = {
   tabSelected: function(aTab) {
 
     // function protectSelection() {
-    if (aTab && aTab.hasAttribute("nestTab")) {
+    if (aTab && (aTab.hasAttribute("nestTab") || getCustomTabValue(aTab, "nestTab") != "")) {
       if (nativeTreeTabs.selectedTab.hasAttribute("hidden-child") && nativeTreeTabs.selectedTab.getAttribute("hidden-child-rootID") == aTab.getAttribute("tree-id")) {
         aTab.setAttribute("skipUntwist", "");
       }
       let pSTab = nativeTreeTabs.selectedTab;
+      while (pSTab.hasAttribute("nestTab")) {
+        pSTab = nativeTreeTabs.previousSelectedTab.pop();
+      }
       if (window.gBrowser.tabs.includes(pSTab) && pSTab.closing == false) {
         if (!pSTab.splitview) {
           gBrowser.selectedTab = pSTab;
@@ -2004,6 +2006,7 @@ window.nativeTreeTabs = {
         //Find direct children (Depth difference == 1 )
         while (nextTab && nextTab.hasAttribute("opener-id") && nextTab.getAttribute("opener-id") === restoredTreeId) {
           let depthPreRestore = getTreeDepth(nextTab);
+          setOpener(nextTab, aTab);
           setTreeDepth(nextTab, rootTreeDepth + 1);
           nextTab = getNextTab(nextTab);
           //Fix grandchildren
@@ -2080,7 +2083,7 @@ window.nativeTreeTabs = {
   tabOpen: function(aTab) {
     setPanelLite(aTab, window.nativeTreeTabs.selectedtPanel, window);
     this.initTreeDepth(aTab);
-    this.observeTab(aTab, this);
+    this.observeTab(aTab, ["pending", "bursting", "open"], this.initTab);
   },
 
   attachTabListeners: function(aTab) {
@@ -2152,6 +2155,30 @@ window.nativeTreeTabs = {
 
     if (openerId) {
       aTab.setAttribute("opener-id", openerId);
+      //Check if tab parent was restored
+      // before tab opened => restore depth
+      treeDepth = getTreeDepth(aTab);
+      let possibleParent = getPreviousTab(aTab);
+      let checked = 0;
+      while (isTab(possibleParent)) {
+        let possibleParentDepth = getTreeDepth(possibleParent);
+        if (checked > 0) {
+          if (possibleParentDepth && possibleParentDepth >= treeDepth) {
+            break;
+          }
+        } else {
+          if (possibleParentDepth && possibleParentDepth > treeDepth) {
+            break;
+          }
+        }
+        checked++;
+        if (possibleParent.getAttribute("tree-id") == openerId) {
+          setTreeDepth(aTab, possibleParentDepth + 1);
+          setOpener(aTab, possibleParent);
+          break;
+        }
+        possibleParent = getPreviousTab(possibleParent);
+      }
     } else {
       if (aTab.openerTab != null && parseInt(treeDepth, 10) != 0) {
         setOpener(aTab, aTab.openerTab);
@@ -2171,7 +2198,19 @@ window.nativeTreeTabs = {
     if (nestTab) {
       aTab.setAttribute("nestTab", "");
       aTab.label = nestTab;
+      aTab.setAttribute("label", nestTab);
       aTab.addEventListener("click", this.nestClick);
+      nestLabel = document.createElement("label");
+      nestLabel.setAttribute("class", "tab-label tab-text");
+      nestLabel.setAttribute("nestLabel", "");
+      nestLabel.setAttribute("fadein", "");
+      nestLabel.textContent = nestTab;
+      let tabLabel = aTab.querySelector(".tab-label");
+      tabLabel.after(nestLabel);
+      if (aTab.selected) {
+        //make  nest tab is not selected
+        this.tabSelected(aTab);
+      }
     }
 
     let previousTab = getPreviousTab(aTab);
@@ -2461,14 +2500,14 @@ window.nativeTreeTabs = {
     }
   },
 
-  observeTab: function(target, nTT) {
+  observeTab: function(target, attributeList, action) {
     let tabObserver = new MutationObserver(function(mutations, observer) {
       mutations.forEach(function(mutation) {
         if (mutation.type === "attributes") {
           let man = mutation.attributeName;
-          if (man === "pending" || man === "bursting" || man === "open") {
+          if (attributeList.includes(man)) {
             observer.disconnect();
-            nTT.initTab(mutation.target);
+            action.call(nativeTreeTabs, mutation.target);
           }
         }
       });
@@ -2847,9 +2886,9 @@ window.nativeTreeTabs = {
         return foundTab;
       }
       checkForNextNestClose(aTab);
-      if (aTab.hasAttribute("tabPanel-hidden")) {
-        return;
-      }
+      // if (aTab.hasAttribute("tabPanel-hidden")) {
+      //   return;
+      // }
       if (aTab.selected) {
         function findPossibleSwitch(aTab, switchOnClose, previousChecked = -1) {
           let previousTab = getPreviousTab(aTab);
@@ -3156,80 +3195,80 @@ window.nativeTreeTabs = {
     //Split View creation
 
     this.originalAddTabSplitView = gBrowser.addTabSplitView;
-    if(AppConstants.MOZ_APP_BASENAME!="Floorp"){
-    gBrowser.addTabSplitView = function(tabsToAdd, {
-      insertBefore,
-      trigger,
-    }) {
-      try {
-        let pinnedTabs = tabsToAdd.filter(t => t.pinned);
-        pinnedTabs.forEach(function(t) {
-          gBrowser.unpinTab(t);
-        });
-        // nativeTreeTabs.moveSplitView(tabsToAdd, insertBefore);
-        tabsToAdd.forEach(function(t) {
-          skipNextMoveCheck(t);
-        });
-        let moveSecondTabChildren = false;
-        let secondOldDepth;
-        let movingTab = tabsToAdd.find(t => t != insertBefore);
-        let isAncestor = (tabsToAdd.length > 1 && checkIfIsAncestor(insertBefore, movingTab)) ?
-          true : false;
-        let firstTreeDepth = isAncestor ? getTreeDepth(movingTab) : getTreeDepth(insertBefore);
+    if (AppConstants.MOZ_APP_BASENAME != "Floorp") {
+      gBrowser.addTabSplitView = function(tabsToAdd, {
+        insertBefore,
+        trigger,
+      }) {
+        try {
+          let pinnedTabs = tabsToAdd.filter(t => t.pinned);
+          pinnedTabs.forEach(function(t) {
+            gBrowser.unpinTab(t);
+          });
+          // nativeTreeTabs.moveSplitView(tabsToAdd, insertBefore);
+          tabsToAdd.forEach(function(t) {
+            skipNextMoveCheck(t);
+          });
+          let moveSecondTabChildren = false;
+          let secondOldDepth;
+          let movingTab = tabsToAdd.find(t => t != insertBefore);
+          let isAncestor = (tabsToAdd.length > 1 && checkIfIsAncestor(insertBefore, movingTab)) ?
+            true : false;
+          let firstTreeDepth = isAncestor ? getTreeDepth(movingTab) : getTreeDepth(insertBefore);
 
-        if (tabsToAdd.length > 1) {
-          // nativeTreeTabs.tabLeaveStrip(tabsToAdd[1]);
-          moveSecondTabChildren = true;
-          movingOldPosition = getPosition(movingTab);
-          movingOldDepth = getTreeDepth(movingTab);
-          insertOldPosition = getPosition(insertBefore);
-          insertOldDepth = getTreeDepth(insertBefore);
+          if (tabsToAdd.length > 1) {
+            // nativeTreeTabs.tabLeaveStrip(tabsToAdd[1]);
+            moveSecondTabChildren = true;
+            movingOldPosition = getPosition(movingTab);
+            movingOldDepth = getTreeDepth(movingTab);
+            insertOldPosition = getPosition(insertBefore);
+            insertOldDepth = getTreeDepth(insertBefore);
 
-          function makeSureOpenerIsSet(t) {
-            let tDepth = getTreeDepth(t);
-            let tNext = getNextTab(t);
-            while (tNext) {
-              tNextDepth = getTreeDepth(tNext);
-              if (tDepth == null || tNextDepth <= tDepth) {
-                break;
+            function makeSureOpenerIsSet(t) {
+              let tDepth = getTreeDepth(t);
+              let tNext = getNextTab(t);
+              while (tNext) {
+                tNextDepth = getTreeDepth(tNext);
+                if (tDepth == null || tNextDepth <= tDepth) {
+                  break;
+                }
+                if (tNextDepth == tDepth + 1) {
+                  setOpener(tNext, t);
+                }
+                tNext = getNextTab(tNext);
               }
-              if (tNextDepth == tDepth + 1) {
-                setOpener(tNext, t);
-              }
-              tNext = getNextTab(tNext);
             }
+            tabsToAdd.forEach(makeSureOpenerIsSet);
           }
-          tabsToAdd.forEach(makeSureOpenerIsSet);
-        }
 
-        nativeTreeTabs.originalAddTabSplitView.apply(this, arguments);
-        tabsToAdd.forEach(function(t) {
-          setTreeDepth(t, firstTreeDepth);
-          removeSkipNextMoveCheck(t);
-        });
-        if (isAncestor) {
-          nativeTreeTabs.updateChildrenFromIndex(insertBefore, insertOldPosition, getPosition(insertBefore), insertOldDepth, groupState = false, forceMultiselected = false, splitViewCreation = true);
+          nativeTreeTabs.originalAddTabSplitView.apply(this, arguments);
+          tabsToAdd.forEach(function(t) {
+            setTreeDepth(t, firstTreeDepth);
+            removeSkipNextMoveCheck(t);
+          });
+          if (isAncestor) {
+            nativeTreeTabs.updateChildrenFromIndex(insertBefore, insertOldPosition, getPosition(insertBefore), insertOldDepth, groupState = false, forceMultiselected = false, splitViewCreation = true);
+          }
+          if (moveSecondTabChildren) {
+            nativeTreeTabs.updateChildrenFromIndex(movingTab, movingOldPosition, getPosition(movingTab), movingOldDepth, groupState = false, forceMultiselected = false, splitViewCreation = true);
+          }
+          if (tabsToAdd[0] && tabsToAdd[0].splitview) {
+            let splitview = tabsToAdd[0].splitview;
+            //Overwrite unsplit and tab reverse functions of the object
+            nativeTreeTabs.overwriteUnsplitFunction(splitview);
+            nativeTreeTabs.overwriteReverseSplitFunction(splitview);
+            nativeTreeTabs.overwriteSplitViewAddTabs(splitview);
+          }
+          // if(tabsToAdd[0]&& tabsToAdd[0].splitview)
+          // tabsToAdd[0].splitview.addEventListener("dragend", window.nativeTreeTabs);
+          // aTab.addEventListener("dragstart", this);
+        } catch (error) {
+          console.error(error);
+          nativeTreeTabs.originalAddTabSplitView.apply(this, arguments);
+          return;
         }
-        if (moveSecondTabChildren) {
-          nativeTreeTabs.updateChildrenFromIndex(movingTab, movingOldPosition, getPosition(movingTab), movingOldDepth, groupState = false, forceMultiselected = false, splitViewCreation = true);
-        }
-        if (tabsToAdd[0] && tabsToAdd[0].splitview) {
-          let splitview = tabsToAdd[0].splitview;
-          //Overwrite unsplit and tab reverse functions of the object
-          nativeTreeTabs.overwriteUnsplitFunction(splitview);
-          nativeTreeTabs.overwriteReverseSplitFunction(splitview);
-          nativeTreeTabs.overwriteSplitViewAddTabs(splitview);
-        }
-        // if(tabsToAdd[0]&& tabsToAdd[0].splitview)
-        // tabsToAdd[0].splitview.addEventListener("dragend", window.nativeTreeTabs);
-        // aTab.addEventListener("dragstart", this);
-      } catch (error) {
-        console.error(error);
-        nativeTreeTabs.originalAddTabSplitView.apply(this, arguments);
-        return;
-      }
-    };
-  }
+      };
+    }
     //Multiselect ignore hidden tabs
     this.originalAddToMultiSelectedTabs = gBrowser.addToMultiSelectedTabs;
     gBrowser.addToMultiSelectedTabs = function(aTab) {
@@ -3427,7 +3466,6 @@ window.nativeTreeTabs = {
             filter: _tab => remainingTabs.includes(_tab) && unloadedCheck(_tab) && !_tab.hasAttribute("tabPanel-hidden"),
           });
         }
-
         if (tab) {
           return tab;
         }
@@ -3535,7 +3573,6 @@ window.nativeTreeTabs = {
     this.original_getTabsToTheStartFrom = gBrowser._getTabsToTheStartFrom;
     gBrowser._getTabsToTheStartFrom = function(aTab) {
       try {
-
         let tabsToStart = [];
         if (!tabVisible(aTab)) {
           return tabsToStart;
@@ -3631,9 +3668,7 @@ window.nativeTreeTabs = {
     this.originalPreviewPanelActivate = gBrowser.tabContainer.previewPanel.activate;
 
     gBrowser.tabContainer.previewPanel.activate = async function(tabOrGroup) {
-
       try {
-
         if (gBrowser.isTab(tabOrGroup)) {
           if (tabOrGroup.hasAttribute("twisted-root") || tabOrGroup.hasAttribute("nestTab")) {
             function noteHover() {
@@ -3698,12 +3733,10 @@ window.nativeTreeTabs = {
                   hidePreviewPopup();
                 }
               }
-
               window.addEventListener("mouseover", mousoverElement);
               window.addEventListener("TabSelect", hidePreviewPopup);
               nextTab.addEventListener("mouseout", hidePreviewPopup);
               popup.addEventListener("mouseover", addHideOnMouseOut);
-
               popup.addEventListener("popuphiding", function(aEvent) {
                 window.removeEventListener("mouseover", mousoverElement);
                 window.removeEventListener("TabSelect", hidePreviewPopup);
@@ -3711,9 +3744,7 @@ window.nativeTreeTabs = {
                 nextTab.removeEventListener("mouseout", hidePreviewPopup);
                 popup.removeEventListener("mouseleave", hidePreviewPopup);
               });
-
               nativeTreeTabs.originalPreviewPanelActivate.apply(this, arguments);
-
             }
             return;
           }
@@ -3739,7 +3770,6 @@ window.nativeTreeTabs = {
         return;
       }
     }
-
     gBrowser.tabContainer.ensureTabPreviewPanelLoaded();
     this.originalPreviewPanelDeactivate = gBrowser.tabContainer.previewPanel.deactivate;
     gBrowser.tabContainer.previewPanel.deactivate = function(tabOrGroup) {
@@ -3764,7 +3794,12 @@ window.nativeTreeTabs = {
         let input = panel.querySelector("#tab-group-name");
         if (input && input.value === "") {
           if (TabContextMenu.contextTab) {
-            let newTitle = TabContextMenu.contextTab.label;
+            let newTitle;
+            if (TabContextMenu.contextTab.hasAttribute("nestTab")) {
+              newTitle = TabContextMenu.contextTab.querySelector("[nestLabel]").textContent;
+            } else {
+              newTitle = TabContextMenu.contextTab.label;
+            }
             input.value = newTitle;
             if (TabContextMenu.contextTab.group) {
               TabContextMenu.contextTab.group.label = newTitle;
@@ -3773,6 +3808,90 @@ window.nativeTreeTabs = {
         }
       }, true);
     }
+  },
+  filterGroups: function(tabs) {
+    //Extract groups from the array
+    // remove the individual tabs
+    // and add the group element
+    // if the whole group is set to move
+    let checkedGroups = new Set();
+    let addedGroups = new Set();
+
+    let result = [];
+    let includesAll = (arr, target) => target.every(v => arr.includes(v));
+
+    function splitviewsToTabs(tabsArray) {
+      let newArray = new Array();
+      tabsArray.forEach(function(t) {
+        if (t.splitViewId) {
+          newArray.push(...t.tabs);
+        } else
+          newArray.push(t);
+      });
+      return newArray;
+    }
+    for (const aTab of tabs) {
+      let skip = false;
+      if (aTab.group) {
+        if (!addedGroups.has(aTab.group.id)) {
+          if (!checkedGroups.has(aTab.group.id) && includesAll(splitviewsToTabs(tabs), aTab.group.tabs)) {
+            result.push(aTab.group);
+            addedGroups.add(aTab.group.id);
+            skip = true;
+          } else {
+            checkedGroups.add(aTab.group.id);
+          }
+        } else {
+          skip = true;
+        }
+      }
+      if (skip === false) {
+        result.push(aTab);
+      }
+    }
+    return result;
+  },
+
+  moveTabsAfter: function(tabs, position, makeSureNoGroup = true) {
+    if (position.splitview) {
+      position = position.splitview;
+    }
+    if (makeSureNoGroup && position.group) {
+      position = position.group;
+    }
+    gBrowser.moveTabsAfter(this.filterGroups(tabs), position);
+  },
+
+  moveTabsBefore: function(tabs, position, makeSureNoGroup = true) {
+    if (position.splitview) {
+      position = position.splitview;
+    }
+    if (makeSureNoGroup && position.group) {
+      position = position.group;
+    }
+    gBrowser.moveTabsBefore(this.filterGroups(tabs), position);
+  },
+
+  moveTabBefore: function(tab, position, makeSureNoGroup = true) {
+    //Move tab but not inside group
+    if (position.splitview) {
+      position = position.splitview;
+    }
+    if (makeSureNoGroup && position.group) {
+      position = position.group;
+    }
+    gBrowser.moveTabBefore(tab, position);
+  },
+
+  moveTabAfter: function(tab, position, makeSureNoGroup = true) {
+    //Move tab but not inside group
+    if (position.splitview) {
+      position = position.splitview;
+    }
+    if (makeSureNoGroup && position.group) {
+      position = position.group;
+    }
+    gBrowser.moveTabAfter(tab, position);
   },
 
   afterTabsForPanelMove: function(tabs, panel, group = false) {
@@ -3821,7 +3940,6 @@ window.nativeTreeTabs = {
   prepareTabsForPanelMove: function(tabs, group = false) {
 
     let splitViewsFound = new Array();
-
     tabs.forEach(function(cTab, index) {
       //replaces split view childnodes with their splitview itself
       if (cTab.splitview) {
@@ -3833,9 +3951,7 @@ window.nativeTreeTabs = {
         }
       }
     });
-
     let newArray = tabs.slice();
-
     tabs.forEach(function(cTab, index) {
       let previousTab = getPreviousTab(cTab);
       if (previousTab && previousTab.hasAttribute("nestTab")) {
@@ -3865,7 +3981,6 @@ window.nativeTreeTabs = {
     });
 
     tabs = newArray.slice();
-
     tabs.forEach(function(cTab, index) {
       if (cTab.hasAttribute("nestTab")) {
         let cTabtreeDepth = getTreeDepth(cTab);
@@ -3887,8 +4002,8 @@ window.nativeTreeTabs = {
         }
       }
     });
-    tabs = newArray.slice();
 
+    tabs = newArray.slice();
     tabs.forEach(function(cTab, index) {
       if (cTab.hasAttribute("twisted-root") || (cTab.splitViewId && cTab.tabs[0].hasAttribute("twisted-root"))) {
         let cTabtreeDepth = getTreeDepth(cTab);
@@ -4075,91 +4190,6 @@ window.nativeTreeTabs = {
     return newPanel;
   },
 
-  filterGroups: function(tabs) {
-    //Extract groups from the array
-    // remove the individual tabs
-    // and add the group element
-    // if the whole group is set to move
-    let checkedGroups = new Set();
-    let addedGroups = new Set();
-
-    let result = [];
-    let includesAll = (arr, target) => target.every(v => arr.includes(v));
-
-    function splitviewsToTabs(tabsArray) {
-      let newArray = new Array();
-      tabsArray.forEach(function(t) {
-        if (t.splitViewId) {
-          newArray.push(...t.tabs);
-        } else
-          newArray.push(t);
-      });
-      return newArray;
-    }
-    for (const aTab of tabs) {
-      let skip = false;
-      if (aTab.group) {
-        if (!addedGroups.has(aTab.group.id)) {
-          if (!checkedGroups.has(aTab.group.id) && includesAll(splitviewsToTabs(tabs), aTab.group.tabs)) {
-            result.push(aTab.group);
-            addedGroups.add(aTab.group.id);
-            skip = true;
-          } else {
-            checkedGroups.add(aTab.group.id);
-          }
-        } else {
-          skip = true;
-        }
-      }
-      if (skip === false) {
-        result.push(aTab);
-      }
-    }
-    return result;
-  },
-
-  moveTabsAfter: function(tabs, position, makeSureNoGroup = true) {
-    if (position.splitview) {
-      position = position.splitview;
-    }
-    if (makeSureNoGroup && position.group) {
-      position = position.group;
-    }
-    gBrowser.moveTabsAfter(this.filterGroups(tabs), position);
-  },
-
-  moveTabsBefore: function(tabs, position, makeSureNoGroup = true) {
-    if (position.splitview) {
-      position = position.splitview;
-    }
-    if (makeSureNoGroup && position.group) {
-      position = position.group;
-    }
-    gBrowser.moveTabsBefore(this.filterGroups(tabs), position);
-  },
-
-  moveTabBefore: function(tab, position, makeSureNoGroup = true) {
-    //Move tab but not inside group
-    if (position.splitview) {
-      position = position.splitview;
-    }
-    if (makeSureNoGroup && position.group) {
-      position = position.group;
-    }
-    gBrowser.moveTabBefore(tab, position);
-  },
-
-  moveTabAfter: function(tab, position, makeSureNoGroup = true) {
-    //Move tab but not inside group
-    if (position.splitview) {
-      position = position.splitview;
-    }
-    if (makeSureNoGroup && position.group) {
-      position = position.group;
-    }
-    gBrowser.moveTabAfter(tab, position);
-  },
-
   movePanel: function(panelId, beforePanelId) {
     panelId = panelId.toString();
     let panel = this.tabPanels.find(x => x.id.toString() === panelId);
@@ -4267,6 +4297,76 @@ window.nativeTreeTabs = {
     }, this);
   },
 
+  tabPanelGetId: function(panel) {
+    //receive id or panel object return id to string 
+    let panelId;
+    if (panel.id) {
+      if (!this.tabPanels.includes(panel)) {
+        panel = null;
+      } else {
+        panelId = panel.id.toString();
+      }
+    } else {
+      panelId = panel.toString();
+      panel = this.tabPanels.find(x => x.id.toString() === panelId);
+    }
+    if (!panel) {
+      return -1;
+    }
+    return panelId.toString();
+  },
+
+  getTabPanelTabs: function(panel, reverse = false) {
+    let panelId = this.tabPanelGetId(panel);
+    if (panelId == -1) {
+      return;
+    }
+    if (reverse)
+      return gBrowser.tabs.filter(t => t.getAttribute("panel-id") != panelId);
+    return gBrowser.tabs.filter(t => t.getAttribute("panel-id") == panelId);
+  },
+
+  tabPanelClose: function(panel) {
+    let tabs = this.getTabPanelTabs(panel);
+    window.gBrowser.removeTabs(tabs, animate = false, suppressWarnAboutClosingWindow = false);
+  },
+
+  tabPanelReloadAll: function(panel) {
+    let tabs = this.getTabPanelTabs(panel);
+    gBrowser.reloadTabs(tabs);
+  },
+
+  tabPanelUnloadAllExpect: function(panel) {
+    this.tabPanelShow(panel);
+    let tabs = this.getTabPanelTabs(panel, reverse = true);
+    gBrowser.explicitUnloadTabs(tabs);
+  },
+
+  tabPanelUnloadAll: function(panel) {
+    let tabs = this.getTabPanelTabs(panel);
+    gBrowser.explicitUnloadTabs(tabs);
+  },
+
+  tabPanelBookmark: function(panel) {
+    let tabs = this.getTabPanelTabs(panel);
+    PlacesCommandHook.bookmarkTabs(tabs);
+  },
+
+  tabPanelCollapseTrees: function(panel, uncollapse = false) {
+    let tabs = this.getTabPanelTabs(panel);
+    let selectedRoot = getTreeRoot(gBrowser.selectedTab);
+    tabs.forEach((tab) => {
+      if (getTreeDepth(tab) == 0) {
+        if (uncollapse) {
+          if (tab.hasAttribute("twisted-root")) {
+            this.toggleTwist(tab);
+          }
+        } else if (tab != selectedRoot)
+          this.toggleTwist(tab, forced = true);
+      }
+    });
+  },
+
   tabPanelShow: function(panel, changeSelectedTab = true) {
     let panelId;
     if (panel.id) {
@@ -4286,7 +4386,6 @@ window.nativeTreeTabs = {
     let panelTopTab = null;
     panelId = panelId.toString();
     this.changeSelectedPanel(panel);
-
     //Hide other panels tabs, show this panel tabs
     gBrowser.tabs.forEach(function(aTab) {
       if (aTab.hasAttribute("panel-id")) {
@@ -4295,6 +4394,9 @@ window.nativeTreeTabs = {
             panelTopTab = aTab;
           }
           unHideTab(aTab);
+          if(aTab.pinned&&(aTab.hasAttribute("pending")&&aTab.getAttribute("pending")=="true")||aTab.hasAttribute("discarded")){
+            gBrowser.reloadTab(aTab);
+          }
         } else {
           hideTab(aTab);
         }
@@ -5672,10 +5774,7 @@ function switchPanelOnScroll(enable) {
   }
 }
 
-panelNameRightClick = function(aEvent) {
-  if (aEvent) {
-    aEvent.preventDefault();
-  }
+panelNameRightClick = function() {
   let tabPanelName = document.querySelector('#tab-panels-name');
   if (!tabPanelName) {
     return;
@@ -5705,22 +5804,10 @@ panelNameRightClick = function(aEvent) {
   addInputListeners(input, finishEdit, replaceInputWithNew, finishEdit);
 }
 
-menuItemRightClickNew = function(aEvent, panel, target) {
-  let button = aEvent.button;
-  if (button == 1 || button == 0) {
-    return;
-  }
-  aEvent.preventDefault();
-  menupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
-  makePopupStayOpen(menupopup, null);
-}
 
-menuItemRightClick = function(aEvent, panel, target) {
-  let button = aEvent.button;
-  if (button == 1 || button == 0) {
-    return;
-  }
-  aEvent.preventDefault();
+menuItemRightClick = function(target, panel) {
+  // let id = target.closest("menuitem").getAttribute("panel-id").toString();
+  // let panel = nativeTreeTabs.tabPanels.find(x => x.id.toString() == id);
   let popupView = document.getElementById('tab-panels-menupopup-view');
   //Disallow two renames at the same time
   if (popupView.querySelector("input")) {
@@ -5834,7 +5921,13 @@ addNewPanelInMenu = function(panel, checkIt = false, position = -1) {
   menuitem.setAttribute("draggable", "true");
 
   // menuitem.addEventListener("click", (aEvent) => menuItemClick(aEvent, panel, aEvent.target));
-  menuitem.addEventListener("click", (aEvent) => menuItemRightClick(aEvent, panel, aEvent.target));
+
+  let panelContext = document.getElementById('tab-panels-contextmenu');
+  menuitem.addEventListener("auxclick", (aEvent) => {
+    panelContext.contextElement = menuitem;
+    panelContext.panel = panel;
+    panelContext.openPopupAtScreen(aEvent.screenX, aEvent.screenY, false, aEvent)
+  });
 
   let menupopup = document.getElementById('tab-panels-menupopup-view');
   //Put it in the right position
@@ -6010,7 +6103,7 @@ nestTabs = function(label) {
   }
 
   let nestTab = window.gBrowser.addTab(
-    "", {
+    "chrome://global/skin/global.css", {
       tabIndex: getPosition(tabIndex),
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     }
@@ -6061,7 +6154,6 @@ nestTabs = function(label) {
     }
     let prevPosition = getPosition(aTab);
     gBrowser.moveTabAfter(aTab, nestTab);
-
     setTreeDepth(aTab, nestDepth + 1);
     setOpener(aTab, nestTab);
 
@@ -6092,6 +6184,14 @@ nestTabs = function(label) {
       nextTab = getNextTab(nextTab);
     }
   });
+
+  let setNestAsOpener = function() {
+    tabs.forEach(function(aTab) {
+      setOpener(aTab, nestTab);
+    });
+  }
+
+  window.nativeTreeTabs.observeTab(nestTab, ["tree-id"], setNestAsOpener);
 
   if (tabs.includes(window.gBrowser.selectedTab)) {
     window.gBrowser.selectedTabs = window.gBrowser.selectedTab;
@@ -6180,6 +6280,10 @@ addNestTabsInTabContextMenu = function() {
     setTimeout(() => {
       nestTab.label = label;
     }, 20);
+    let nestLabel = nestTab.querySelector("[nestLabel]");
+    if (nestLabel) {
+      nestLabel.textContent = label;
+    }
     nestTab.setAttribute("nestTab", label.toString());
     setCustomTabValue(nestTab, "nestTab", label.toString());
   }
@@ -6519,6 +6623,93 @@ addTabPanelButton = function(mainDiv) {
 
   subDiv.addEventListener("click", (aEvent) => addNewPanelInput(aEvent, menupopup));
 
+
+  //Create Tab Panel Context Menu
+  let panelContext = document.createXULElement("menupopup");
+  panelContext.setAttribute('id', 'tab-panels-contextmenu');
+  elementsCreated.push(panelContext);
+  mainPopupSet.appendChild(panelContext);
+
+
+  function addContextItem(label, action, activeOnly = false) {
+    let item = document.createXULElement('menuitem');
+    item.setAttribute('label', label);
+    if (activeOnly) {
+      item.setAttribute('activeOnly', '');
+    }
+    item.addEventListener("click", (aEvent) => {
+      action(aEvent)
+    });
+    panelContext.appendChild(item);
+  }
+
+  function addContextMenuSeperator(activeOnly = false) {
+    let item = document.createXULElement('menuseparator');
+    if (activeOnly) {
+      item.setAttribute('activeOnly', '');
+    }
+    panelContext.appendChild(item);
+  }
+
+  let contextMenuitemRename = addContextItem('Rename Panel', (aEvent) => {
+    let contextElement = panelContext.contextElement;
+    if (contextElement.tagName == "menuitem")
+      menuItemRightClick(panelContext.contextElement, panelContext.panel);
+    else {
+      panelNameRightClick(aEvent);
+    }
+  });
+  addContextMenuSeperator();
+  let contextMenuitemSelectAll = addContextItem('Select Tabs', (aEvent) => {
+    window.gBrowser.selectAllTabs();
+  }, true);
+
+  let contextMenuReloadAll = addContextItem('Reload Tabs', (aEvent) => {
+    window.nativeTreeTabs.tabPanelReloadAll(panelContext.panel);
+  });
+
+  let contextMenuitemUnloadAll = addContextItem('Unload Tabs', (aEvent) => {
+    window.nativeTreeTabs.tabPanelUnloadAll(panelContext.panel);
+  });
+
+  let contextMenuitemBookmark = addContextItem('Bookmark Tabs', (aEvent) => {
+    window.nativeTreeTabs.tabPanelBookmark(panelContext.panel);
+  }, true);
+
+  addContextMenuSeperator();
+
+  let contextMenuitemUnloadOthers = addContextItem('Unload other Panels', (aEvent) => {
+    window.nativeTreeTabs.tabPanelUnloadAllExpect(panelContext.panel);
+  });
+
+  addContextMenuSeperator(true);
+
+  let contextMenuitemCollapseTrees = addContextItem('Expand trees', (aEvent) => {
+    window.nativeTreeTabs.tabPanelCollapseTrees(panelContext.panel, true);
+  }, true);
+
+  let contextMenuitemExpandTrees = addContextItem('Collapse trees', (aEvent) => {
+    window.nativeTreeTabs.tabPanelCollapseTrees(panelContext.panel);
+  }, true);
+  addContextMenuSeperator();
+
+
+  let contextMenuitemClose = addContextItem('Close Panel Tabs', (aEvent) => {
+    window.nativeTreeTabs.tabPanelClose(panelContext.panel);
+  });
+
+
+  panelContext.addEventListener("popupshowing", function(aEvent) {
+    panelContext.childNodes.forEach(function(child) {
+      let contextElement = panelContext.contextElement;
+      if (contextElement.tagName == "menuitem" && child.hasAttribute("activeOnly"))
+        child.style.display = "none";
+      else {
+        child.style.display = "";
+      }
+    });
+  }, true);
+
   //Panel dragging in menu to reorder
   let isDragging = false;
   let draggedItem = null;
@@ -6624,7 +6815,10 @@ addTabPanelButton = function(mainDiv) {
       nativeTreeTabs.tabPanelOpen();
       return;
     }
-    panelNameRightClick(aEvent);
+    aEvent.preventDefault();
+    panelContext.contextElement = tabPanelGroup;
+    panelContext.panel = window.nativeTreeTabs.selectedtPanel;
+    panelContext.openPopupAtScreen(aEvent.screenX, aEvent.screenY, false, aEvent);
   });
 
   tabPanelGroup.addEventListener("click", function(aEvent) {
@@ -8016,6 +8210,8 @@ menu.subviewbutton{
     background-color: var(--button-background-color-menu-hover)!important;
   }
 }
+#tab-panels-contextmenu menuitem:not(:last-child){
+}
 
 @media (prefers-color-scheme: dark) {
     .tab-group-editor-swatches label {
@@ -8546,6 +8742,9 @@ tab[nestTab]{
   .tab-icon-image{
       content:  url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill"><path d="M1 3.5C1 2.67157 1.67157 2 2.5 2H6L8 4H13.5C14.3284 4 15 4.67157 15 5.5V12.5C15 13.3284 14.3284 14 13.5 14H2.5C1.67157 14 1 13.3284 1 12.5V3.5Z"/></svg>')!important;
      margin-inline-start: var(--tab-icon-start);
+  }
+  .tab-label:not([nestLabel]){
+    display:none!important;
   }
 }
 .tab-group-label {
