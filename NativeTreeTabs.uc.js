@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.0
+// @version        0.3.2.1
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2200,10 +2200,13 @@ window.nativeTreeTabs = {
       aTab.label = nestTab;
       aTab.setAttribute("label", nestTab);
       aTab.addEventListener("click", this.nestClick);
-      nestLabel = document.createElement("label");
-      nestLabel.setAttribute("class", "tab-label tab-text");
-      nestLabel.setAttribute("nestLabel", "");
-      nestLabel.setAttribute("fadein", "");
+      let nestLabel = aTab.querySelector("[nestLabel]");
+      if (nestLabel == null) {
+        nestLabel = document.createElement("label");
+        nestLabel.setAttribute("class", "tab-label tab-text");
+        nestLabel.setAttribute("nestLabel", "");
+        nestLabel.setAttribute("fadein", "");
+      }
       nestLabel.textContent = nestTab;
       let tabLabel = aTab.querySelector(".tab-label");
       tabLabel.after(nestLabel);
@@ -4394,7 +4397,7 @@ window.nativeTreeTabs = {
             panelTopTab = aTab;
           }
           unHideTab(aTab);
-          if(aTab.pinned&&(aTab.hasAttribute("pending")&&aTab.getAttribute("pending")=="true")||aTab.hasAttribute("discarded")){
+          if (aTab.pinned && (aTab.hasAttribute("pending") && aTab.getAttribute("pending") == "true") || aTab.hasAttribute("discarded")) {
             gBrowser.reloadTab(aTab);
           }
         } else {
