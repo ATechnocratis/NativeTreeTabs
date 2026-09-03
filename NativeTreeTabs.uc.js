@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.2
+// @version        0.3.2.3
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -723,8 +723,11 @@ window.nativeTreeTabs = {
 
       if (aTab.splitview) {
         aTab.splitview.setAttribute("dragStartPos", getPosition(aTab));
+        aTab.splitview.setAttribute("dragStartY", event.clientY);
       } else
         aTab.setAttribute("dragStartPos", getPosition(aTab));
+      aTab.setAttribute("dragStartY", event.clientY);
+
 
       if (aTab.hasAttribute("nestTab")) {
         if (!aTab.hasAttribute("twisted-root")) {
@@ -765,11 +768,7 @@ window.nativeTreeTabs = {
       });
       aTab = selectedTabs[0];
     }
-    //....
-    // if (aTab.splitview) {
-    //   aTab = aTab.splitview;
-    //   temp0.tabs[0]
-    // }
+
     if (aTab.splitview) {
       aTab = aTab.splitview;
     }
@@ -780,10 +779,6 @@ window.nativeTreeTabs = {
     }
 
     let nextTab = getNextTab(aTab);
-
-    // if (aTab.splitViewId) {
-    //   aTab = aTab.tabs[0];
-    // }
     let oldDepth = getTreeDepth(aTab);
     while (previousTab && (isHidden(previousTab) || multiSelected(previousTab))) {
       previousTab = getPreviousTab(previousTab);
@@ -820,6 +815,20 @@ window.nativeTreeTabs = {
 
     if (aTab.pinned) {
       return;
+    }
+
+    let tabHeight = (Services.prefs.getPrefType("treeTabs.tabHeight") != 32) ? 30 :
+      Services.prefs.getStringPref("treeTabs.tabHeight");
+
+    if (aTab.hasAttribute("dragStartY")) {
+      //Prevent small accidental drag events from changing the tree structure
+      let dragStartY = parseInt(aTab.getAttribute("dragStartY"), 10);
+      aTab.removeAttribute("dragStartY");
+      let dragDistance = aEvent.clientY - dragStartY;
+      if ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7)) {
+        if ((dragDistance > 0 && dragDistance < 7 + tabHeight / 3 - 10) || (dragDistance <= 0 && dragDistance > -7 - tabHeight / 3 + 10))
+          return;
+      }
     }
 
     //temp hack 
@@ -862,17 +871,13 @@ window.nativeTreeTabs = {
     if (isTab(previousTab)) previousTabDepth = getTreeDepth(previousTab);
     if (isTab(nextTab)) nextTabDepth = getTreeDepth(nextTab);
 
-    //Case 0: Dropped inside a tab -> Set tab as parent
-
-    let tabHeight = (Services.prefs.getPrefType("treeTabs.tabHeight") != 32) ? 30 :
-      Services.prefs.getStringPref("treeTabs.tabHeight");
-
     let calcDistance = tabHeight / 1.4 - 8;
 
     if (calcDistance < -4) {
       calcDistance = -4;
     }
 
+    //Case 0: Dropped inside a tab -> Set tab as parent
     if (previousTabDepth != null && offsetY < calcDistance) {
       //Tab was already direct parent -> Swap
       let isAlreadyParent = (!multiSelected(aTab) && oldParent != "" &&
@@ -915,7 +920,7 @@ window.nativeTreeTabs = {
     } else {
       //Case 1: Dropped at the bottom border of tab
       // Move at the end of a tree and become simpling
-      if (previousTabDepth != null && offsetY < (calcDistance + 4) && (nextTabDepth == null || nextTabDepth == 0)) {
+      if (previousTabDepth != null && offsetY < (calcDistance * 2) && (nextTabDepth == null || nextTabDepth == 0)) {
         newDepth = previousTabDepth;
         shouldUpdateChildren = true;
         if (newDepth != 0) copyOpener(aTab, previousTab);
@@ -1899,7 +1904,8 @@ window.nativeTreeTabs = {
         this.toggleTwist(aTab);
       }
     } else {
-      this.tabLeaveStrip(aTab, forceMultiselected = true);
+      if (!aTab.hasAttribute("skipCloseCheck"))
+        this.tabLeaveStrip(aTab, forceMultiselected = true);
     }
   },
 
@@ -2892,6 +2898,9 @@ window.nativeTreeTabs = {
       // if (aTab.hasAttribute("tabPanel-hidden")) {
       //   return;
       // }
+      if (aOptions && aOptions.metricsContext && aOptions.metricsContext.telemetrySource == "tab_group") {
+        aTab.setAttribute("skipCloseCheck", "");
+      }
       if (aTab.selected) {
         function findPossibleSwitch(aTab, switchOnClose, previousChecked = -1) {
           let previousTab = getPreviousTab(aTab);
@@ -5586,6 +5595,9 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
     while (isTab(nextTab) && multiSelected(nextTab)) {
       nextTab = getNextTab(nextTab);
       if (!isTab(nextTab)) return true;
+    }
+    if (nextTab.splitview) {
+      nextTab = nextTab.splitview;
     }
     nextTabTreeDepth = getTreeDepth(nextTab);
     if (rootTab != nextTab) {
