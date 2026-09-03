@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.1
+// @version        0.3.2.2
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2163,11 +2163,11 @@ window.nativeTreeTabs = {
       while (isTab(possibleParent)) {
         let possibleParentDepth = getTreeDepth(possibleParent);
         if (checked > 0) {
-          if (possibleParentDepth && possibleParentDepth >= treeDepth) {
+          if (possibleParentDepth && possibleParentDepth == 0) {
             break;
           }
         } else {
-          if (possibleParentDepth && possibleParentDepth > treeDepth) {
+          if (possibleParentDepth == null) {
             break;
           }
         }
@@ -3921,21 +3921,21 @@ window.nativeTreeTabs = {
           removeOpener(cTab);
         }
       }
-      if (!group && cTab.hasAttribute("twisted-root")) {
-        let twistedDepth = getTreeDepth(cTab);
-        let nextTab = getNextTab(cTab);
-        let depthFix = getTreeDepth(nextTab);
-        while (nextTab) {
-          //Add hidden children
-          if (nextTab.hasAttribute("hidden-child")) {
-            let newDepth = twistedDepth + 1 + depthFix - getTreeDepth(nextTab);
-            setTreeDepth(nextTab, newDepth);
-          } else {
-            break;
-          }
-          nextTab = getNextTab(nextTab);
-        }
-      }
+      // if (!group && cTab.hasAttribute("twisted-root")) {
+      //   let twistedDepth = getTreeDepth(cTab);
+      //   let nextTab = getNextTab(cTab);
+      //   let depthFix = getTreeDepth(nextTab);
+      //   while (nextTab) {
+      //     //Add hidden children
+      //     if (nextTab.hasAttribute("hidden-child")) {
+      //       let newDepth = twistedDepth + 1 + depthFix - getTreeDepth(nextTab);
+      //       setTreeDepth(nextTab, newDepth);
+      //     } else {
+      //       break;
+      //     }
+      //     nextTab = getNextTab(nextTab);
+      //   }
+      // }
       removeSkipNextMoveCheck(cTab);
     }, this);
   },
