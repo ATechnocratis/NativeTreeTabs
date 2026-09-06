@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.4
+// @version        0.3.2.5
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -257,9 +257,9 @@ window.nativeTreeTabs = {
       if (tCC != null) tCC.remove()
       let tCC2 = aTab.querySelector(".tab-child-count2");
       if (tCC2 != null) tCC2.remove()
-      if(aTab.hasAttribute("nestTab")){
+      if (aTab.hasAttribute("nestTab")) {
         let nestLabel = aTab.querySelector("[nestLabel]");
-        if(nestLabel)
+        if (nestLabel)
           nestLabel.remove();
         aTab.removeAttribute("nestTab");
       }
@@ -1981,11 +1981,10 @@ window.nativeTreeTabs = {
     }
     if (restoredDepth && restoredDepth != '0' && restoredOpenerId) {
       let possibleParent = this.tabsIds.get(restoredOpenerId);
-      if (possibleParent!=null) {
+      if (possibleParent != null) {
         //found parent
         setTreeDepth(aTab, getTreeDepth(possibleParent) + 1);
-        if (getRootTab(aTab)==possibleParent)
-        {
+        if (getRootTab(aTab) == possibleParent) {
           //if parent had moved, don't restore depth
           restoredDepth = getTreeDepth(possibleParent) + 1;
         }
@@ -4413,7 +4412,7 @@ window.nativeTreeTabs = {
             panelTopTab = aTab;
           }
           unHideTab(aTab);
-          if (aTab.pinned && (aTab.hasAttribute("pending") && aTab.getAttribute("pending") == "true") || aTab.hasAttribute("discarded")) {
+          if (aTab.pinned && ((aTab.hasAttribute("pending") && aTab.getAttribute("pending") == "true") || aTab.hasAttribute("discarded"))) {
             gBrowser.reloadTab(aTab);
           }
         } else {
