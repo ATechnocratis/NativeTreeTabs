@@ -121,5 +121,10 @@
 - You can customized the script style and behavior in [Firefox Customize Sidebar settings](https://support.mozilla.org/en-US/kb/use-sidebar-access-tools-and-vertical-tabs#w_turn-on-vertical-tabs:~:text=Customize%20sidebar%20and%20vertical%20tabs,-After)
 
 To avoid conflicts, make sure no addons that manage tabs are enabled.
+
+## Updating
+- Replace the `NativeTreeTabs.uc.js` file with the latest version
+- Restart Firefox.
+  
 ## Compatibility 
 Expected to work on latest stable Firefox release. For Firefox Nightly, make sure to keep the script updated to the latest version to avoid breakage. Non-guaranteed support and expected conflicts with forks that heavy modify Firefox (Zen and Floorp).
