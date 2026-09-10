@@ -18,19 +18,20 @@
  - No extra resources.
  - Tab Groups support
  - Split views support
- - Keeps and extends the native Context menu 
- - Selecting and moving multiple tabs with shift/ctrl + click is possible.
+ - Keeps and extends the native tab context menu 
 </details >
 <details>
 <summary> <b> Tab panels (Workspaces)</b></summary>
 
 - Organize tabs in Workspaces for even less clutter
- - Move tabs between panels from the tab context menu (right click menu)
- - Move a Tab Group in the Manage Group Popup or by selecting all tabs
- - Right click on the name of a panel to rename it
- - Drag panels inside the menu to reorder them
- - Middle click in the Panel Header/button to instantly open a new panel
- - Scroll on the Panel header/button to cycle the opened panels
+ - Left click the Panel Header to open the panel list
+ - Drag the listed panels to reorder them
+ - Middle click the Panel Header/button to instantly open a new panel
+ - Scroll on the Panel header/button to switch betweens the panels
+ - Right click on the header or a panel in the dropdown list to open a Panel Context Menu
+ - Rename the panel, manage its tabs, expand/collapse its trees (`ctrl + click` to expand/collapse Tab Groups too) 
+ - Move tabs between panels from the tab context menu (right click a tab)
+ - Move a Tab Group in the Manage Group Popup(right click a Group label) or by multi-selecting all of its tabs
 </details>
 <details>
 <summary> <b> Expand on hover support and more</b></summary>
@@ -51,7 +52,7 @@
    
  - Hide unused trees to save space
  - A popup will be show on hover with the collapsed children which are also clickable for faster tab switching
- - Clicking the close button on a collapsed tree parent tab, will close the whole tree
+ - Clicking the close button\middle click on a collapsed tree parent tab, will close the whole tree
  - Option to automatically collapse trees/groups in settings
 </details>
 <details>
@@ -74,6 +75,13 @@
 - Modify/remove keyboard shortcuts on Sidebar Settings (Customize sidebar option)
 
 </details>
+<details>
+<summary> <b> Multiple tab select</b></summary>
+
+- Selecting multiple tabs with `shift/ctrl + click` is still possible (native FF feature)
+- Added ability to right click hold and hover over tabs to multi-select them as action target.
+</details>
+
 <details>
 <summary> <b> Organize with Nest tabs.</b></summary>
 
@@ -103,14 +111,14 @@
       
 
 ## Installation
-- [Turn on Vertical Tabs in Firefox](https://support.mozilla.org/en-US/kb/use-sidebar-access-tools-and-vertical-tabs#w_turn-on-vertical-tabs:~:text=Turn%20on%20vertical%20tabs,-Right)
-- Install a userchrome.js loader
+- Turn on Vertical Tabs in Firefox if you haven't already. [(How to here)](https://support.mozilla.org/en-US/kb/use-sidebar-access-tools-and-vertical-tabs#w_turn-on-vertical-tabs:~:text=Turn%20on%20vertical%20tabs,-Right)
+- Install a userchrome.js loader.
   - An updated one is [fx-autoconfig by MrOtherGuy](https://github.com/MrOtherGuy/fx-autoconfig)
-- Download the `NativeTreeTabs.uc.js` file from this repository
- and put it inside `chrome/JS/` folder in your Firefox profile.
-- Restart Firefox
+- [Download](https://github.com/ATechnocratis/NativeTreeTabs/archive/refs/heads/main.zip) the `NativeTreeTabs.uc.js` file from this repository
+ and put it inside `/chrome/JS/` folder in your Firefox profile if you use MrOtherGuy loader, or the `/chrome/` folder for other loaders.
+- Restart Firefox.
 - Done!
-- You can customized the script style and behavior in Firefox Customize Sidebar settings
+- You can customized the script style and behavior in [Firefox Customize Sidebar settings](https://support.mozilla.org/en-US/kb/use-sidebar-access-tools-and-vertical-tabs#w_turn-on-vertical-tabs:~:text=Customize%20sidebar%20and%20vertical%20tabs,-After)
 
 To avoid conflicts, make sure no addons that manage tabs are enabled.
 ## Compatibility 
