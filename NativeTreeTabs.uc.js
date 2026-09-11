@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.7
+// @version        0.3.2.8
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -8328,9 +8328,11 @@ loadNTTstyle = function() {
   let tabBorderRadius = checkOrSetPref("treeTabs.tabBorderRadius", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius')));
   let tabHeight = checkOrSetPref("treeTabs.tabHeight", "30");
   let tabIconStart = checkOrSetPref("treeTabs.style.tabIconStart", "2");
-  let pinnedTabWidth = checkOrSetPref("treeTabs.style.pinnedTabWidth", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-pinned-expanded-background-width')));
-  // --tab-pinned-expanded-background-width
-  // --tab-pinned-min-width-expanded
+  let pinnedMinWidth = parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-pinned-expanded-background-width'))
+  if (isNaN(pinnedMinWidth))
+    pinnedMinWidth = parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-background-width-pinned-expanded'))
+  let pinnedTabWidth = checkOrSetPref("treeTabs.style.pinnedTabWidth", pinnedMinWidth);
+
   let closeButtonPadding;
   if (tabHeight > 20)
     closeButtonPadding = 4;
@@ -8356,6 +8358,7 @@ loadNTTstyle = function() {
     --tree-tab-default-color: rgb(130, 120, 140);
     --tab-icon-start: ` + tabIconStart + `px;
     --tab-pinned-expanded-background-width: ` + pinnedTabWidth + `px!important;
+    --tab-background-width-pinned-expanded: ` + pinnedTabWidth + `px!important;
 }
 #vertical-tabs {
  tab[tree-depth="0"] { --tab-indent: 0; }
@@ -8506,7 +8509,7 @@ loadNTTstyle = function() {
 #tabbrowser-tabs[orient="vertical"][expanded] 
 /*if text enalbed 
 #tabs-newtab-button{
-  padding-left:  var(--tab-inline-padding)!important;
+  padding-left:  var(--tab-inline-padding, var(--tab-padding-inline))!important;
 }
 */
 #tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button, #vertical-tabs-newtab-button {
@@ -9064,14 +9067,14 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
       border: 1px solid rgba(55, 55, 55, 0.3);
       border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent));
-      & @media not -moz-pref("treeTabs.style.contextLineStyle",0) and
-      {
+      & @media not -moz-pref("treeTabs.style.contextLineStyle",0){
         backdrop-filter: blur(5px);
       }
   }
   #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
       opacity: 0.8;
   }
+
   @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
     #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
       outline: none!important;
@@ -9079,7 +9082,6 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
       background: linear-gradient( color-mix( in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, rgba(130, 120, 140)) 40%, rgb(20, 20, 20))) 33%, rgba(2, 2, 2, 0.95))) padding-box, linear-gradient(96deg, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent))) border-box!important;
     }
   }
-
   #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) .tab-background:not([selected]) {
       background: transparent!important;
       border: none!important;
