@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.6
+// @version        0.3.2.7
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -2593,7 +2593,7 @@ window.nativeTreeTabs = {
     this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true);
     this.observeTopic("treeTabs.style.customGroups", null, true);
     this.observeTopic("treeTabs.style.twistyStyle", null, 0);
-    this.observeTopic("treeTabs.style.hideContainerLine", null, true);
+    this.observeTopic("treeTabs.style.contextLineStyle", null, 1);
 
     this.observeTopic("treeTabs.defaultPanelName", this.defaultPanelName, this.defaultPanelName.value);
     this.observeTopic("browser.tabs.insertRelatedAfterCurrent", this.moveNewTabsDirectlyUnderParent);
@@ -3415,7 +3415,7 @@ window.nativeTreeTabs = {
         // Try to find a remaining tab that comes after the given tab
         let remainingTabs = Array.prototype.filter.call(
           this.visibleTabs,
-          tab => !excludeTabs.has(tab)&& !tab.hasAttribute("nestTab"),
+          tab => !excludeTabs.has(tab) && !tab.hasAttribute("nestTab"),
         );
         if (Services.prefs.getBoolPref("browser.tabs.selectMRUOnClose", false)) {
           let mruTab = remainingTabs
@@ -3444,7 +3444,7 @@ window.nativeTreeTabs = {
         }
         // If no qualifying visible tab was found, see if there is a tab in
         // a collapsed tab group that could be selected.
-        let eligibleTabs = new Set(this.tabsInCollapsedTabGroups.filter(t=>!t.hasAttribute("nestTab"))).difference(
+        let eligibleTabs = new Set(this.tabsInCollapsedTabGroups.filter(t => !t.hasAttribute("nestTab"))).difference(
           excludeTabs
         );
         tab = this.tabContainer.findNextTab(aTab, {
@@ -7671,8 +7671,34 @@ let modifyCustomizePage = {
       label: "3",
       value: 2
     }], "number", extra);
-    createCheckBox("treeTabs.style.hideContainerLine", "Hide container indicator", extra);
-
+    createSelectBox("treeTabs.style.contextLineStyle", "Container indicator style", [{
+      label: "Default",
+      value: 0
+    }, {
+      label: "Hide",
+      value: 1
+    }, {
+      label: "Left line",
+      value: 2
+    }, {
+      label: "Right line",
+      value: 3
+    }, {
+      label: "Favicon outline",
+      value: 4
+    }, {
+      label: "Outline",
+      value: 5
+    }, {
+      label: "Left border",
+      value: 6
+    }, {
+      label: "Right border",
+      value: 7
+    }, {
+      label: "Inline border",
+      value: 8
+    }], "number", extra);
 
     createTitleDiv("Keyboard Shortcuts", "(click to change)", extra);
     createKeyInputBox("treeTabs.shortcuts.createPanel", "Create new Tab Panel:", extra);
@@ -8364,7 +8390,7 @@ loadNTTstyle = function() {
 
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
     max-width: calc(100% - var(--tab-indent))!important;
-    padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-inner-inline-margin)) !important;
+    padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-inner-inline-margin, var(--tab-margin-inline-inner))) !important;
 }
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab-split-view-wrapper{
     margin-inline: 0px !important;
@@ -8380,7 +8406,7 @@ loadNTTstyle = function() {
         padding-inline-start: calc(var(--tab-indent) * 1px)!important;
     }
   #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
-        padding-inline-start: calc(var(--tab-indent) * 1px + var(--tab-inner-inline-margin))!important;
+        padding-inline-start: calc(var(--tab-indent) * 1px + var(--tab-inner-inline-margin, var(--tab-margin-inline-inner)))!important;
   }
 }
 
@@ -8388,7 +8414,7 @@ loadNTTstyle = function() {
       margin-inline: 0px !important;
 }
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has(tab[tree-depth="0"]){
-   padding-inline-start:var(--tab-inner-inline-margin)!important;
+   padding-inline-start:var(--tab-inner-inline-margin, var(--tab-margin-inline-inner))!important;
 }
 #vertical-tabs tab:not(collapsed, [pinned]) {
     margin-bottom: 0px!important;
@@ -8460,12 +8486,7 @@ loadNTTstyle = function() {
 #vertical-tabs tab .tab-label {
     font-size: var(--label-font-size)!important;
 }
-/*No container line*/
-@media -moz-pref("treeTabs.style.hideContainerLine") {
-#vertical-tabs .tab-context-line {
-    display: none!important;
-}
-}
+
 /*default favicon loading*/
 #vertical-tabs tab[pendingicon="true"] .tab-icon-image {
     opacity: 0!important;
@@ -8502,10 +8523,10 @@ loadNTTstyle = function() {
   content:"";
   position: absolute;
   display: block;
-  width: calc (100% - var(--tab-inner-inline-margin));
+  width: calc (100% - var(--tab-inner-inline-margin, var(--tab-margin-inline-inner)));
   height:var(--tab-min-height);
-  left: var(--tab-inner-inline-margin);
-  right: var(--tab-inner-inline-margin);
+  left: var(--tab-inner-inline-margin, var(--tab-margin-inline-inner));
+  right: var(--tab-inner-inline-margin, var(--tab-margin-inline-inner));
   border-radius: var(--tab-border-radius);
 }
 /* Audio playing icon enlarge */
@@ -8820,13 +8841,13 @@ tab[nestTab]{
   margin-inline-end:0px!important;
   text-align: left!important;
   border-radius: var(--tab-border-radius-forced)!important;
-  text-indent: calc( var(--tab-icon-end-margin) + 16px)!important;
+  text-indent: calc( var(--tab-icon-end-margin, var(--tab-icon-margin-inline-end)) + 16px)!important;
   background-image: url("chrome://global/skin/icons/folder.svg")!important;
   background-size:  clamp(0px, 16px, calc( var(--tab-height) - var(--tab-close-button-padding) )) auto;
   -moz-context-properties: fill, fill-opacity, stroke!important;
   fill: silver!important;
   background-repeat: no-repeat!important;
-  background-position: left var(--tab-icon-end-margin) center!important;
+  background-position: left var(--tab-icon-end-margin, var(--tab-icon-margin-inline-end)) center!important;
   height: var(--tab-height)!important;
   font-size: var(--label-font-size)!important;
   line-height:calc( var(--tab-height) - 1px )!important;
@@ -8847,7 +8868,7 @@ tab-group[collapsed] .tab-group-label {
 tab-group[collapsed] .tab-group-label-container {
   #tabbrowser-tabs[expanded] & {
   margin-right:0!important;
-  margin-inline-end: var(--tab-inner-inline-margin)!important;
+  margin-inline-end: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
   }
 }
 .tab-group-label-container {
@@ -8855,8 +8876,8 @@ tab-group[collapsed] .tab-group-label-container {
   margin-block-end: 0!Important;
   margin-block-start: var( --root-tab-top-margin)!important;
   margin-right:0!important;
-  margin-inline-start: var(--tab-inner-inline-margin)!important;
-  margin-inline-end: var(--tab-inner-inline-margin)!important;
+  margin-inline-start: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
+  margin-inline-end: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
 
   }
 }
@@ -8954,7 +8975,7 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
     min-height: 20px!important;
     display: block!important;
     margin-top: -1px!important;
-    margin-left: calc( ( -1 * var(--tab-inner-inline-margin) ) - 18px )!important;
+    margin-left: calc( ( -1 * var(--tab-inner-inline-margin, var(--tab-margin-inline-inner)) ) - 18px )!important;
     fill: black!important;
     background: transparent!important;
     position: absolute!important;
@@ -9041,17 +9062,16 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
 @media (prefers-color-scheme: dark) {
   #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden]) .tab-background {
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
-      backdrop-filter: blur(5px);
       border: 1px solid rgba(55, 55, 55, 0.3);
       border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent));
-      opacity: 1;
-      filter: saturate(1) brightness(1);
+      & @media not -moz-pref("treeTabs.style.contextLineStyle",0) and
+      {
+        backdrop-filter: blur(5px);
+      }
   }
   #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
-      backdrop-filter: blur(5px);
       opacity: 0.8;
   }
-
   @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
     #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
       outline: none!important;
@@ -9118,6 +9138,87 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
 .tab-icon-image {
   #tabbrowser-tabs[orient="vertical"][expanded] tab:not([twisted-root]) &:not([pinned]) {
         margin-inline-start: var(--tab-icon-start);
+  }
+}
+/*Container line style*/
+#vertical-tabs{
+  @media (not -moz-pref("treeTabs.style.contextLineStyle",0)) and
+(not -moz-pref("treeTabs.style.contextLineStyle",2)) and
+(not -moz-pref("treeTabs.style.contextLineStyle",3))
+   {
+    .tab-context-line{
+      display: none!important;
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",2),
+  -moz-pref("treeTabs.style.contextLineStyle",3){
+    .tabbrowser-tab[usercontextid] > .tab-stack > .tab-background > .tab-context-line {
+      background-color: var(--identity-icon-color)!important;
+      border-radius: var(--border-radius-xsmall)!important;
+      position: relative!important;
+      mask-image:none!important;
+      height: auto!important;
+      width: 2px!important;
+      margin: calc(8px / 2) 0!important;
+      position: static!important;
+      }
+      .tab-background {
+          flex-direction: row-reverse!important;
+      }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",2){
+    .tabbrowser-tab[usercontextid] > .tab-stack > .tab-background {
+        flex-direction: row!important;
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",4){
+    .tabbrowser-tab:not([tabPanel-hidden],[hidden-child],[pinned]) .tab-background {
+      border: 2.5px solid color-mix( in srgb, var( --tree-domain-color, var(--identity-tab-color, light-dark(rgb(190, 190, 190), rgb(90, 90, 90)))) 40%, light-dark(rgba(0, 0, 0, 0.1 ), rgba(0, 0, 0, 0.5)) ) !important;
+    }
+    .tabbrowser-tab[usercontextid]:not([tabPanel-hidden],[hidden-child],[pinned]) > .tab-stack > .tab-background {
+      border-left: calc( var(--tab-icon-start) + 27px ) solid color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 0.5)))) 60%, light-dark(rgb(190, 190, 190,0.2), rgba(0, 0, 0, 0.5))) !important;
+    }
+    @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
+      tab[selected]:not([multiselected]) .tab-background {
+        background: color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(200, 200, 200, 1)))) 30%, light-dark(rgba(0, 0, 0, 0.1 ), rgba(0, 0, 0, 0.5))) !important;
+        border: 2.5px solid color-mix( in srgb, var( --tree-domain-color, var(--identity-tab-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 1)))) 60%, light-dark(rgba(0, 0, 0, 0.1 ), rgba(0, 0, 0, 0.3)) ) !important;
+        border-left: calc( var(--tab-icon-start) + 27px ) solid color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 0.4)))) 70%, rgba(0, 0, 0, 0.5)) !important;
+      }
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",5){
+    .tabbrowser-tab[usercontextid]:not([tabPanel-hidden],[hidden-child],[pinned]) > .tab-stack > .tab-background {
+      border: 2.5px solid color-mix( in srgb, var(--identity-tab-color, light-dark(rgb(190, 190, 190), rgb(70, 70, 70))) 45%, rgba(0, 0, 0, .5)) !important;
+    }
+    @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
+      tab[selected]:not([multiselected]) .tab-background {
+          background: color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(200, 200, 200, 1)))) 45%, light-dark(rgb(190, 190, 190,0.2), rgba(0, 0, 0, 0.5))) !important;
+      }
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",4),
+  -moz-pref("treeTabs.style.contextLineStyle",5),
+  -moz-pref("treeTabs.style.contextLineStyle",6),
+  -moz-pref("treeTabs.style.contextLineStyle",7),
+  -moz-pref("treeTabs.style.contextLineStyle",8){
+    #pinned-tabs-container .tabbrowser-tab[usercontextid]:not([tabPanel-hidden],[hidden-child]) > .tab-stack > .tab-background {
+      border: 1px solid color-mix( in srgb, var(--identity-tab-color, light-dark(rgb(190, 190, 190), rgb(70, 70, 70))) 45%, rgba(0, 0, 0, .5)) !important;
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",6){
+    .tabbrowser-tab[usercontextid]:not([tabPanel-hidden],[hidden-child],[pinned]) > .tab-stack > .tab-background {
+      border-left: 3px solid color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 0.5)))) 80%, rgba(0, 0, 0, 0.5)) !important;
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",7){
+    .tabbrowser-tab[usercontextid]:not([tabPanel-hidden],[hidden-child],[pinned]) > .tab-stack > .tab-background {
+      border-right: 3px solid color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 0.5)))) 80%, rgba(0, 0, 0, 0.5)) !important;
+    }
+  }
+  @media -moz-pref("treeTabs.style.contextLineStyle",8){
+    .tabbrowser-tab[usercontextid]:not([tabPanel-hidden],[hidden-child],[pinned]) > .tab-stack > .tab-background {
+      border-inline: 3px solid color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 0.5)))) 80%, rgba(0, 0, 0, 0.5)) !important;
+    }
   }
 }
 /*Styles unloaded tab from previous Session */  
