@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.3.0
+// @version        0.3.3.1
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -904,8 +904,9 @@ window.nativeTreeTabs = {
     if (this._debuggingMsg)
       console.log(offsetY, calcDistance);
     //Case -1: Out of window drag do nothing
-    if (offsetY < (tabHeight * -1))
+    if (offsetY < (tabHeight * -1)) {
       return;
+    }
     //Case 0: Dropped inside a tab -> Set tab as parent
     if (previousTabDepth != null && offsetY < calcDistance) {
       //Tab was already direct parent -> Swap
@@ -1044,11 +1045,10 @@ window.nativeTreeTabs = {
         skipNextMoveCheck(aTab);
         gBrowser.moveTabAfter(aTab, newPosition, makeSureNoGroup = false);
         removeSkipNextMoveCheck(aTab);
-        if (getPosition(aTab) == gBrowser.tabs.length - 1) {
+        if (getPosition(aTab) == gBrowser.tabs.length - 1)
           setTreeDepth(aTab, '0');
-          this.updateChildrenFromIndex(aTab, prevPosition, getPosition(aTab), tabOriginalDepth, false, forceMultiselected);
-          return true
-        }
+        this.updateChildrenFromIndex(aTab, prevPosition, getPosition(aTab), tabOriginalDepth, false, forceMultiselected);
+        return true;
       } else {
         groupMove.tabs.forEach(function(gTab) {
           skipNextMoveCheck(gTab);
@@ -1057,6 +1057,7 @@ window.nativeTreeTabs = {
         groupMove.tabs.forEach(function(gTab) {
           removeSkipNextMoveCheck(gTab);
         })
+        return true;
       }
     }
     return false;
@@ -5227,8 +5228,7 @@ setPanel = function(aTab, panel, window) {
   if (panel.icon != null) {
     let iconString = panel.icon.toString() + "," + panel.iconColor.toString();
     setCustomTabValue(aTab, "panel-icon", iconString);
-  }
-  else{
+  } else {
     setTimeout(() => {
       deleteCustomTabValue(aTab, "panel-icon");
     }, 50);
@@ -5973,7 +5973,9 @@ addNewPanelInput = function(aEvent, menupopup) {
       name = null;
     }
     input.parentNode.removeChild(input);
-    window.nativeTreeTabs.tabPanelOpen(tabs = null, label = name);
+    let newPanel = window.nativeTreeTabs.tabPanelOpen(tabs = null, label = name);
+    //add a pref to not show popup?
+    initPanelWithIcon(newPanel);
   }
 
   addInputListeners(input, finishEdit, () => {
@@ -6531,9 +6533,10 @@ addMoveToPanelMenuInTabContextMenu = function() {
     let forceShow = (aEvent.ctrlKey) ? true : false;
     let tabs = (multiSelected(TabContextMenu.contextTab)) ?
       gBrowser.selectedTabs : [TabContextMenu.contextTab];
-    window.nativeTreeTabs.tabPanelOpen(tabs, label = null, id = null, forceShow);
+    let newPanel = window.nativeTreeTabs.tabPanelOpen(tabs, label = null, id = null, forceShow);
     gBrowser.clearMultiSelectedTabs();
     panelNameRightClick();
+    initPanelWithIcon(newPanel);
   }, isToggle = false, id = "tab-context-create-new-panel");
   //Insert before tab Group entry
   submenu.appendChild(menupopup);
@@ -6561,7 +6564,7 @@ addMoveToPanelMenuInTabContextMenu = function() {
       group.forEach(function(tab) {
         skipNextMoveCheck(tab);
       });
-      window.nativeTreeTabs.tabPanelOpen(group, label = null, id = null, forceShow, index = null, true);
+      let newPanel = window.nativeTreeTabs.tabPanelOpen(group, label = null, id = null, forceShow, index = null, true);
       group.forEach(function(tab) {
         removeSkipNextMoveCheck(tab);
       });
@@ -6569,6 +6572,7 @@ addMoveToPanelMenuInTabContextMenu = function() {
         gBrowser.tabGroupMenu.close();
       }, 30);
       panelNameRightClick();
+      initPanelWithIcon(newPanel);
     }, isToggle = false, id = "tab-context-create-new-panel");
 
     groupSubPopup.addEventListener("popupshowing", function(aEvent) {
@@ -6771,16 +6775,14 @@ addTabPanelButton = function(mainDiv) {
       openIconSelector(panelContext.panel, contextElement);
     }
   });
-
   addContextMenuSeperator();
+
   let contextMenuitemSelectAll = addContextItem('Select Tabs', (aEvent) => {
     window.gBrowser.selectAllTabs();
   }, true);
-
   let contextMenuReloadAll = addContextItem('Reload Tabs', (aEvent) => {
     window.nativeTreeTabs.tabPanelReloadAll(panelContext.panel);
   });
-
   let contextMenuitemUnloadAll = addContextItem('Unload Tabs', (aEvent) => {
     window.nativeTreeTabs.tabPanelUnloadAll(panelContext.panel);
   });
@@ -6788,13 +6790,17 @@ addTabPanelButton = function(mainDiv) {
   let contextMenuitemBookmark = addContextItem('Bookmark Tabs', (aEvent) => {
     window.nativeTreeTabs.tabPanelBookmark(panelContext.panel);
   }, true);
-
   addContextMenuSeperator();
 
   let contextMenuitemUnloadOthers = addContextItem('Unload other Panels', (aEvent) => {
     window.nativeTreeTabs.tabPanelUnloadAllExpect(panelContext.panel);
   });
-
+  let contextMenuitemOpenNewPanel = addContextItem('Open a new Panel', (aEvent) => {
+    let newPanel = window.nativeTreeTabs.tabPanelOpen(tabs, label = null, id = null, forceShow);
+    gBrowser.clearMultiSelectedTabs();
+    panelNameRightClick();
+    initPanelWithIcon(newPanel);
+  }, true);
   addContextMenuSeperator(true);
 
   let contextMenuitemCollapseTrees = addContextItem('Expand trees', (aEvent) => {
@@ -7365,8 +7371,11 @@ addTabPanelIconSetter = function() {
     if (tabpanel.icon == null) {
       //pick a random icon (if possible, not already used) if panel hasn't one set
       currentSelected = getNotUsedIcon();
-    } else
+      removeBtn.setAttribute("hidden", "true");
+    } else {
+      removeBtn.removeAttribute("hidden");
       currentSelected = tabpanel.icon;
+    }
     let color
     if (tabpanel.iconColor)
       color = tabpanel.iconColor;
@@ -7392,6 +7401,10 @@ addTabPanelIconSetter = function() {
       iconSetPopup.openPopup(anchor, "topright topleft", 0, 0, false, false);
     else
       iconSetPopup.openPopup(anchor, "after_start", 0, 0, false, false);
+  };
+  window.initPanelWithIcon = function(newPanel) {
+    setRandomIcon(newPanel);
+    openIconSelector(newPanel, document.getElementById("NTT-header"), true);
   };
 
   return elementsCreated;
@@ -8616,6 +8629,9 @@ box:has(>sidebar-main) {
   max-width:100%;
   min-width: 0;
   display: flex;
+  padding-inline:4px;
+  padding-top:2px;
+
 }
 #search-all-tabs-button image{
   display: inline-flex;
@@ -8627,14 +8643,21 @@ box:has(>sidebar-main) {
   content:url("chrome://global/skin/icons/search-glass.svg");
 }
 #tab-panels-group {
-    max-width:100%;
-    min-width: 100%;
+    max-width:calc(100%);
+    min-width: calc(100%);
+    min-height: 30px;
     overflow: clip;
     display: flex;
     align-items:center;
+    border:1px solid transparent;
+    border-radius:6px;
 }
 box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-group {
   justify-content:center;
+}
+#tab-panels-button{
+  width:24px;
+  height:24px;
 }
 #tab-panels-button img {
     -moz-context-properties: fill, fill-opacity, stroke;
@@ -8663,12 +8686,12 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
 :root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
     margin-inline-start: 12px;
 }
-#NTT-header .button-background:hover {
-    background-color: var(--button-background-color);
+#NTT-header #tab-panels-group:hover {
+    background-color: color-mix( var(--toolbarbutton-background-color-hover, var(--button-background-color)), transparent 35%)!important; 
 }
 #NTT-header .button-background {
     box-sizing: border-box;
-    min-height: var(--button-min-height);
+    min-height: 24px;
     border: none!important;
     color: var(--button-text-color);
     padding: var(--button-padding);
@@ -8676,15 +8699,14 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     justify-content: center;
     align-items: center;
     position: relative;
-    width: var(--button-size-icon);
-    height: var(--button-size-icon);
     padding: var(--button-padding-icon);
 }
 #tab-panels-name {
     flex-shrink: 1;
     font-size: 13px!important;
-    margin-left: 0px;
-    margin-top: 8px;
+    margin-left: 2px;
+    margin-top: 0px;
+    margin-bottom: 0px;
     max-width:80%;
     max-height: 20px;
     overflow: clip;
@@ -8693,11 +8715,10 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
 }
 #tab-panels-group input:focus-visible {
     border: none!important;
-    padding: 7px!important;
-    margin-left: -4px!important;
-    margin-top: 3px!important;
+    padding: 5px!important;
     min-width:100%;
     max-width:80%;
+    font-size: 13px!important;
 }
 #tab-panels-group input {
     border: none!important;
