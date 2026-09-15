@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.2.8
+// @version        0.3.3.0
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -10,6 +10,7 @@ const CUSTOMIZE_URL = "chrome://browser/content/sidebar/sidebar-customize.html";
 window.nativeTreeTabs = {
   _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned", "TabGroupUngroup", "TabGroupCreateByUser"],
   _initialized: false,
+  _debuggingMsg: false,
   lastId: 0,
   tabsIds: new Map(),
   originalRemoveTab: null,
@@ -110,6 +111,9 @@ window.nativeTreeTabs = {
     } catch (e) {
       console.error(e);
     }
+
+    if (getPref("treeTabs.debuggingEnabled"))
+      this._debuggingMsg = true;
 
     //Check if disabled
     let enabled = getPref("treeTabs.enabled");
@@ -773,16 +777,17 @@ window.nativeTreeTabs = {
   tabDragEnd: function(aEvent) {
     let aTab = aEvent.target;
     let rect = aTab.getBoundingClientRect().top;
+
     setTimeout(() => {
       deleteCustomTabValue(aTab, "draggedFromWindow");
-    }, 1000);
+    }, 500);
 
     let selectedTabs = gBrowser.selectedTabs;
     if (selectedTabs.length > 1) {
       selectedTabs.forEach(function(sTab) {
         setTimeout(() => {
           deleteCustomTabValue(sTab, "draggedFromWindow");
-        }, 1000);
+        }, 500);
       });
       aTab = selectedTabs[0];
     }
@@ -843,6 +848,8 @@ window.nativeTreeTabs = {
       let dragStartY = parseInt(aTab.getAttribute("dragStartY"), 10);
       aTab.removeAttribute("dragStartY");
       let dragDistance = aEvent.clientY - dragStartY;
+      if (this._debuggingMsg)
+        console.log(dragDistance);
       if ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7)) {
         if ((dragDistance > 0 && dragDistance < 7 + tabHeight / 3 - 10) || (dragDistance <= 0 && dragDistance > -7 - tabHeight / 3 + 10))
           return;
@@ -894,7 +901,11 @@ window.nativeTreeTabs = {
     if (calcDistance < -4) {
       calcDistance = -4;
     }
-
+    if (this._debuggingMsg)
+      console.log(offsetY, calcDistance);
+    //Case -1: Out of window drag do nothing
+    if (offsetY < (tabHeight * -1))
+      return;
     //Case 0: Dropped inside a tab -> Set tab as parent
     if (previousTabDepth != null && offsetY < calcDistance) {
       //Tab was already direct parent -> Swap
@@ -1350,8 +1361,9 @@ window.nativeTreeTabs = {
       if (prevPosition < newPosition && previousTabDepth != null && previousTabDepth > oldDepth && this.checkMoveUnderOwnTree(aTab, prevPosition, newPosition, tabOriginalDepth)) {
         //skip case, move under own children (all of them)
       } else {
-        if (copyOpenerCheck != null)
+        if (copyOpenerCheck != null) {
           copyOpener(aTab, copyOpenerCheck);
+        }
         setTreeDepth(aTab, newDepth);
       }
     }
@@ -1974,6 +1986,37 @@ window.nativeTreeTabs = {
     }
   },
 
+  rerootPossibleChildren: function(aTab, restoredDepth) {
+    //If children are opened/restored before their root tab
+    // update their depth level to match the root (reroot them)
+    let nextTab = getNextTab(aTab);
+    let restoredTreeId = getCustomTabValue(aTab, "tree-id");
+    if (restoredTreeId) {
+      aTab.setAttribute("tree-id", restoredTreeId);
+      window.nativeTreeTabs.tabsIds.set(restoredTreeId, aTab);
+      let childrenId = new Array();
+      childrenId.push(restoredTreeId);
+      let rootTreeDepth = parseInt(restoredDepth, 10);
+      //Find direct children (Depth difference == 1 )
+      while (nextTab && nextTab.hasAttribute("opener-id") && nextTab.getAttribute("opener-id") === restoredTreeId) {
+        let depthPreRestore = getTreeDepth(nextTab);
+        setOpener(nextTab, aTab);
+        setTreeDepth(nextTab, rootTreeDepth + 1);
+        nextTab = getNextTab(nextTab);
+        //Fix grandchildren
+        while (nextTab) {
+          nextTabTreeDepth = getTreeDepth(nextTab);
+          if (nextTabTreeDepth == null || nextTabTreeDepth <= depthPreRestore) {
+            break;
+          }
+          let newDepth = nextTabTreeDepth - depthPreRestore + rootTreeDepth + 1;
+          setTreeDepth(nextTab, newDepth);
+          nextTab = getNextTab(nextTab);
+        }
+      }
+    }
+  },
+
   tabRestore: function(aTab) {
 
     let restoredDepth = getCustomTabValue(aTab, "tree-depth");
@@ -2003,32 +2046,7 @@ window.nativeTreeTabs = {
     if (restoredDepth) {
       setTreeDepth(aTab, restoredDepth);
       //Fix children depth when a root is restored
-      let nextTab = getNextTab(aTab);
-      let restoredTreeId = getCustomTabValue(aTab, "tree-id");
-      if (restoredTreeId) {
-        aTab.setAttribute("tree-id", restoredTreeId);
-        window.nativeTreeTabs.tabsIds.set(restoredTreeId, aTab);
-        let childrenId = new Array();
-        childrenId.push(restoredTreeId);
-        let rootTreeDepth = parseInt(restoredDepth, 10);
-        //Find direct children (Depth difference == 1 )
-        while (nextTab && nextTab.hasAttribute("opener-id") && nextTab.getAttribute("opener-id") === restoredTreeId) {
-          let depthPreRestore = getTreeDepth(nextTab);
-          setOpener(nextTab, aTab);
-          setTreeDepth(nextTab, rootTreeDepth + 1);
-          nextTab = getNextTab(nextTab);
-          //Fix grandchildren
-          while (nextTab) {
-            nextTabTreeDepth = getTreeDepth(nextTab);
-            if (nextTabTreeDepth == null || nextTabTreeDepth <= depthPreRestore) {
-              break;
-            }
-            let newDepth = nextTabTreeDepth - depthPreRestore + rootTreeDepth + 1;
-            setTreeDepth(nextTab, newDepth);
-            nextTab = getNextTab(nextTab);
-          }
-        }
-      }
+      this.rerootPossibleChildren(aTab, restoredDepth);
     }
     let nestTab = getCustomTabValue(aTab, "nestTab");
     if (nestTab) {
@@ -2049,41 +2067,6 @@ window.nativeTreeTabs = {
       aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
       if (aTab.selected) {
         this.hiddenSelected(aTab);
-      }
-    }
-    let restorePaneldId = getCustomTabValue(aTab, "panel-id");
-
-    if (restorePaneldId) {
-      panelId = restorePaneldId.toString();
-      let panel = this.tabPanels.find(x => x.id.toString() === panelId);
-
-      if (!panel) {
-        //panel no longer exists => restore it
-        let relabel = "restored " + panelId;
-        let restorePanelLabel = getCustomTabValue(aTab, "panel-label");
-        if (!restorePanelLabel) {
-          restorePanelLabel = "Restored Panel";
-        }
-        let previousPanelIndex;
-        let previousTab = getPreviousTab(aTab);
-        if (previousTab) {
-          previousPanelIndex = getPreviousTab(aTab).getAttribute("panel-id");
-        }
-        panel = this.tabPanelOpen(tabs = null, label = restorePanelLabel, id = panelId, forceShow = false, index = previousPanelIndex);
-      } else {
-        if (!findPanelInMenu(panel)) {
-          addNewPanelInMenu(panel, checkIt = false);
-        }
-      }
-      setPanel(aTab, panel, window);
-      foundPanel = true;
-      if (aTab.selected) {
-        this.tabPanelShow(panel, changeSelectedTab = false);
-      }
-      if (this.selectedtPanel === panel) {
-        unHideTab(aTab);
-      } else if (!aTab.selected) {
-        hideTab(aTab);
       }
     }
   },
@@ -2138,7 +2121,6 @@ window.nativeTreeTabs = {
     }
 
     let treeDepth = getCustomTabValue(aTab, "tree-depth");
-
     if (treeDepth && !soloTab) {
       treeDepth = setTreeDepth(aTab, treeDepth);
     } else {
@@ -2151,7 +2133,7 @@ window.nativeTreeTabs = {
     }
 
     let openerId = getCustomTabValue(aTab, "opener-id");
-
+    let openerFound = false;
     if (openerId) {
       aTab.setAttribute("opener-id", openerId);
       //Check if tab parent was restored
@@ -2174,6 +2156,7 @@ window.nativeTreeTabs = {
         if (possibleParent.getAttribute("tree-id") == openerId) {
           setTreeDepth(aTab, possibleParentDepth + 1);
           setOpener(aTab, possibleParent);
+          openerFound = true;
           break;
         }
         possibleParent = getPreviousTab(possibleParent);
@@ -2183,6 +2166,8 @@ window.nativeTreeTabs = {
         setOpener(aTab, aTab.openerTab);
       }
     }
+    //if children were opened before their root => reRootThem 
+    this.rerootPossibleChildren(aTab, getTreeDepth(aTab));
 
     setDomainAttr(aTab);
 
@@ -2225,16 +2210,22 @@ window.nativeTreeTabs = {
       increaseChildCount(aTab);
     }
 
-    let restorePaneldId = getCustomTabValue(aTab, "panel-id");
-    let foundPanel = false;
-    //Don't restore panel for out of window dragging
-
-    if (dragged != "") {
+    //out of window dragging, remove old values
+    if (dragged) {
       deleteCustomTabValue(aTab, "draggedFromWindow");
       let thisWindowId = window.docShell.outerWindowID.toString();
-      if (dragged != thisWindowId)
-        restorePaneldId = false;
+      if (dragged != thisWindowId) {
+        deleteCustomTabValue(aTab, "panel-id");
+        deleteCustomTabValue(aTab, "panel-icon");
+        deleteCustomTabValue(aTab, "panel-label");
+        //if opener was not dragged together to new window
+        if (!openerFound)
+          deleteCustomTabValue(aTab, "opener-id");
+      }
     }
+
+    let restorePaneldId = getCustomTabValue(aTab, "panel-id");
+    let foundPanel = false;
 
     function findPreviousInPanel(xTab, xTabPanelId) {
       //first of a panel here or a wrong one
@@ -2281,9 +2272,19 @@ window.nativeTreeTabs = {
           previousPanelIndex = previousTab.getAttribute("panel-id");
         }
         panel = this.tabPanelOpen(tabs = null, label = restorePanelLabel, id = panelId, forceShow = false, index = previousPanelIndex);
-
+        let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
+        if (restorePanelIcon) {
+          this.setPanelIcon(panel, restorePanelIcon);
+        }
       } else {
         //Panel exists
+
+        if (restorePaneldId === '0' && panel.icon == null) {
+          let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
+          if (restorePanelIcon) {
+            this.setPanelIcon(panel, restorePanelIcon);
+          }
+        }
         if (!findPanelInMenu(panel)) {
           //usually for the first panel
           addNewPanelInMenu(panel, checkIt = false);
@@ -4029,13 +4030,57 @@ window.nativeTreeTabs = {
     let panel0 = {
       "id": "0",
       "count": 0,
-      "label": this.defaultPanelName.value,
+      "label": getPref("treeTabs.defaultPanelName"),
       "selectedTab": null,
       "previousSelectedTab": new Array()
     };
     this.tabPanels.push(panel0);
     this.selectedtPanel = panel0;
     return panel0;
+  },
+
+  setPanelIcon: function(panel, icon) {
+    try {
+      let tabs = this.getTabPanelTabs(panel);
+      tabs.forEach((t) => {
+        setCustomTabValue(t, "panel-icon", icon);
+      });
+      icon = icon.split(",");
+      if (icon.length == 2) {
+        panel.icon = icon[0];
+        panel.iconColor = icon[1];
+      }
+      if (panel === this.selectedtPanel)
+        this.updatePanelHeaderIcon(panel);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+
+  removePanelIcon: function(panel) {
+    let tabs = this.getTabPanelTabs(panel);
+    tabs.forEach((t) => {
+      deleteCustomTabValue(t, "panel-icon");
+    });
+    panel.icon = null;
+    panel.iconColor = null;
+    if (panel === this.selectedtPanel)
+      this.updatePanelHeaderIcon(panel);
+  },
+
+  updatePanelHeaderIcon(panel, forced = false) {
+    let panelsButton = window.document.getElementById("tab-panels-button");
+    if (panelsButton == null) return;
+    let panelsButtonImg = panelsButton.querySelector("img");
+    if (panelsButtonImg == null) return;
+    if (panel.icon != null) {
+      panelsButton.setAttribute("nonDefaultIcon", "");
+      panelsButtonImg.style.setProperty("content", `url("chrome://browser/content/profiles/assets/48_${panel.icon}.svg")`);
+      panelsButtonImg.style.setProperty("stroke", panel.iconColor);
+    } else {
+      panelsButton.removeAttribute("nonDefaultIcon", "");
+      panelsButtonImg.style = "";
+    }
   },
 
   tabPanelOpen: function(tabs = null, label = null, id = null, forceShow = false, index = null, group = false) {
@@ -4293,8 +4338,8 @@ window.nativeTreeTabs = {
       return;
     }
     if (reverse)
-      return gBrowser.tabs.filter(t => t.getAttribute("panel-id") != panelId);
-    return gBrowser.tabs.filter(t => t.getAttribute("panel-id") == panelId);
+      return gBrowser.tabs.filter(t => t.getAttribute("panel-id") != panelId && !t.hasAttribute("panel-id-pending"));
+    return gBrowser.tabs.filter(t => t.getAttribute("panel-id") == panelId && !t.hasAttribute("panel-id-pending"));
   },
 
   getTabPaneGroups: function(panel) {
@@ -4302,7 +4347,7 @@ window.nativeTreeTabs = {
     if (panelId == -1) {
       return;
     }
-    return gBrowser.tabGroups.filter(g => g.tabs[0].getAttribute("panel-id") == panelId);
+    return gBrowser.tabGroups.filter(g => g.tabs[0].getAttribute("panel-id") == panelId && !t.hasAttribute("panel-id-pending"));
   },
 
   tabPanelClose: function(panel) {
@@ -4404,6 +4449,7 @@ window.nativeTreeTabs = {
         }
       }
     }, this);
+
     if (changeSelectedTab) {
       //Show the last selected tab of the panel if it exists
       // else show the first (top) tab of the panel
@@ -4552,14 +4598,13 @@ window.nativeTreeTabs = {
     let panelId = panel.id.toString();
     let label = panel.label.toString();
     //Replace tabs saved panel label
-    gBrowser.tabs.forEach(function(aTab) {
-      if (aTab.hasAttribute("panel-id") && aTab.getAttribute("panel-id") === panelId) {
-        aTab.setAttribute("panel-label", panel.label);
-        setCustomTabValue(aTab, "panel-label", panel.label);
-      }
+    let tabs = this.getTabPanelTabs(panel);
+    tabs.forEach(function(aTab) {
+      aTab.setAttribute("panel-label", panel.label);
+      setCustomTabValue(aTab, "panel-label", panel.label);
     }, this);
     if (panelId === "0") {
-      Services.prefs.setStringPref("treeTabs.defaultPanelName.value", label);
+      Services.prefs.setStringPref("treeTabs.defaultPanelName", label);
     }
   },
 
@@ -4568,6 +4613,7 @@ window.nativeTreeTabs = {
     if (this.selectedtPanel.id.toString() === panelId) {
       this.selectedtPanel.selectedTab = gBrowser.selectedTab;
       checkPanelInMenu(panel);
+      this.updatePanelHeaderIcon(panel);
       return;
     }
     if (this.tabPanels.includes(this.selectedtPanel)) {
@@ -4580,6 +4626,7 @@ window.nativeTreeTabs = {
     }
     this.selectedtPanel = panel;
     checkPanelInMenu(panel);
+    this.updatePanelHeaderIcon(panel);
   },
 
   indentTab: function(dir) {
@@ -5163,18 +5210,29 @@ hasTreeDepth = function(aTab) {
 }
 
 setPanelLite = function(aTab, panel, window) {
-  panelId = panel.id.toString();
+  const panelId = panel.id.toString();
   aTab.setAttribute("panel-id", panelId);
+  aTab.setAttribute("panel-id-pending", panelId);
   window.nativeTreeTabs.panelIncreaseCount(panel);
 }
 
 setPanel = function(aTab, panel, window) {
-  panelId = panel.id.toString();
+  aTab.removeAttribute("panel-id-pending");
+  const panelId = panel.id.toString();
   let decrease = false;
   let previousPanel;
 
   setCustomTabValue(aTab, "panel-id", panelId);
   setCustomTabValue(aTab, "panel-label", panel.label.toString());
+  if (panel.icon != null) {
+    let iconString = panel.icon.toString() + "," + panel.iconColor.toString();
+    setCustomTabValue(aTab, "panel-icon", iconString);
+  }
+  else{
+    setTimeout(() => {
+      deleteCustomTabValue(aTab, "panel-icon");
+    }, 50);
+  }
 
   if (aTab.hasAttribute("panel-id")) {
     previousPanel = aTab.getAttribute("panel-id");
@@ -5985,8 +6043,9 @@ addNewPanelInMenu = function(panel, checkIt = false, position = -1) {
   }
 }
 
-updateCountInMenu = function(panel) {
-  let menupopup = document.getElementById('tab-panels-menupopup-view');
+updateCountInMenu = function(panel, menupopup = null, updateIcon = false) {
+  if (menupopup == null)
+    menupopup = document.getElementById('tab-panels-menupopup-view');
   if (menupopup != null) {
     let menuitem = menupopup.querySelector('[panel-id="' + panel.id + '"]');
     if (menuitem != null) {
@@ -5996,6 +6055,17 @@ updateCountInMenu = function(panel) {
       }
       menuitem.setAttribute('label', string + " (" + panel.count + ")");
       menuitem.setAttribute('title', panel.label);
+      if (updateIcon) {
+        if (panel.icon != null) {
+          menuitem.setAttribute('nonDefaultIcon', "");
+          menuitem.style.setProperty('background-image', `url("chrome://browser/content/profiles/assets/48_${panel.icon}.svg")`);
+          menuitem.style.setProperty('stroke', panel.iconColor);
+        } else if (menuitem.hasAttribute('nonDefaultIcon')) {
+          menuitem.removeAttribute('nonDefaultIcon');
+          menuitem.style.removeProperty('stroke');
+          menuitem.style.removeProperty('background-image');
+        }
+      }
     }
   }
 }
@@ -6546,14 +6616,14 @@ addNTTSidebarHeader = function() {
   let [elements, style] = addTabPanelButton(mainDiv);
   elementsCreated.push(...elements);
 
+  let elements2 = addTabPanelIconSetter();
+  elementsCreated.push(...elements2);
+
   // let searchButton = document.createElement("div");
   // searchButton.setAttribute("id", "search-all-tabs-button");
-
   // searchButton.setAttribute("class", "button-background");
   // let buttonImage = document.createElement("image");
-
   // searchButton.appendChild(buttonImage);
-
   // mainDiv.appendChild(searchButton);
   // searchButton.addEventListener("click", function(aEvent) {
   //   let button = aEvent.button;
@@ -6693,6 +6763,15 @@ addTabPanelButton = function(mainDiv) {
       panelNameRightClick(aEvent);
     }
   });
+  let contextMenuitemSetIcon = addContextItem('Set icon', (aEvent) => {
+    let contextElement = panelContext.contextElement;
+    if (contextElement.tagName == "menuitem")
+      openIconSelector(panelContext.panel, contextElement.parentNode, true);
+    else {
+      openIconSelector(panelContext.panel, contextElement);
+    }
+  });
+
   addContextMenuSeperator();
   let contextMenuitemSelectAll = addContextItem('Select Tabs', (aEvent) => {
     window.gBrowser.selectAllTabs();
@@ -6771,8 +6850,7 @@ addTabPanelButton = function(mainDiv) {
       let containerOffsetY = draggedItem.offsetTop / 2;
       draggedItem.classList.add("dragging");
       draggedItem.style.top = containerOffsetY + "px";
-      draggedItem.style.background = "rgba(40,150,255,0.9)";
-      draggedItem.style.background = "-moz-menuhover";
+      draggedItem.style.backgroundColor = "-moz-menuhover";
       document.addEventListener("mousemove", handleMousemove);
       document.addEventListener("mouseup", handleMouseUp, true);
     }
@@ -6803,7 +6881,7 @@ addTabPanelButton = function(mainDiv) {
 
   let dragEnds = function(clickOnly = false) {
     if (draggedItem) {
-      draggedItem.style.background = "";
+      draggedItem.style.backgroundColor = "";
       draggedItem.classList.remove("dragging");
       isDragging = false;
 
@@ -6851,7 +6929,8 @@ addTabPanelButton = function(mainDiv) {
   tabPanelGroup.addEventListener("auxclick", (aEvent) => {
     let button = aEvent.button;
     if (button == 1) {
-      nativeTreeTabs.tabPanelOpen();
+      let newPanel = nativeTreeTabs.tabPanelOpen();
+      setRandomIcon(newPanel);
       return;
     }
     aEvent.preventDefault();
@@ -6867,7 +6946,9 @@ addTabPanelButton = function(mainDiv) {
         return;
       }
     }
-    window.nativeTreeTabs.tabPanels.forEach(updateCountInMenu, this);
+    window.nativeTreeTabs.tabPanels.forEach((item) => {
+      updateCountInMenu(item, menupopup, true)
+    }, this);
     let items = menupopup.querySelectorAll("[panel-id]");
     if (items.length === 1) {
       items[0].style.display = "none"
@@ -6883,6 +6964,437 @@ addTabPanelButton = function(mainDiv) {
 
   let style = loadTabPanelsstyle();
   return [elementsCreated, style];
+}
+
+addTabPanelIconSetter = function() {
+  //create the popup to select icon for a Tab panel
+  let elementsCreated = new Array();
+  const ICONS = [
+         "barbell", "bike", "book", "briefcase", "canvas", "craft", "default-favicon", "diamond", "flower", "folder", "hammer", "heart", "heart-rate", "history", "leaf", "lightbulb", "makeup", "message", "musical-note", "palette", "paw-print", "plane", "present", "shopping", "soccer", "sparkle-single", "star", "video-game-controller"
+  ];
+  const ICONS_LENGTH = ICONS.length;
+
+  // ---------- Build the popup ----------
+  let iconSetPopup = document.createXULElement("panel");
+  iconSetPopup.id = "icon-selector-popup";
+  iconSetPopup.setAttribute("type", "arrow");
+  iconSetPopup.setAttribute("orient", "vertical");
+  elementsCreated.push(iconSetPopup);
+
+  let title = document.createXULElement("label");
+  title.setAttribute("value", "Select Icon");
+  title.setAttribute("class", "iconSetPopup-title");
+  iconSetPopup.appendChild(title);
+
+  let grid = document.createElement("div");
+  grid.setAttribute("class", "icon-grid");
+  iconSetPopup.appendChild(grid);
+
+  // Populate dynamically
+  ICONS.forEach(iconName => {
+    let btn = document.createXULElement("toolbarbutton");
+    btn.classList.add("icon-selector");
+    btn.classList.add("profile-icon-option");
+    btn.setAttribute("iconName", iconName);
+    btn.setAttribute("tooltiptext", iconName);
+    btn.style.setProperty("list-style-image", `url("chrome://browser/content/profiles/assets/48_${iconName}.svg")`);
+    btn.addEventListener("command", () => {
+      iconSetPopup.selected = btn;
+      changeSelected(iconName);
+    });
+    grid.appendChild(btn);
+  });
+
+  function changeSelected(iconName) {
+    iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
+      const isSelected = btn.getAttribute("iconName") === iconName;
+      btn.toggleAttribute("checked", isSelected);
+      btn.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
+      btn.style.outlineOffset = isSelected ? "2px" : "";
+      btn.style.backgroundColor = isSelected ?
+        "var(--arrowpanel-dimmed, rgba(0,0,0,.08))" :
+        "";
+    });
+  }
+  // ---------- Color picker section ----------
+
+  // ---------- helpers ----------
+  function parseColor(color, context = document.documentElement) {
+    const hex = resolveToHex(color, context);
+    const hsl = hexToHsl(hex);
+    return {
+      hex,
+      ...hsl
+    };
+  }
+
+  function hslToHex(h, s, l) {
+    s /= 100;
+    l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n =>
+      l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const toHex = x =>
+      Math.round(x * 255)
+      .toString(16)
+      .padStart(2, "0");
+    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+  }
+
+  function resolveToHex(color, context = document.documentElement) {
+    if (!color || typeof color !== "string") return "#0a84ff";
+
+    color = color.trim();
+    // Already hex?
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) {
+      // normalize short hex → full
+      if (color.length === 4) {
+        color =
+          "#" +
+          color[1] + color[1] +
+          color[2] + color[2] +
+          color[3] + color[3];
+      }
+      return color.toLowerCase();
+    }
+    // Let the engine resolve named colors, rgb(), hsl(), var(--...), etc.
+    let el = document.createElement("div");
+    el.style.color = color;
+    context.appendChild(el);
+    const computed = getComputedStyle(el).color; // "rgb(r, g, b)" or "rgba(...)"
+    el.remove();
+
+    const match = computed.match(/rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
+    if (!match) return "#0a84ff";
+
+    const toHex = n =>
+      Number(n).toString(16).padStart(2, "0");
+
+    return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+  }
+
+  function hexToHsl(hex) {
+    hex = resolveToHex(hex).replace("#", "");
+
+    const r = parseInt(hex.substring(0, 2), 16) / 255;
+    const g = parseInt(hex.substring(2, 4), 16) / 255;
+    const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+
+    if (max === min) {
+      h = s = 0;
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r:
+          h = (g - b) / d + (g < b ? 6 : 0);
+          break;
+        case g:
+          h = (b - r) / d + 2;
+          break;
+        case b:
+          h = (r - g) / d + 4;
+          break;
+      }
+      h /= 6;
+    }
+    return {
+      h: Math.round(h * 360),
+      s: Math.round(s * 100),
+      l: Math.round(l * 100),
+    };
+  }
+
+  let currentHue = 210;
+  let currentSat = 90;
+  let currentLight = 55;
+  let currentColor = hslToHex(currentHue, currentSat, currentLight);
+
+  let colorSection = document.createElement("div");
+  colorSection.setAttribute("class", "color-section");
+
+  // Preset colors
+  const PRESETS = [
+      "#0a84ff", "#30d158", "#ff9f0a", "#ff453a", "#bf5af2",
+      "#64d2ff", "#ff375f", "#ffd60a", "#ac8e68", "#0cc00c",
+      "#c0c0c0", "#f5d461", "#808080", "#b0b0b0", "#e0e0e0", "#ffffff", "#1c1c1e",
+    ];
+
+  let presetsRow = document.createElement("div");
+  presetsRow.setAttribute("class", "presets-row");
+  PRESETS.forEach(color => {
+    let swatch = document.createElement("div");
+    swatch.setAttribute("class", "color-swatch");
+    swatch.style.setProperty("background", `${color}`);
+
+    swatch.addEventListener("click", () => {
+      setColor(color, true);
+    });
+    swatch.dataset.color = color;
+    presetsRow.appendChild(swatch);
+  });
+  colorSection.appendChild(presetsRow);
+
+  function highlightPreset(color) {
+    presetsRow.querySelectorAll("div").forEach(s => {
+      s.style.borderColor =
+        s.dataset.color.toLowerCase() === color.toLowerCase() ?
+        "var(--focus-outline-color, #0a84ff)" :
+        "transparent";
+    });
+  }
+
+  // Hue slider
+  let hueLabel = document.createXULElement("label");
+  hueLabel.setAttribute("value", "Hue");
+  hueLabel.setAttribute("class", "hsl-label");
+  colorSection.appendChild(hueLabel);
+
+  let hueSlider = document.createElement("input");
+  hueSlider.setAttribute("class", "hsl-slider");
+  hueSlider.type = "range";
+  hueSlider.min = 0;
+  hueSlider.max = 360;
+  hueSlider.value = currentHue;
+  hueSlider.style.setProperty("background", `linear-gradient(to right,
+        #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000
+      )`);
+  colorSection.appendChild(hueSlider);
+
+  // Saturation slider
+  let satLabel = document.createXULElement("label");
+  satLabel.setAttribute("value", "Saturation");
+  satLabel.setAttribute("class", "hsl-label");
+  colorSection.appendChild(satLabel);
+
+  let satSlider = document.createElement("input");
+  satSlider.setAttribute("class", "hsl-slider");
+  satSlider.type = "range";
+  satSlider.min = 0;
+  satSlider.max = 100;
+  satSlider.value = currentSat;
+  satSlider.style.setProperty("background", `linear-gradient(to right, #888, ${hslToHex(currentHue, 100, currentLight)})`);
+  colorSection.appendChild(satSlider);
+
+  // Lightness slider
+  let lightLabel = document.createXULElement("label");
+  lightLabel.setAttribute("value", "Lightness");
+  lightLabel.setAttribute("class", "hsl-label");
+  colorSection.appendChild(lightLabel);
+
+  let lightSlider = document.createElement("input");
+  lightSlider.setAttribute("class", "hsl-slider");
+  lightSlider.type = "range";
+  lightSlider.min = 0;
+  lightSlider.max = 100;
+  lightSlider.value = currentLight;
+  lightSlider.style.setProperty("background", `linear-gradient(to right, #000, #888, #fff)`);
+  colorSection.appendChild(lightSlider);
+
+  // Current color preview
+  let previewRow = document.createElement("div");
+  previewRow.setAttribute("class", "preview-row");
+
+  let previewSwatch = document.createElement("div");
+  previewSwatch.setAttribute("class", "preview-swatch");
+  previewSwatch.style.setProperty("background", `${currentColor}`);
+
+  let hexLabel = document.createXULElement("label");
+  hexLabel.setAttribute("value", currentColor);
+  hexLabel.style.cssText = "margin: 0; font-family: monospace; font-size: 1.05em;";
+
+  previewRow.appendChild(previewSwatch);
+  previewRow.appendChild(hexLabel);
+  // colorSection.appendChild(previewRow);
+  iconSetPopup.appendChild(colorSection);
+
+  // ---------- live update ----------
+  function updateIconsColor(color) {
+    currentColor = color;
+    previewSwatch.style.background = color;
+    hexLabel.setAttribute("value", color);
+    iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
+      btn.style.stroke = color;
+    });
+    // Keep saturation slider gradient in sync with current hue/lightness
+    satSlider.style.background = `linear-gradient(to right, #888, ${hslToHex(currentHue, 100, currentLight)})`;
+  }
+
+  function setColor(color, syncSliders = false) {
+    // Resolve var(--...), "red", "rgb(...)", etc. → hex
+    const {
+      hex,
+      h,
+      s,
+      l
+    } = parseColor(color, iconSetPopup);
+
+    if (syncSliders) {
+      currentHue = h;
+      currentSat = s;
+      currentLight = l;
+      hueSlider.value = currentHue;
+      satSlider.value = currentSat;
+      lightSlider.value = currentLight;
+    }
+    updateIconsColor(hex);
+    highlightPreset(hex);
+  }
+
+  function updateFromSliders() {
+    currentHue = Number(hueSlider.value);
+    currentSat = Number(satSlider.value);
+    currentLight = Number(lightSlider.value);
+    const color = hslToHex(currentHue, currentSat, currentLight);
+    updateIconsColor(color);
+    highlightPreset(""); // clear preset highlight
+  }
+
+  hueSlider.addEventListener("input", updateFromSliders);
+  satSlider.addEventListener("input", updateFromSliders);
+  lightSlider.addEventListener("input", updateFromSliders);
+
+  let buttonBox = document.createXULElement("hbox");
+  buttonBox.setAttribute("pack", "center");
+  buttonBox.style.padding = "8px 0 12px";
+  buttonBox.style.marginTop = "8px";
+
+  let doneBtn = document.createXULElement("button");
+  doneBtn.setAttribute("label", "Done");
+  doneBtn.style.minWidth = "90px";
+  doneBtn.style.minHeight = "30px";
+
+  let cancelBtn = document.createXULElement("button");
+  cancelBtn.setAttribute("label", "Cancel");
+  cancelBtn.style.minWidth = "90px";
+  doneBtn.style.minHeight = "30px";
+
+
+  let removeBtn = document.createXULElement("button");
+  removeBtn.setAttribute("label", "Remove icon");
+
+  function handleDone() {
+    if (iconSetPopup.selected != null) {
+      let iconName = iconSetPopup.selected.getAttribute("iconName");
+      let string = iconName.toString() + "," + currentColor.toString();
+      nativeTreeTabs.setPanelIcon(iconSetPopup.tabpanel, string);
+    }
+    updateCountInMenu(iconSetPopup.tabpanel, null, updateIcon = true);
+    iconSetPopup.hidePopup();
+  }
+
+  function handleRemove() {
+    nativeTreeTabs.removePanelIcon(iconSetPopup.tabpanel);
+    updateCountInMenu(iconSetPopup.tabpanel, null, updateIcon = true);
+    iconSetPopup.hidePopup();
+  }
+
+  doneBtn.addEventListener("command", handleDone);
+  cancelBtn.addEventListener("command", () => {
+    iconSetPopup.hidePopup()
+  });
+  removeBtn.addEventListener("command", handleRemove);
+
+  buttonBox.appendChild(doneBtn);
+  buttonBox.appendChild(removeBtn);
+  buttonBox.appendChild(cancelBtn);
+  iconSetPopup.appendChild(buttonBox);
+
+  document.getElementById("mainPopupSet").appendChild(iconSetPopup);
+
+  function randomColor(base, colorful, salt, bright) {
+    const x = randomInRange(base, base + bright)
+    const mid = parseInt(x / 3, 10)
+    const dev = randomInRange(colorful - salt, colorful + salt)
+    const r = randomInRange(mid - dev, mid + dev)
+    const g = randomInRange(mid - dev, mid + dev)
+    const b = x + -r - g
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+  const randomInRange = function(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min
+  }
+
+  function getNotUsedIcon() {
+    const randN = randomInRange(0, ICONS_LENGTH - 1);
+    let panelsWithIcons = nativeTreeTabs.tabPanels.filter(p => p.icon != null);
+    let alreadyIncluded = new Array();
+    panelsWithIcons.forEach((p) => {
+      if (!alreadyIncluded.includes(p.icon))
+        alreadyIncluded.push(p.icon)
+    });
+    let i = randN;
+    while (true) {
+      if (alreadyIncluded.includes(ICONS[i]))
+        i++;
+      else
+        break;
+      if (i == randN)
+        break;
+      if (i == ICONS_LENGTH)
+        i = 0;
+    }
+    return ICONS[i];
+  }
+
+  // Public functions
+  window.setRandomIcon = function(tabpanel) {
+    const color = randomColor(150 * 3, 70, 40, 10 * 3);
+    const {
+      hex,
+      h,
+      s,
+      l
+    } = parseColor(color, iconSetPopup);
+    const randomIcon = getNotUsedIcon();
+    let string = randomIcon + "," + hex;
+    nativeTreeTabs.setPanelIcon(tabpanel, string);
+    updateCountInMenu(tabpanel, null, updateIcon = true);
+  }
+
+  window.openIconSelector = function(tabpanel, anchor, side = false) {
+    let iconSetPopup = document.getElementById("icon-selector-popup");
+    if (iconSetPopup == null) return;
+    let currentSelected;
+
+    if (tabpanel.icon == null) {
+      //pick a random icon (if possible, not already used) if panel hasn't one set
+      currentSelected = getNotUsedIcon();
+    } else
+      currentSelected = tabpanel.icon;
+    let color
+    if (tabpanel.iconColor)
+      color = tabpanel.iconColor;
+    else {
+      color = randomColor(150 * 3, 70, 40, 10 * 3);
+    }
+    iconSetPopup.selected = null;
+    iconSetPopup.tabpanel = tabpanel;
+    iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
+      const isSelected = btn.getAttribute("iconName") === currentSelected;
+      btn.toggleAttribute("checked", isSelected);
+      if (isSelected)
+        iconSetPopup.selected = btn;
+      btn.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
+      btn.style.outlineOffset = isSelected ? "2px" : "";
+      btn.style.backgroundColor = isSelected ?
+        "var(--arrowpanel-dimmed, rgba(0,0,0,.08))" :
+        "";
+    });
+    // Initialize color + sliders from argument
+    setColor(color || "#0a84ff", true);
+    if (side)
+      iconSetPopup.openPopup(anchor, "topright topleft", 0, 0, false, false);
+    else
+      iconSetPopup.openPopup(anchor, "after_start", 0, 0, false, false);
+  };
+
+  return elementsCreated;
 }
 
 function smartSidebarResize(enable) {
@@ -7401,7 +7913,7 @@ let modifyCustomizePage = {
           draggedItem.classList.add("dragging");
           draggedItem.style.top = containerOffsetY + "px";
           draggedItem.style.position = "absolute";
-          draggedItem.style.background = "-moz-menuhover";
+          draggedItem.style.backgroundColor = "-moz-menuhover";
           doc.addEventListener("mousemove", handleMousemove);
           doc.addEventListener("mouseup", handleMouseUp, true);
 
@@ -8126,9 +8638,17 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded]) #tab-panels-group {
 }
 #tab-panels-button img {
     -moz-context-properties: fill, fill-opacity, stroke;
-    content: url("chrome://browser/skin/tabs.svg");
-    fill: var(--toolbarbutton-icon-fill)!important;
-    background-color: transparent!important;
+}
+#tab-panels-button:not([nonDefaultIcon]) img{
+  content: url("chrome://browser/skin/tabs.svg");
+  fill: var(--toolbarbutton-icon-fill)!important;
+  stroke: transparent;
+  background-color: transparent!important;
+}
+#tab-panels-button[nonDefaultIcon] img{
+  width:24px;
+  height:24px;
+  fill:transparent!important;
 }
 box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
   #tab-panels-group .dropdown-arrow,
@@ -8196,6 +8716,7 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     display: flex;
     flex-flow: column;
     padding: 0px!important;
+    background:var(--toolbox-background-color);
 }
 #tab-panels-menupopup-view:has(menuitem[checked]) {
     padding-top: 7px!important;
@@ -8211,7 +8732,6 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
     border-radius: 9px;
     transition: margin 0.25s;
     transition: background 0.25s;
-
     box-sizing: border-box;
 }
 #tab-panels-menupopup menuitem.dragging {
@@ -8248,7 +8768,7 @@ box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
 }
 #tab-panels-menupopup .add-panel-button img {
     -moz-context-properties: fill, fill-opacity, stroke;
-    fill: var(--toolbarbutton-icon-fill)!important;
+    fill: var(--toolbox-text-color,var(--toolbarbutton-icon-fill))!important;
     width: 18px;
     height: fit-content;
     content: url(chrome://global/skin/icons/plus.svg);
@@ -8276,6 +8796,14 @@ menu.subviewbutton{
   }
 }
 #tab-panels-contextmenu menuitem:not(:last-child){
+}
+#tab-panels-menupopup menuitem[nonDefaultIcon] {
+  text-indent: 18px;
+  background-repeat: no-repeat;
+  background-size: 20px;
+  background-position: 5px;
+  fill:transparent!important;
+  -moz-context-properties: stroke,fill!important;
 }
 .doubleMenuItem{
   display:flex;
@@ -8393,7 +8921,7 @@ loadNTTstyle = function() {
 
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
     max-width: calc(100% - var(--tab-indent))!important;
-    padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-inner-inline-margin, var(--tab-margin-inline-inner))) !important;
+    padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))) !important;
 }
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab-split-view-wrapper{
     margin-inline: 0px !important;
@@ -8409,7 +8937,7 @@ loadNTTstyle = function() {
         padding-inline-start: calc(var(--tab-indent) * 1px)!important;
     }
   #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
-        padding-inline-start: calc(var(--tab-indent) * 1px + var(--tab-inner-inline-margin, var(--tab-margin-inline-inner)))!important;
+        padding-inline-start: calc(var(--tab-indent) * 1px + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)))!important;
   }
 }
 
@@ -8417,7 +8945,7 @@ loadNTTstyle = function() {
       margin-inline: 0px !important;
 }
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has(tab[tree-depth="0"]){
-   padding-inline-start:var(--tab-inner-inline-margin, var(--tab-margin-inline-inner))!important;
+   padding-inline-start:var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
 }
 #vertical-tabs tab:not(collapsed, [pinned]) {
     margin-bottom: 0px!important;
@@ -8526,10 +9054,10 @@ loadNTTstyle = function() {
   content:"";
   position: absolute;
   display: block;
-  width: calc (100% - var(--tab-inner-inline-margin, var(--tab-margin-inline-inner)));
+  width: calc (100% - var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)));
   height:var(--tab-min-height);
-  left: var(--tab-inner-inline-margin, var(--tab-margin-inline-inner));
-  right: var(--tab-inner-inline-margin, var(--tab-margin-inline-inner));
+  left: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin));
+  right: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin));
   border-radius: var(--tab-border-radius);
 }
 /* Audio playing icon enlarge */
@@ -8978,7 +9506,7 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
     min-height: 20px!important;
     display: block!important;
     margin-top: -1px!important;
-    margin-left: calc( ( -1 * var(--tab-inner-inline-margin, var(--tab-margin-inline-inner)) ) - 18px )!important;
+    margin-left: calc( ( -1 * var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)) ) - 18px )!important;
     fill: black!important;
     background: transparent!important;
     position: absolute!important;
@@ -9114,7 +9642,6 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
       background: color-mix( in srgb, rgba(255, 255, 255) 50%, transparent);
   }
 }
-
 }
 
 #vertical-tabs tab[nestTab] .tab-background {
@@ -9223,14 +9750,16 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
     }
   }
 }
+
 /*Styles unloaded tab from previous Session */  
 tab[pending]:not([nestTab],[pinned]) {
   opacity: 0.8!important;
   font-style: italic!important;
 }
+
 tab[pending]:not([nestTab],[pinned]) .tab-icon-image {
   opacity: 1!important;
-  filter: none!important;
+  filter: grayscale(0.3) brightness(0.8)!important;
 }
 @media -moz-pref("browser.nova.enabled") {
   /* Fix Firefox bug https://bugzilla.mozilla.org/show_bug.cgi?id=2053433 */
@@ -9240,15 +9769,106 @@ tab[pending]:not([nestTab],[pinned]) .tab-icon-image {
   #sidebar-container:not([sidebar-positionend]){
     border-left-width:0px!important;
   }
-  #browser:has(#sidebar-container[sidebar-positionend]{
+  #browser:has(#sidebar-container[sidebar-positionend]){
     padding-right:0px!important;
   }
   #sidebar-container[sidebar-positionend]{
     border-right-width:0px!important;
   }
 }
-/* Add custom tab colors based on domain, uncomment and add your sites and color */
 
+/*Set icon popup*/
+#icon-selector-popup{
+  padding:15px;
+  min-width: 370px;
+  max-width: 370px;
+  max-height:unset;
+}
+#icon-selector-popup{
+label[class="iconSetPopup-title"]{
+  font-weight: 600;
+  font-size: 1.4em;
+  display: block;
+  align-self: center;
+}
+.icon-grid{
+  display: flex;
+  overflow-y: auto;
+  padding-block: 10px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 9px;
+  width: 100%;
+  justify-content: center;
+}
+.icon-selector{
+  max-width: 30px;
+  max-height: 30px;
+  padding: 2px;
+  justify-content:center;
+  border-radius: 8px;
+  -moz-context-properties: fill, stroke;
+  fill: transparent;
+  stroke: currentColor;
+  appearance: unset!important;
+  background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
+}
+.icon-selector image{
+  max-width: 26px;
+  max-height: 26px;
+}
+.color-section{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-separator-color, rgba(128,128,128,0.3));
+  width: 100%;
+}
+.presets-row{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.color-swatch{
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.hsl-label{
+  line-height: 8px;
+  margin: 0px 0px 0 5px!important;
+  font-size: 1.2em;
+}
+input[class="hsl-slider"]{
+  width: 100%;
+  height: 16px;
+  appearance: none;
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+}
+.preview-row{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.preview-swatch{
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #888);
+}
+}
+
+/* Add custom tab colors based on domain, uncomment and add your sites and color */
 /*
 #vertical-tabs tab[domain^="example.com"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
 #vertical-tabs tab[domain^="youtube.com"] { --tree-domain-color: rgba(240,0,0,0.8);  --tree-domain-border-color: rgb(250,10,30);}
