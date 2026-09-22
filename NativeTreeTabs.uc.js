@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.3.1
+// @version        0.3.4.0
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -177,13 +177,17 @@ window.nativeTreeTabs = {
     //add keyboard shortcuts
     this.addKeyboardShortcuts();
     window.addEventListener("keydown", this, true);
-    //update selected tabs
 
+    //update selected tabs
     this.selectedTab = gBrowser.selectedTab;
     this.selectedtPanel.selectedTab = gBrowser.selectedTab;
 
     //observe sidebar settings document open
     modifyCustomizePage.start();
+
+    //add Always Display Tab functionality
+    let [alwaysOnElements] = initAlwayDisplayTab();
+    this.domElements.push(...alwaysOnElements);
 
     //-------------------
     console.log("Native Tree Tabs loaded.");
@@ -268,6 +272,8 @@ window.nativeTreeTabs = {
         aTab.removeAttribute("nestTab");
       }
     }, this);
+
+    clearAlwaysOn();
 
     this._initialized = false;
   },
@@ -950,7 +956,7 @@ window.nativeTreeTabs = {
     } else {
       //Case 1: Dropped at the bottom border of tab
       // Move at the end of a tree and become simpling
-      if (previousTabDepth != null && offsetY < (calcDistance * 2) && (nextTabDepth == null || nextTabDepth == 0)) {
+      if (previousTabDepth != null && offsetY < (calcDistance * 2) && (nextTabDepth < previousTabDepth || nextTabDepth == null)) {
         newDepth = previousTabDepth;
         shouldUpdateChildren = true;
         if (newDepth != 0) copyOpener(aTab, previousTab);
@@ -960,7 +966,11 @@ window.nativeTreeTabs = {
       else if ((nextTabDepth == null || nextTabDepth == 0) && offsetY > (calcDistance + 7)) {
         newDepth = 0;
         shouldUpdateChildren = true;
+      } else if (previousTabDepth != null && offsetY > (calcDistance * 2) && (nextTabDepth < previousTabDepth || nextTabDepth == null)) {
+        newDepth = (nextTabDepth == null) ? 0 : previousTabDepth - 1;
+        shouldUpdateChildren = true;
       }
+
     }
 
     if (aTab.hasAttribute("nestTab") && aTab.hasAttribute("untwist")) {
@@ -2933,7 +2943,6 @@ window.nativeTreeTabs = {
     } else {
       const originalGet = originalDesc.get;
       const originalSet = originalDesc.set;
-      let _selectedTabs = gBrowser.selectedTabs || null;
       Object.defineProperty(gBrowser, "selectedTabs", {
         configurable: true,
         enumerable: true,
@@ -6929,7 +6938,7 @@ addTabPanelButton = function(mainDiv) {
         dragEnds(clickOnly = true);
       }
     }
-    document.removeEventListener("mouseup", handleMouseUp);
+    document.removeEventListener("mouseup", handleMouseUp, true);
   }
 
   tabPanelGroup.addEventListener("auxclick", (aEvent) => {
@@ -7441,6 +7450,443 @@ function toggleSidebars() {
       SidebarController._state.updateVisibility(false, false);
     }
   }
+}
+
+function initAlwayDisplayTab() {
+  //Have a tab always side by side with the active/selected tab
+
+  let elementsCreated = new Array();
+
+  //Trick the browser to see the tabs with the "alwaysOn"
+  // attribute as splitview tabs, so the always displayed
+  // tab doesn't get unpainted because it runs in the background.
+  // Browser will do this for non selected tabs to save resources
+  // splitview tabs are expected from this.
+  // AsyncTabSwitcher.shouldDeactivateDocShell
+  const proto = Object.getPrototypeOf(gBrowser);
+  const originalDesc = Object.getOwnPropertyDescriptor(proto, "splitViewBrowsers");
+  if (!originalDesc || typeof originalDesc.get !== "function") {
+    console.error("splitViewBrowsers is not a getter on gBrowser");
+  } else {
+    const originalGet = originalDesc.get;
+    Object.defineProperty(gBrowser, "splitViewBrowsers", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        try {
+          let browsers = originalGet.call(this);
+          alwayOn = this.tabs.filter(t => t.hasAttribute("alwaysOn"));
+          if (alwayOn.length > 0) {
+            browsers.push(alwayOn[0].linkedBrowser);
+          }
+          return browsers;
+
+        } catch (error) {
+          console.error(error);
+        }
+        return originalGet.call(this);
+      },
+    });
+  }
+
+  //Indicator on tab
+  let alwaysOnIndicator = document.createElement("image");
+  elementsCreated.push(alwaysOnIndicator);
+  alwaysOnIndicator.setAttribute("class", "tab-always-on");
+
+  //window-wide accessible function
+  window.clearAlwaysOn = function(tabs = null) {
+    //Remove the attributes that make a tab always displaying
+    // if no tab was given search all tabs
+    if (tabs == null)
+      tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn"));
+    tabs.forEach((t) => {
+      t.removeAttribute("alwaysOn");
+      //also remove the tab browser panel attributes
+      t_BrowserContainer = t.linkedBrowser.closest(".browserSidebarContainer")
+      t_BrowserContainer.removeAttribute("pinned");
+      t_BrowserContainer.removeAttribute("pinned-left");
+      t_BrowserContainer.removeAttribute("pinned-right");
+    });
+    //remove the indicator
+    alwaysOnIndicator.remove();
+  }
+
+  //**********************
+  // Add options to set/stop always display, on Tab Context Menu
+
+  let tabContextMenu = document.getElementById("tabContextMenu");
+  let alwaysOnContext = document.createXULElement("menuitem");
+  elementsCreated.push(alwaysOnContext);
+  alwaysOnContext.setAttribute("id", "alwayOn-contextmenu");
+  alwaysOnContext.setAttribute("label", "Set Tab to Always Display");
+  alwaysOnContext.setAttribute("accesskey", "w");
+  alwaysOnContext.setAttribute("custom-context-item", "");
+  //Insert in correct position
+  let context_position = document.getElementById("context_moveTabToSplitView");
+  if (context_position) {
+    context_position.after(alwaysOnContext);
+  }
+  try {
+    if (TabContextMenu.MENU_SECTIONS) {
+      if (!TabContextMenu.MENU_SECTIONS.classic.tabContextMenu[0].items.includes(("#" + alwaysOnContext.id)))
+        TabContextMenu.MENU_SECTIONS.classic.tabContextMenu[0].items.splice(6, 0, ("#" + alwaysOnContext.id));
+      if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.includes(("#" + alwaysOnContext.id)))
+        TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.splice(2, 0, ("#" + alwaysOnContext.id));
+    }
+  } catch (error) {}
+
+  alwaysOnContext.addEventListener("click", (aEvent) => {
+    //set a tab to always display
+    // CSS rules does it for us
+    // here we just set the attributes for them
+    // to work
+    let aTab = TabContextMenu.contextTab;
+    let linkedBrowser = aTab.linkedBrowser;
+    browserContainer = linkedBrowser.closest(".browserSidebarContainer")
+
+    if (aTab.hasAttribute("alwaysOn")) {
+      //toggle
+      clearAlwaysOn([aTab]);
+    } else {
+      //clear previous always displaying tabs (if they exist)
+      clearAlwaysOn();
+      //set the attributes
+      aTab.setAttribute("alwaysOn", "");
+      browserContainer.setAttribute("pinned", "");
+      let pref = getPref("alwayOnTab.location");
+      if (pref == 1)
+        browserContainer.setAttribute("pinned-right", "")
+      else
+        browserContainer.setAttribute("pinned-left", "")
+      //move the indicator
+      let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
+      closePrv.after(alwaysOnIndicator)
+      //loads unloaded tabs, also refreshes the layout if the tab was
+      //"unpainted/in the background"
+      let lastActive = gBrowser.selectedTab;
+      gBrowser.selectedTab = aTab;
+      gBrowser.selectedTab = lastActive;
+      gBrowser.warmupTab(aTab);
+      linkedBrowser.style.display = "flex"
+      setTimeout(() => {
+        linkedBrowser.style.display = ""
+      }, 20);
+    }
+  });
+
+  function updateTabContextMenu(aEvent) {
+    if (aEvent.target !== tabContextMenu) return;
+    let contextTab = TabContextMenu.contextTab;
+    alwaysOnContext.hidden = null;
+    if (contextTab.hasAttribute("alwaysOn"))
+      alwaysOnContext.setAttribute("label", "Stop Tab from Always Displaying");
+    else {
+      if (contextTab.splitview != null) {
+        alwaysOnContext.hidden = true;
+      }
+      alwaysOnContext.setAttribute("label", "Set Tab to Always Display");
+    }
+  }
+
+  tabContextMenu.addEventListener("popupshowing", updateTabContextMenu);
+  //*********************
+
+  //Add draggable separator between the two panels
+  // dragging the separator resizes the panels
+  let separator = document.createElement("div")
+  separator.setAttribute("id", "alwaysOn-separator")
+  elementsCreated.push(separator);
+
+  // Also two buttons in the middle of the separator
+  let hbox = document.createElement("hbox")
+
+  // One button that switches the two sides position
+  let swapButton = document.createXULElement("toolbarbutton")
+  swapButton.image = "chrome://global/skin/icons/swap-horizontal-20.svg"
+  swapButton.setAttribute("tooltiptext", "Swap sides");
+  swapButton.addEventListener("command", () => {
+    const left = document.querySelector('#tabbrowser-tabpanels > .browserSidebarContainer[pinned]');
+    if (left) {
+      if (left.hasAttribute("pinned-left")) {
+        left.removeAttribute("pinned-left")
+        left.setAttribute("pinned-right", "")
+        setPref("alwayOnTab.location", 1);
+      } else {
+        setPref("alwayOnTab.location", 0);
+        left.removeAttribute("pinned-right")
+        left.setAttribute("pinned-left", "")
+      }
+    }
+  });
+  // Second button stop the always On display
+  let closeButton = document.createXULElement("toolbarbutton")
+  closeButton.image = "chrome://global/skin/icons/close.svg"
+  closeButton.setAttribute("tooltiptext", "Stop Always On Display");
+  closeButton.addEventListener("command", () => {
+    clearAlwaysOn();
+  });
+
+  hbox.appendChild(swapButton);
+  hbox.appendChild(closeButton);
+  separator.appendChild(hbox);
+  const tabbrowserTabbox = document.getElementById("tabbrowser-tabbox");
+  tabbrowserTabbox.appendChild(separator);
+
+  //portion of each side (left equals to percent, right equals to 100 - percent)
+  let percent = getPref("alwayOnTab.percent");
+  //try to restore last saved margins
+  if(percent==null||isNaN(percent)){
+    //default
+    setPref("alwayOnTab.percent",50);
+    percent = 50;
+  }
+  // Clamp so panels don't disappear
+  percent = parseInt(Math.max(10, Math.min(90, percent)), 10);
+
+  // Dragging the separator will replace the CSS stylesheet that
+  // maintains the panels size portions and position
+  // Using CSS stylesheet removes the need to set
+  // the style everytime the selected tab changes
+  // or the alwaysOn tab is removed/replaced
+  // at the cost of smoothness when dragging
+  let previouStyle = null;
+  let isDragging = false;
+  let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
+    Ci.nsIStyleSheetService
+  );
+
+  //cursor style when dragging
+  let dragginCSS = `
+        body{
+            cursor: col-resize!important;
+        }
+      `
+  let draggingStyle = Services.io.newURI(
+    `data:text/css;charset=UTF=8,${encodeURIComponent(dragginCSS)}`
+  );
+
+  separator.addEventListener('mousedown', (aEvent) => {
+    //drag start
+    isDragging = true;
+    separator.classList.add('dragging');
+    styleSvc.loadAndRegisterSheet(draggingStyle, styleSvc.AUTHOR_SHEET);
+    aEvent.preventDefault();
+    document.addEventListener("mousemove", handleMousemove,true);
+    document.addEventListener("mouseup", handleMouseUp, true);
+  });
+
+  let handleMousemove = function(aEvent) {
+    if (!isDragging) return;
+    const alwayOnContainer = document.querySelector('#tabbrowser-tabpanels > .browserSidebarContainer[pinned]');
+    const rect = tabbrowserTabbox.getBoundingClientRect();
+    //Based on window size + mouse position + browser content size
+    percent = ((aEvent.screenX - rect.left) / rect.width) * 100;
+    // Clamp so panels don't disappear
+    percent = parseInt(Math.max(10, Math.min(90, percent)), 10);
+    const alwayOnBrowser = alwayOnContainer.querySelector("browser");
+    //force refresh layout to match the new margins
+    // cause the alwaysOn tab is in the background
+    // the other side is the selected tab and will 
+    //update by itself
+    alwayOnBrowser.style.display = "flex";
+    setTimeout(() => {
+      //used to force update the sizing
+      alwayOnBrowser.style.display = "";
+    }, 10);
+    //updated rules withe the new sizes/margins
+    // will override the default rules
+    let customCSS = `
+          #tabbrowser-tabpanels:not(:has(.split-view-panel.deck-selected))
+          .browserSidebarContainer[pinned-left]:not(.deck-selected){
+            width: calc( ${percent + '%'}  - 2px )!important;
+          }
+          #tabbrowser-tabpanels:not(:has(.split-view-panel.deck-selected))
+          .browserSidebarContainer[pinned-right]:not(.deck-selected){
+            margin-left:calc( ${percent + '%'} + 2px )!important;
+            width:calc( ${(100 - percent) + '%'} - 2px )!important;
+          }
+          #alwaysOn-separator{
+            left:calc( ${percent + '%'} - 2px)!important;
+          }
+          #tabbrowser-tabpanels:has(>.browserSidebarContainer[pinned-left]:not([deck-selected])) .browserSidebarContainer:not([pinned],.split-view-panel){
+            margin-left:calc( ${percent + '%'} + 2px )!important;
+            width:calc( ${(100 - percent) + '%'} - 2px )!important;
+          }
+          #tabbrowser-tabpanels:has(>.browserSidebarContainer[pinned-right]:not([deck-selected])) .browserSidebarContainer:not([pinned],.split-view-panel){
+            width: calc( ${percent + '%'}  - 2px )!important;
+          }
+    `
+    let styleURI = Services.io.newURI(
+      `data:text/css;charset=UTF=8,${encodeURIComponent(customCSS)}`
+    );
+    styleSvc.loadAndRegisterSheet(styleURI, styleSvc.AGENT_SHEET);
+
+    if (previouStyle) {
+      //remove previous stylesheet
+      try {
+        styleSvc.unregisterSheet(previouStyle, styleSvc.AGENT_SHEET);
+      } catch (e) {}
+    }
+    previouStyle = styleURI;
+  };
+
+  let handleMouseUp = function(aEvent) {
+    if (!isDragging) return;
+    //dragging ends
+    isDragging = false;
+    separator.classList.remove('dragging');
+    styleSvc.unregisterSheet(draggingStyle, styleSvc.AUTHOR_SHEET);
+    document.removeEventListener("mousemove", handleMousemove,true);
+    document.removeEventListener("mouseup", handleMouseUp,true);
+    //save the new margins 
+    setPref("alwayOnTab.percent", percent);
+  };
+
+  //Make every tab opened from the always displayed tab to 
+  // open in the foreground (browser switch to it)
+  const originalAddTab = gBrowser.addTab.bind(gBrowser);
+  gBrowser.addTab = function(uri, params = {}, ...rest) {
+    try {
+      if (params && typeof params !== "object") {
+        return originalAddTab(uri, params, ...rest);
+      }
+      if (params.openerBrowser != null) {
+        let browserContainer = params.openerBrowser.closest(".browserSidebarContainer")
+        if (browserContainer && browserContainer.hasAttribute("pinned")) {
+          // Force foreground – create a shallow copy so we don't mutate the caller's object
+          params = Object.assign({}, params, {
+            inBackground: false,
+          });
+        }
+      }
+      return originalAddTab(uri, params, ...rest);
+    } catch (e) {
+      console.error(e);
+      originalAddTab(uri, params, ...rest);
+    }
+  }
+  // The CSS rules that make this possible
+  let alwaysOnCSS = `
+    #alwaysOn-separator {
+        width: 4px;
+        background: color-mix(in srgb, var(--panel-border-color), transparent 90%);
+        z-index: 4;
+        position: absolute;
+        height: 100%;
+        left: calc( ${percent + '%'} - 2px );
+        display: none!important;
+        visibility: visible;
+        cursor: col-resize;
+    }
+    #alwaysOn-separator hbox {
+        align-self: center;
+        display: flex;
+        flex-flow: column;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        gap: 12px;
+        position: absolute;
+        top: 40%;
+        transition: all 0.15s ease-in-out;
+        height: 100px;
+        width: 38px;
+        left: -20px;
+        border-radius: 15px;
+        border: 2px solid color-mix(in srgb, var(--panel-border-color), transparent 80%);
+        background-color: color-mix(in srgb, var(--lwt-accent-color,var(--toolbox-background-color)), transparent 50%);
+        transform: scaleX(0.2) scaleY(0.9);
+    }
+    #alwaysOn-separator:hover hbox {
+        border: 2px solid color-mix(in srgb, var(--panel-border-color), transparent 50%);
+        background-color: color-mix(in srgb, var(--lwt-accent-color,var(--toolbox-background-color)), transparent 20%);
+        opacity: 0.9;
+        transform: scaleX(1) border: 2px solid var(--panel-border-color);
+    }
+    #alwaysOn-separator toolbarbutton {
+        width: 28px!important;
+        height: 28px!important;
+    }
+    #alwaysOn-separator hbox .toolbarbutton-icon {
+        width: 0px!important;
+        transition: all 0.15s ease-in-out;
+    }
+    #alwaysOn-separator:hover hbox .toolbarbutton-icon {
+        width: 30px!important;
+    }
+    #alwaysOn-separator toolbarbutton:hover {
+        background: color-mix(in srgb, var(--panel-border-color), transparent 50%)!important;
+    }
+    #alwaysOn-separator hbox toolbarbutton {
+        position: relative;
+        appearance: auto !important;
+        fill:  var(--toolbarbutton-icon-fill);
+        -moz-context-properties: fill, stroke!important;
+        background: transparent;
+    }
+    .tab-always-on {
+        width: 20px;
+        height: 20px;
+        background-color: light-dark(white,black);
+        background-image: url("chrome://browser/skin/split-view-left-16.svg")!important;
+        transform: scaleX(-1);
+        background-repeat: no-repeat;
+        background-position: center;
+        -moz-context-properties: fill, stroke!important;
+        fill: light-dark(black,white);
+        border-radius: 30px;
+        margin-right: 4px;
+        align-self: center;
+    }
+    #tabbrowser-tabs[orient="horizontal"] tab[alwaysOn] .tab-content {
+        border-bottom: 3px solid rgba(255, 255, 255, 0.9)!important;
+    }
+    #tabbrowser-tabs[orient="vertical"] tab[alwaysOn]:not([pinned]) .tab-content {
+        border-right: 3px solid light-dark(black,rgba(255, 255, 255, 0.9))!important;
+    }
+    #tabbrowser-tabbox:has(.browserSidebarContainer[pinned]:not(.deck-selected)):not(:has(.split-view-panel.deck-selected)) #alwaysOn-separator {
+        display: block!important;
+    }
+    #alwaysOn-separator:hover, #alwaysOn-separator.dragging {
+        background: #c9a;
+    }
+    #tabbrowser-tabpanels:not(:has(.split-view-panel.deck-selected)) .browserSidebarContainer[pinned]:not(.deck-selected) {
+        z-index: 3!important;
+        visibility: visible!important;
+        -moz-subtree-hidden-only-visually: 0!important;
+        visibility: inherit;
+        position: absolute!important;
+        .browserContainer{
+          border-radius: var(--content-area-start-radius, var(--border-radius-medium)) !important;
+        }
+    }
+    #tabbrowser-tabpanels:not(:has(.split-view-panel.deck-selected))
+    .browserSidebarContainer[pinned-left]:not(.deck-selected){
+      width: calc( ${percent + '%'}  - 2px );
+    }
+    #tabbrowser-tabpanels:not(:has(.split-view-panel.deck-selected))
+    .browserSidebarContainer[pinned-right]:not(.deck-selected){
+      margin-left:calc( ${percent + '%'} + 2px );
+      width:calc( ${(100 - percent) + '%'} - 2px );
+    }
+    #tabbrowser-tabpanels:has(>.browserSidebarContainer[pinned-left]:not([deck-selected])) .browserSidebarContainer:not([pinned],.split-view-panel){
+      margin-left:calc( ${percent + '%'} + 2px );
+      width:calc( ${(100 - percent) + '%'} - 2px );
+      .browserContainer{
+        border-radius: var(--content-area-start-radius, var(--border-radius-medium)) !important;
+      }
+    }
+    #tabbrowser-tabpanels:has(>.browserSidebarContainer[pinned-right]:not([deck-selected])) .browserSidebarContainer:not([pinned],.split-view-panel){
+      width: calc( ${percent + '%'}  - 2px );
+    }
+  `
+  let alwaysOnStyleURI = Services.io.newURI(
+    `data:text/css;charset=UTF=8,${encodeURIComponent(alwaysOnCSS)}`
+  );
+  styleSvc.loadAndRegisterSheet(alwaysOnStyleURI, styleSvc.AGENT_SHEET);
+
+  return [elementsCreated];
 }
 
 let modifyCustomizePage = {
@@ -8856,7 +9302,7 @@ menu.subviewbutton{
   if (!styleSvc.sheetRegistered(styleURI, styleSvc.AGENT_SHEET)) {
     styleSvc.loadAndRegisterSheet(styleURI, styleSvc.AGENT_SHEET);
   }
-  return [styleURI, styleSvc.AGENT_SHEET]
+  return [styleURI, styleSvc.AGENT_SHEET];
 
 }
 
