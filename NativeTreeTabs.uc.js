@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.4.0
+// @version        0.3.4.1
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -5258,11 +5258,46 @@ setPanel = function(aTab, panel, window) {
   }
 }
 
+makeTabBrowserAlwaysOn = function(aTab) {
+  if (aTab.hasAttribute("alwaysOn")) {
+    if (aTab.linkedBrowser)
+      t_BrowserContainer = aTab.linkedBrowser.closest(".browserSidebarContainer")
+    if (t_BrowserContainer == null) return;
+    let alwaysOnIndicator = document.querySelector(".tab-always-on");
+    if (alwaysOnIndicator != null) {
+      let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
+      closePrv.after(alwaysOnIndicator);
+    }
+    t_BrowserContainer.setAttribute("pinned", "");
+    let pref = getPref("alwayOnTab.location");
+    if (pref == 1)
+      t_BrowserContainer.setAttribute("pinned-right", "");
+    else
+      t_BrowserContainer.setAttribute("pinned-left", "");
+    aTab.linkedBrowser.style.display = "flex"
+    setTimeout(() => {
+      aTab.linkedBrowser.style.display = ""
+    }, 20);
+  }
+}
+
+removeTabBrowserAlwaysOn = function(aTab) {
+  if (aTab.hasAttribute("alwaysOn")) {
+    if (aTab.linkedBrowser)
+      t_BrowserContainer = aTab.linkedBrowser.closest(".browserSidebarContainer")
+    if (t_BrowserContainer == null) return;
+    t_BrowserContainer.removeAttribute("pinned");
+    t_BrowserContainer.removeAttribute("pinned-left");
+    t_BrowserContainer.removeAttribute("pinned-right");
+  }
+}
+
 hideTab = function(aTab, panelId) {
   if (aTab.group) {
     aTab.group.tabs.forEach(function(cTab) {
       cTab.setAttribute("tabPanel-hidden", true);
       setCustomTabValue(cTab, "tabPanel-hidden", "true");
+      removeTabBrowserAlwaysOn(cTab);
     });
     if (!aTab.group.hasAttribute("save-state-collapsed"))
       aTab.group.setAttribute("save-state-collapsed", aTab.group.collapsed.toString());
@@ -5270,6 +5305,7 @@ hideTab = function(aTab, panelId) {
   } else {
     aTab.setAttribute("tabPanel-hidden", true);
     setCustomTabValue(aTab, "tabPanel-hidden", "true");
+    removeTabBrowserAlwaysOn(aTab);
   }
 }
 
@@ -5278,6 +5314,7 @@ unHideTab = function(aTab, panelId) {
     aTab.group.tabs.forEach(function(cTab) {
       cTab.removeAttribute("tabPanel-hidden");
       deleteCustomTabValue(cTab, "tabPanel-hidden");
+      makeTabBrowserAlwaysOn(cTab);
     });
     if (aTab.group.hasAttribute("save-state-collapsed")) {
       let unroll = aTab.group.getAttribute("save-state-collapsed");
@@ -5289,6 +5326,7 @@ unHideTab = function(aTab, panelId) {
   } else {
     aTab.removeAttribute("tabPanel-hidden");
     deleteCustomTabValue(aTab, "tabPanel-hidden");
+    makeTabBrowserAlwaysOn(aTab);
   }
 }
 setOpener = function(aTab, openerTab) {
@@ -7475,7 +7513,7 @@ function initAlwayDisplayTab() {
       get() {
         try {
           let browsers = originalGet.call(this);
-          alwayOn = this.tabs.filter(t => t.hasAttribute("alwaysOn"));
+          alwayOn = this.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
           if (alwayOn.length > 0) {
             browsers.push(alwayOn[0].linkedBrowser);
           }
@@ -7499,7 +7537,7 @@ function initAlwayDisplayTab() {
     //Remove the attributes that make a tab always displaying
     // if no tab was given search all tabs
     if (tabs == null)
-      tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn"));
+      tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
     tabs.forEach((t) => {
       t.removeAttribute("alwaysOn");
       //also remove the tab browser panel attributes
@@ -7636,9 +7674,9 @@ function initAlwayDisplayTab() {
   //portion of each side (left equals to percent, right equals to 100 - percent)
   let percent = getPref("alwayOnTab.percent");
   //try to restore last saved margins
-  if(percent==null||isNaN(percent)){
+  if (percent == null || isNaN(percent)) {
     //default
-    setPref("alwayOnTab.percent",50);
+    setPref("alwayOnTab.percent", 50);
     percent = 50;
   }
   // Clamp so panels don't disappear
@@ -7672,7 +7710,7 @@ function initAlwayDisplayTab() {
     separator.classList.add('dragging');
     styleSvc.loadAndRegisterSheet(draggingStyle, styleSvc.AUTHOR_SHEET);
     aEvent.preventDefault();
-    document.addEventListener("mousemove", handleMousemove,true);
+    document.addEventListener("mousemove", handleMousemove, true);
     document.addEventListener("mouseup", handleMouseUp, true);
   });
 
@@ -7737,8 +7775,8 @@ function initAlwayDisplayTab() {
     isDragging = false;
     separator.classList.remove('dragging');
     styleSvc.unregisterSheet(draggingStyle, styleSvc.AUTHOR_SHEET);
-    document.removeEventListener("mousemove", handleMousemove,true);
-    document.removeEventListener("mouseup", handleMouseUp,true);
+    document.removeEventListener("mousemove", handleMousemove, true);
+    document.removeEventListener("mouseup", handleMouseUp, true);
     //save the new margins 
     setPref("alwayOnTab.percent", percent);
   };
