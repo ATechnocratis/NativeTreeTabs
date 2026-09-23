@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.4.1
+// @version        0.3.4.2
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -5263,8 +5263,10 @@ makeTabBrowserAlwaysOn = function(aTab) {
     if (aTab.linkedBrowser)
       t_BrowserContainer = aTab.linkedBrowser.closest(".browserSidebarContainer")
     if (t_BrowserContainer == null) return;
-    let alwaysOnIndicator = document.querySelector(".tab-always-on");
-    if (alwaysOnIndicator != null) {
+    let alwaysOnIndicator = aTab.querySelector(".tab-always-on");
+    if (alwaysOnIndicator == null) {
+      alwaysOnIndicator = document.createElement("image");
+      alwaysOnIndicator.setAttribute("class", "tab-always-on");
       let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
       closePrv.after(alwaysOnIndicator);
     }
@@ -7527,11 +7529,6 @@ function initAlwayDisplayTab() {
     });
   }
 
-  //Indicator on tab
-  let alwaysOnIndicator = document.createElement("image");
-  elementsCreated.push(alwaysOnIndicator);
-  alwaysOnIndicator.setAttribute("class", "tab-always-on");
-
   //window-wide accessible function
   window.clearAlwaysOn = function(tabs = null) {
     //Remove the attributes that make a tab always displaying
@@ -7545,9 +7542,13 @@ function initAlwayDisplayTab() {
       t_BrowserContainer.removeAttribute("pinned");
       t_BrowserContainer.removeAttribute("pinned-left");
       t_BrowserContainer.removeAttribute("pinned-right");
+      let localAlwaysOnIndicator = t.querySelector(".tab-always-on");
+      if (localAlwaysOnIndicator != null) {
+        localAlwaysOnIndicator.remove();
+      }
     });
     //remove the indicator
-    alwaysOnIndicator.remove();
+   
   }
 
   //**********************
@@ -7597,7 +7598,9 @@ function initAlwayDisplayTab() {
         browserContainer.setAttribute("pinned-right", "")
       else
         browserContainer.setAttribute("pinned-left", "")
-      //move the indicator
+      //Indicator on tab
+      let alwaysOnIndicator = document.createElement("image");
+      alwaysOnIndicator.setAttribute("class", "tab-always-on");
       let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
       closePrv.after(alwaysOnIndicator)
       //loads unloaded tabs, also refreshes the layout if the tab was
@@ -7719,7 +7722,7 @@ function initAlwayDisplayTab() {
     const alwayOnContainer = document.querySelector('#tabbrowser-tabpanels > .browserSidebarContainer[pinned]');
     const rect = tabbrowserTabbox.getBoundingClientRect();
     //Based on window size + mouse position + browser content size
-    percent = ((aEvent.screenX - rect.left) / rect.width) * 100;
+    percent = ((aEvent.clientX - rect.left) / rect.width) * 100;
     // Clamp so panels don't disappear
     percent = parseInt(Math.max(10, Math.min(90, percent)), 10);
     const alwayOnBrowser = alwayOnContainer.querySelector("browser");
