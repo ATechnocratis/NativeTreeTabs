@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.5.0
+// @version        0.3.6.0
 // ==/UserScript==
 const isTab = element => gBrowser.isTab(element);
 const moveChildren = true;
@@ -113,8 +113,7 @@ window.nativeTreeTabs = {
       console.error(e);
     }
 
-    if (getPref("treeTabs.debuggingEnabled"))
-      this._debuggingMsg = true;
+    this._debuggingMsg = (getPref("treeTabs.debuggingEnabled")) ? true : false;
 
     //Check if disabled
     let enabled = getPref("treeTabs.enabled");
@@ -855,8 +854,7 @@ window.nativeTreeTabs = {
       let dragStartY = parseInt(aTab.getAttribute("dragStartY"), 10);
       aTab.removeAttribute("dragStartY");
       let dragDistance = aEvent.clientY - dragStartY;
-      if (this._debuggingMsg)
-        console.log(dragDistance);
+      debugMsg("dragDistance: " + dragDistance);
       if ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7)) {
         if ((dragDistance > 0 && dragDistance < 7 + tabHeight / 3 - 10) || (dragDistance <= 0 && dragDistance > -7 - tabHeight / 3 + 10))
           return;
@@ -908,8 +906,7 @@ window.nativeTreeTabs = {
     if (calcDistance < -4) {
       calcDistance = -4;
     }
-    if (this._debuggingMsg)
-      console.log(offsetY, calcDistance);
+    debugMsg("offsetY: " + offsetY + ", calcDistance: " + calcDistance);
     //Case -1: Out of window drag do nothing
     if (offsetY < (tabHeight * -1)) {
       return;
@@ -1006,6 +1003,7 @@ window.nativeTreeTabs = {
   },
 
   tabGroupUngroup: function(aEvent) {
+    debugMsg("tabGroupUngroup");
     let tabs = aEvent.target.tabs;
     tabs.forEach(function(sTab) {
       skipNextMoveCheck(sTab);
@@ -1052,6 +1050,7 @@ window.nativeTreeTabs = {
         newPosition = nextTab;
         nextTab = getNextTab(nextTab);
       }
+      debugMsg("illegal_move_2");
       if (groupMove == null) {
         skipNextMoveCheck(aTab);
         gBrowser.moveTabAfter(aTab, newPosition, makeSureNoGroup = false);
@@ -1103,6 +1102,7 @@ window.nativeTreeTabs = {
           removeSkipNextMoveCheck(aTab);
           this.updateChildrenFromIndex(aTab, prevPosition, getPosition(aTab), tabOriginalDepth);
         }
+        debugMsg("illegal_move_3");
         return true;
       }
     }
@@ -1122,7 +1122,6 @@ window.nativeTreeTabs = {
           nativeTreeTabs.moveTabAfter(tabToMoves, previousnPanel);
           tabToMoves.tabs.forEach(function(mTab) {
             removeSkipNextMoveCheck(mTab);
-
           }, this);
         } else {
           skipNextMoveCheck(aTab);
@@ -1302,9 +1301,18 @@ window.nativeTreeTabs = {
     if (aTab.hasAttribute("twisted-root")) {
       if (isTab(previousTab) && previousTab.hasAttribute("hidden-child") &&
         previousTab.getAttribute("hidden-child-rootID") === aTabTreeId) {
+
+        if (!isTab(nextTab) || !nextTab.hasAttribute("hidden-child") ||
+          !nextTab.getAttribute("hidden-child-rootID") === aTabTreeId) {
+          debugMsg("illegal_move_1_under_all");
+          this.updateChildrenFromIndex(aTab, prevPosition, newPosition, tabOriginalDepth, false, forceMultiselected);
+          return;
+        }
+
         skipNextMoveCheck(aTab);
         gBrowser.moveTabBefore(aTab, gBrowser.tabs[prevPosition]);
         removeSkipNextMoveCheck(aTab);
+        debugMsg("illegal_move_1");
         return;
       }
     }
@@ -1601,10 +1609,10 @@ window.nativeTreeTabs = {
       source = nativeTreeTabs.selectedtPanel.previousSelectedTab;
       pSTab = source.pop();
       let selectedtPanelId = nativeTreeTabs.selectedtPanel.id.toString();
-      while (source.length > 0 && (pSTab == null || pSTab === aTab || pSTab.getAttribute("panel-id")!=selectedtPanelId || !window.gBrowser.tabs.includes(pSTab))) {
+      while (source.length > 0 && (pSTab == null || pSTab === aTab || pSTab.getAttribute("panel-id") != selectedtPanelId || !window.gBrowser.tabs.includes(pSTab))) {
         pSTab = source.pop();
       }
-      if(pSTab.getAttribute("panel-id")!=selectedtPanelId){
+      if (pSTab.getAttribute("panel-id") != selectedtPanelId) {
         pSTab = null;
       }
     } else {
@@ -2082,6 +2090,14 @@ window.nativeTreeTabs = {
     if (nestTab) {
       aTab.setAttribute("nestTab", "");
       aTab.label = nestTab;
+      let icon = getCustomTabValue(aTab, "customIcon");
+      if (icon) {
+        this.setTabCustomIcon(aTab, icon);
+      }
+      let color = getCustomTabValue(aTab, "customColor");
+      if (color) {
+        this.setTabCustomColor(aTab, color);
+      }
     }
 
     let twistedRoot = getCustomTabValue(aTab, "twisted-root");
@@ -2224,6 +2240,14 @@ window.nativeTreeTabs = {
       nestLabel.textContent = nestTab;
       let tabLabel = aTab.querySelector(".tab-label");
       tabLabel.after(nestLabel);
+      let icon = getCustomTabValue(aTab, "customIcon");
+      if (icon) {
+        this.setTabCustomIcon(aTab, icon);
+      }
+      let color = getCustomTabValue(aTab, "customColor");
+      if (color) {
+        this.setTabCustomColor(aTab, color);
+      }
       if (aTab.selected) {
         //make  nest tab is not selected
         this.tabSelected(aTab);
@@ -4087,6 +4111,58 @@ window.nativeTreeTabs = {
     return panel0;
   },
 
+  setTabCustomColor: function(aTab, color) {
+    try {
+      aTab.setAttribute("customColor", "");
+      setCustomTabValue(aTab, "customColor", color);
+      let tabBackground = aTab.querySelector(".tab-background");
+      if (!tabBackground) return;
+      tabBackground.style.setProperty("background-color", color);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+
+  removeTabCustomColor: function(aTab) {
+    deleteCustomTabValue(aTab, "customColor");
+    aTab.removeAttribute("customColor");
+    let tabBackground = aTab.querySelector(".tab-background");
+    if (!tabBackground) return;
+    tabBackground.style.removeProperty("background-color");
+  },
+
+  setTabCustomIcon: function(aTab, icon) {
+    try {
+      let iconParts = icon.split(",");
+      if (iconParts.length == 2) {
+        iconContent = iconParts[0];
+        iconColor = iconParts[1];
+      } else return;
+      setCustomTabValue(aTab, "customIcon", icon);
+      if (iconContent == "folder") {
+        aTab.removeAttribute("customIcon");
+        return;
+      }
+      aTab.setAttribute("customIcon", "");
+      let tabIconImage = aTab.querySelector(".tab-icon-image");
+      if (!tabIconImage) return;
+
+      tabIconImage.style.setProperty("content", `url("chrome://browser/content/profiles/assets/48_${iconContent}.svg")`);
+      tabIconImage.style.setProperty("stroke", iconColor);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+
+  removeTabCustomIcon: function(aTab) {
+    deleteCustomTabValue(aTab, "customIcon");
+    aTab.removeAttribute("customIcon");
+    let tabIconImage = aTab.querySelector(".tab-icon-image");
+    if (!tabIconImage) return;
+    tabIconImage.style.removeProperty("content");
+    tabIconImage.style.removeProperty("stroke");
+  },
+
   setPanelIcon: function(panel, icon) {
     try {
       let tabs = this.getTabPanelTabs(panel);
@@ -5429,6 +5505,9 @@ setOpener = function(aTab, openerTab) {
       aTab.openerTab = openerTab;
       setCustomTabValue(aTab, "opener-id", openerId.toString());
       aTab.setAttribute("opener-id", openerId);
+      if (aTab.hasAttribute("hidden-child-rootID") && openerId.toString() != aTab.getAttribute("hidden-child-rootID")) {
+        aTab.removeAttribute("hidden-child-rootID");
+      }
     } else {
       aTab.tabs.forEach((tab) => setOpener(tab, openerTab));
     }
@@ -5445,6 +5524,9 @@ copyOpener = function(aTab, originTab) {
       aTab.openerTab = originTab.openerTab;
       setCustomTabValue(aTab, "opener-id", openerId.toString());
       aTab.setAttribute("opener-id", openerId);
+      if (aTab.hasAttribute("hidden-child-rootID") && openerId.toString() != aTab.getAttribute("hidden-child-rootID")) {
+        aTab.removeAttribute("hidden-child-rootID");
+      }
     } else {
       aTab.tabs.forEach((tab) => copyOpener(tab, originTab));
     }
@@ -5457,6 +5539,7 @@ removeOpener = function(aTab) {
   if (aTab.splitViewId == null) {
     aTab.openerTab = null;
     aTab.removeAttribute("opener-id");
+    aTab.removeAttribute("hidden-child-rootID");
     deleteCustomTabValue(aTab, "opener-id");
   } else {
     aTab.tabs.forEach(removeOpener);
@@ -5808,6 +5891,12 @@ checkInsideMove = function(rootTab, nextTab, rootlDepth) {
   return true;
 }
 //_________________
+function debugMsg(msg) {
+  setTimeout(() => {
+    if (nativeTreeTabs._debuggingMsg)
+      console.log(msg);
+  }, 100);
+}
 
 function getPrefBranch() {
   return Services.prefs.getBranch(null);
@@ -6544,6 +6633,36 @@ addNestTabsInTabContextMenu = function() {
     }
   } catch (error) {}
 
+  //Set Color option
+  let setColorNestContext = document.createXULElement("menuitem");
+  setColorNestContext.setAttribute("id", "setColor-nest-contextmenu");
+  setColorNestContext.setAttribute("label", "Change Color");
+  setColorNestContext.setAttribute("accesskey", "C");
+  setColorNestContext.setAttribute("custom-context-item", "");
+  try {
+    if (TabContextMenu.MENU_SECTIONS) {
+      if (!TabContextMenu.MENU_SECTIONS.classic.tabContextMenu[0].items.includes(("#" + setColorNestContext.id)))
+        TabContextMenu.MENU_SECTIONS.classic.tabContextMenu[0].items.unshift("#" + setColorNestContext.id);
+      if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.includes(("#" + setColorNestContext.id)))
+        TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.unshift("#" + setColorNestContext.id);
+    }
+  } catch (error) {}
+
+  //Set Icon option
+  let setIconNestContext = document.createXULElement("menuitem");
+  setIconNestContext.setAttribute("id", "setIcon-nest-contextmenu");
+  setIconNestContext.setAttribute("label", "Set Icon");
+  setIconNestContext.setAttribute("accesskey", "I");
+  setIconNestContext.setAttribute("custom-context-item", "");
+  try {
+    if (TabContextMenu.MENU_SECTIONS) {
+      if (!TabContextMenu.MENU_SECTIONS.classic.tabContextMenu[0].items.includes(("#" + setIconNestContext.id)))
+        TabContextMenu.MENU_SECTIONS.classic.tabContextMenu[0].items.unshift("#" + setIconNestContext.id);
+      if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.includes(("#" + setIconNestContext.id)))
+        TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.unshift("#" + setIconNestContext.id);
+    }
+  } catch (error) {}
+
   //Rename option
   let renameNestContext = document.createXULElement("menuitem");
   renameNestContext.setAttribute("id", "rename-nest-contextmenu");
@@ -6560,10 +6679,16 @@ addNestTabsInTabContextMenu = function() {
   } catch (error) {}
 
   //Insert first
+  tabContextMenu.prepend(setColorNestContext);
+  elementsCreated.push(setColorNestContext);
+  tabContextMenu.prepend(setIconNestContext);
+  elementsCreated.push(setIconNestContext);
   tabContextMenu.prepend(renameNestContext);
   elementsCreated.push(renameNestContext);
 
-  let ids = ["context_openANewTab", "context_moveTabToNewGroup", "context_moveTabToGroup", "moveTopanel-tab-submenu", "context_moveTabOptions", "context_closeTabOptions", "rename-nest-contextmenu"];
+  let ids = ["context_openANewTab", "context_moveTabToNewGroup", "context_moveTabToGroup", "moveTopanel-tab-submenu",
+   "context_moveTabOptions", "context_closeTabOptions", "rename-nest-contextmenu", "setIcon-nest-contextmenu"
+   , "setColor-nest-contextmenu"];
 
   function updateTabContextMenu(aEvent) {
     if (aEvent.target !== tabContextMenu) return;
@@ -6575,12 +6700,16 @@ addNestTabsInTabContextMenu = function() {
         }
       });
       tabContextMenu.querySelector("#rename-nest-contextmenu").style.display = "";
+      tabContextMenu.querySelector("#setIcon-nest-contextmenu").style.display = "";
+      tabContextMenu.querySelector("#setColor-nest-contextmenu").style.display = "";
       return;
     } else {
       tabContextMenu.childNodes.forEach(function(child) {
         child.style.display = "";
       });
       tabContextMenu.querySelector("#rename-nest-contextmenu").style.display = "none";
+      tabContextMenu.querySelector("#setIcon-nest-contextmenu").style.display = "none";
+      tabContextMenu.querySelector("#setColor-nest-contextmenu").style.display = "none";
     }
     if (contextTab.pinned) {
       tabContextMenu.querySelector("#nest-tabs-contextmenu").style.display = "none";
@@ -6622,6 +6751,18 @@ addNestTabsInTabContextMenu = function() {
       textbox.focus();
       textbox.select();
     }, 50);
+  });
+
+  setIconNestContext.addEventListener("click", (aEvent) => {
+    let contextTab = TabContextMenu.contextTab;
+    nativeTreeTabs.contextTab = contextTab;
+    openIconAndColorSelector(contextTab, "NestTab", contextTab);
+  });
+
+  setColorNestContext.addEventListener("click", (aEvent) => {
+    let contextTab = TabContextMenu.contextTab;
+    nativeTreeTabs.contextTab = contextTab;
+    openIconAndColorSelector(contextTab, "NestTabColor", contextTab);
   });
 
   renameNestContext.addEventListener("click", (aEvent) => {
@@ -6906,9 +7047,9 @@ addTabPanelButton = function(mainDiv) {
   let contextMenuitemSetIcon = addContextItem('Set icon', (aEvent) => {
     let contextElement = panelContext.contextElement;
     if (contextElement.tagName == "menuitem")
-      openIconSelector(panelContext.panel, contextElement.parentNode, true);
+      openIconAndColorSelector(panelContext.panel, "TabPanel", contextElement.parentNode, true);
     else {
-      openIconSelector(panelContext.panel, contextElement);
+      openIconAndColorSelector(panelContext.panel, "TabPanel", contextElement);
     }
   });
   addContextMenuSeperator();
@@ -7072,7 +7213,7 @@ addTabPanelButton = function(mainDiv) {
     let button = aEvent.button;
     if (button == 1) {
       let newPanel = nativeTreeTabs.tabPanelOpen();
-      setRandomIcon(newPanel);
+      setRandomIcon(newPanel, "TabPanel");
       return;
     }
     aEvent.preventDefault();
@@ -7121,6 +7262,7 @@ addTabPanelIconSetter = function() {
   iconSetPopup.id = "icon-selector-popup";
   iconSetPopup.setAttribute("type", "arrow");
   iconSetPopup.setAttribute("orient", "vertical");
+  iconSetPopup.mode = "";
   elementsCreated.push(iconSetPopup);
 
   let title = document.createXULElement("label");
@@ -7352,7 +7494,7 @@ addTabPanelIconSetter = function() {
 
   previewRow.appendChild(previewSwatch);
   previewRow.appendChild(hexLabel);
-  // colorSection.appendChild(previewRow);
+  colorSection.appendChild(previewRow);
   iconSetPopup.appendChild(colorSection);
 
   // ---------- live update ----------
@@ -7421,18 +7563,30 @@ addTabPanelIconSetter = function() {
   removeBtn.setAttribute("label", "Remove icon");
 
   function handleDone() {
-    if (iconSetPopup.selected != null) {
+    if (iconSetPopup.mode == "NestTabColor") {
+      nativeTreeTabs.setTabCustomColor(iconSetPopup.element, currentColor.toString());
+    } else if (iconSetPopup.selected != null) {
       let iconName = iconSetPopup.selected.getAttribute("iconName");
       let string = iconName.toString() + "," + currentColor.toString();
-      nativeTreeTabs.setPanelIcon(iconSetPopup.tabpanel, string);
+      if (iconSetPopup.mode == "TabPanel") {
+        nativeTreeTabs.setPanelIcon(iconSetPopup.element, string);
+        updateCountInMenu(iconSetPopup.element, null, updateIcon = true);
+      } else if (iconSetPopup.mode == "NestTab") {
+        nativeTreeTabs.setTabCustomIcon(iconSetPopup.element, string);
+      }
     }
-    updateCountInMenu(iconSetPopup.tabpanel, null, updateIcon = true);
     iconSetPopup.hidePopup();
   }
 
   function handleRemove() {
-    nativeTreeTabs.removePanelIcon(iconSetPopup.tabpanel);
-    updateCountInMenu(iconSetPopup.tabpanel, null, updateIcon = true);
+    if (iconSetPopup.mode == "TabPanel") {
+      nativeTreeTabs.removePanelIcon(iconSetPopup.element);
+      updateCountInMenu(iconSetPopup.element, null, updateIcon = true);
+    } else if (iconSetPopup.mode == "NestTab") {
+      nativeTreeTabs.removeTabCustomIcon(iconSetPopup.element);
+    } else if (iconSetPopup.mode == "NestTabColor") {
+      nativeTreeTabs.removeTabCustomColor(iconSetPopup.element);
+    }
     iconSetPopup.hidePopup();
   }
 
@@ -7449,27 +7603,54 @@ addTabPanelIconSetter = function() {
 
   document.getElementById("mainPopupSet").appendChild(iconSetPopup);
 
-  function randomColor(base, colorful, salt, bright) {
-    const x = randomInRange(base, base + bright)
-    const mid = parseInt(x / 3, 10)
-    const dev = randomInRange(colorful - salt, colorful + salt)
-    const r = randomInRange(mid - dev, mid + dev)
-    const g = randomInRange(mid - dev, mid + dev)
-    const b = x + -r - g
-    return "rgb(" + r + "," + g + "," + b + ")";
+  function randomColorHSL(base, colorful, salt, bright, parse = false) {
+    //bright max value == (255 - base)/3
+    let mid = randomInRange(base, base + bright)
+    mid = Math.max(0, Math.min(100, mid));
+    let saturation = randomInRange(colorful - salt, colorful + salt);
+    saturation = Math.max(0, Math.min(100, saturation));
+    let hue = randomInRange(0, 360)
+    const color = "hsl(" + hue + "," + saturation + "," + mid + ")";
+    if (parse) {
+      let hex = hslToHex(hue, saturation, mid);
+      return {
+        hex,
+        hue,
+        saturation,
+        mid
+      };
+    }
+    return hslToHex(hue, saturation, mid);
   }
+
   const randomInRange = function(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min
   }
 
-  function getNotUsedIcon() {
+  function getNotUsedIcon(type) {
     const randN = randomInRange(0, ICONS_LENGTH - 1);
-    let panelsWithIcons = nativeTreeTabs.tabPanels.filter(p => p.icon != null);
     let alreadyIncluded = new Array();
-    panelsWithIcons.forEach((p) => {
-      if (!alreadyIncluded.includes(p.icon))
-        alreadyIncluded.push(p.icon)
-    });
+
+    if (type == "TabPanel") {
+      let panelsWithIcons = nativeTreeTabs.tabPanels.filter(p => p.icon != null);
+      panelsWithIcons.forEach((p) => {
+        if (!alreadyIncluded.includes(p.icon))
+          alreadyIncluded.push(p.icon)
+      });
+    } else if (type == "NestTab") {
+      let nestTabsWithIcons = gBrowser.tabs.filter(t => t.hasAttribute("nestTab") && t.hasAttribute("customIcon"));
+      nestTabsWithIcons.forEach((p) => {
+        let nestIconData = getCustomTabValue(p, "customIcon");
+        if (nestIconData) {
+          nestIconData = nestIconData.split(",");
+          if (nestIconData.length == 2) {
+            nestIcon = nestIconData[0];
+          }
+          if (nestIcon && !alreadyIncluded.includes(nestIcon))
+            alreadyIncluded.push(nestIcon);
+        }
+      });
+    }
     let i = randN;
     while (true) {
       if (alreadyIncluded.includes(ICONS[i]))
@@ -7485,41 +7666,109 @@ addTabPanelIconSetter = function() {
   }
 
   // Public functions
-  window.setRandomIcon = function(tabpanel) {
-    const color = randomColor(150 * 3, 70, 40, 10 * 3);
+  window.setRandomIcon = function(element, type) {
+    let lightMode = getPref("browser.theme.toolbar-theme");
     const {
       hex,
       h,
       s,
       l
-    } = parseColor(color, iconSetPopup);
-    const randomIcon = getNotUsedIcon();
+    } = (lightMode == 0) ?
+    randomColorHSL(65, 60, 35, 15, true):
+      randomColorHSL(40, 80, 10, 15, true);
+
+    const randomIcon = getNotUsedIcon(type);
     let string = randomIcon + "," + hex;
-    nativeTreeTabs.setPanelIcon(tabpanel, string);
-    updateCountInMenu(tabpanel, null, updateIcon = true);
+    if (type == "TabPanel") {
+      nativeTreeTabs.setPanelIcon(element, string);
+      updateCountInMenu(element, null, updateIcon = true);
+    } else if (type == "NestTab") {
+      nativeTreeTabs.setTabCustomIcon(iconSetPopup.element, string);
+    }
   }
 
-  window.openIconSelector = function(tabpanel, anchor, side = false) {
+  window.openIconAndColorSelector = function(element, type, anchor, side = false) {
     let iconSetPopup = document.getElementById("icon-selector-popup");
     if (iconSetPopup == null) return;
+    iconSetPopup.mode = type;
     let currentSelected;
+    let color;
+    let foundStored = false;
 
-    if (tabpanel.icon == null) {
-      //pick a random icon (if possible, not already used) if panel hasn't one set
-      currentSelected = getNotUsedIcon();
-      removeBtn.setAttribute("hidden", "true");
+    if (type == "TabPanel") {
+      if (element.icon == null) {
+        //pick a random icon (if possible, not already used) if panel hasn't one set
+        currentSelected = getNotUsedIcon("TabPanel");
+        removeBtn.setAttribute("hidden", "true");
+      } else {
+        removeBtn.removeAttribute("hidden");
+        removeBtn.setAttribute("label", "Remove icon");
+        currentSelected = element.icon;
+      }
+      if (element.iconColor)
+        color = element.iconColor;
+      else {
+        color = randomColorHSL(60, 60, 40, 9);
+      }
+    }
+
+    if (type == "NestTab") {
+      if (element.hasAttribute("customIcon")) {
+        //pick a random icon (if possible, not already used) if panel hasn't one set
+        let icon = getCustomTabValue(element, "customIcon");
+        if (icon) {
+          icon = icon.split(",");
+          if (icon.length == 2) {
+            currentSelected = icon[0];
+            color = icon[1];
+            foundStored = true;
+            removeBtn.removeAttribute("hidden");
+            removeBtn.setAttribute("label", "Default icon");
+
+          }
+        }
+      }
+      if (foundStored == false) {
+        let lightMode = getPref("browser.theme.toolbar-theme");
+        if (lightMode == 0)
+          color = randomColorHSL(65, 50, 35, 20);
+        else
+          color = randomColorHSL(40, 80, 10, 15);
+
+        currentSelected = getNotUsedIcon("NestTab");
+        removeBtn.setAttribute("hidden", "true");
+      }
+    }
+    if (type == "NestTabColor") {
+      if (element.hasAttribute("customColor")) {
+        //pick a random icon (if possible, not already used) if panel hasn't one set
+        color = getCustomTabValue(element, "customColor");
+        if (color) {
+          foundStored = true;
+          removeBtn.removeAttribute("hidden");
+          removeBtn.setAttribute("label", "Default");
+        }
+      }
+      if (foundStored == false) {
+        let lightMode = getPref("browser.theme.toolbar-theme");
+        if (lightMode == 0)
+          color = randomColorHSL(45, 50, 35, 0);
+        else
+          color = randomColorHSL(80, 80, 15, 15);
+        removeBtn.setAttribute("hidden", "true");
+      }
+      grid.setAttribute("hidden", "true");
+      title.setAttribute("value", "Select Color");
+      previewRow.removeAttribute("hidden");
     } else {
-      removeBtn.removeAttribute("hidden");
-      currentSelected = tabpanel.icon;
+      title.setAttribute("value", "Select Icon");
+      grid.removeAttribute("hidden");
+      previewRow.setAttribute("hidden", "true");
     }
-    let color
-    if (tabpanel.iconColor)
-      color = tabpanel.iconColor;
-    else {
-      color = randomColor(150 * 3, 70, 40, 10 * 3);
-    }
+
     iconSetPopup.selected = null;
-    iconSetPopup.tabpanel = tabpanel;
+    iconSetPopup.element = element;
+
     iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
       const isSelected = btn.getAttribute("iconName") === currentSelected;
       btn.toggleAttribute("checked", isSelected);
@@ -7533,14 +7782,15 @@ addTabPanelIconSetter = function() {
     });
     // Initialize color + sliders from argument
     setColor(color || "#0a84ff", true);
-    if (side)
+    if (side || type != "TabPanel")
       iconSetPopup.openPopup(anchor, "topright topleft", 0, 0, false, false);
     else
       iconSetPopup.openPopup(anchor, "after_start", 0, 0, false, false);
   };
+
   window.initPanelWithIcon = function(newPanel) {
-    setRandomIcon(newPanel);
-    openIconSelector(newPanel, document.getElementById("NTT-header"), true);
+    setRandomIcon(newPanel, "TabPanel");
+    openIconAndColorSelector(newPanel, "TabPanel", document.getElementById("NTT-header"), true);
   };
 
   return elementsCreated;
@@ -9420,11 +9670,6 @@ menu.subviewbutton{
   margin-left:auto!important;
 }
 
-@media (prefers-color-scheme: dark) {
-    .tab-group-editor-swatches label {
-        filter: saturate(1.2) brightness(0.6) contrast(1.4)!important;
-    }
-}
 `;
   let styleURI = makeURI(
     `data:text/css;charset=UTF=8,${encodeURIComponent(customCSS)}`
@@ -9890,7 +10135,73 @@ tab-split-view-wrapper:has(tab[tree-depth='9']:first-child:not([twisted-root])):
   min-height:0!important;
 }
 
+/*Nest Tabs*/
+
+#tabbrowser-tabs[orient="vertical"]:not([expanded])
+  tab[nestTab].tab-icon-image{
+      margin-inline-start: var(--tab-icon-start);
+}
+
+#tabbrowser-tabs[orient="vertical"] {
+
+tab[nestTab]:not([customColor]) .tab-background {
+   background-color:light-dark(rgba(200,190,160,0.3),rgba(120,120,120,0.4))!important;
+}
+@media (prefers-color-scheme: light) {
+ tab[nestTab][twisted-root] .tab-icon-image{
+     fill:rgb(180,160,160)!important;
+   }
+}
+
+tab[nestTab]:not([customIcon]){
+  .tab-icon-image{
+      content: url("chrome://global/skin/icons/folder.svg")!important;
+  }
+  &[twisted-root]
+  .tab-icon-image:not([customIcon]){
+      content:  url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill"><path d="M1 3.5C1 2.67157 1.67157 2 2.5 2H6L8 4H13.5C14.3284 4 15 4.67157 15 5.5V12.5C15 13.3284 14.3284 14 13.5 14H2.5C1.67157 14 1 13.3284 1 12.5V3.5Z"/></svg>')!important;
+  }  
+}
+tab[nestTab] .tab-label:not([nestLabel]){
+    display:none!important;
+}
+tab[nestTab][customIcon] .tab-icon-image{
+  fill:transparent!important;
+}
+tab[nestTab][customIcon]:not([twisted-root]) .tab-icon-image:hover{
+  fill:currentcolor!important;
+}
+tab[nestTab][customIcon] .tab-icon-image:not(:hover),
+tab[nestTab][customIcon][twisted-root] .tab-icon-image
+{
+  transform:scale(1.5);
+}
+tab[customColor] .tab-label
+{
+  font-size: var(--label-font-size)!important;
+}
+tab[customColor] .tab-text{
+  color: light-dark(var(--tab-group-color-pale, var(--tab-group-gray-text-invert)), var(--tab-group-color-pale, var(--tab-group-gray-text-invert))) !important;
+}
+tab[nestTab][twisted-root]:not(:hover) .tab-background{
+  filter:brightness(0.9);
+}
+@media (prefers-color-scheme: light) {
+  tab[nestTab][twisted-root]:not(:hover) .tab-background{
+    filter:brightness(0.97);
+  }
+}
+
+}
+/**********/
+
 /*Tab Groups*/
+
+.tab-group-overflow-count-container {
+  #tabbrowser-tabs:not([expanded]) &::after {
+    inset-inline: 0px auto!important;
+  }
+}
 #tabbrowser-tabs[orient="vertical"] {
 
 tab-group:has(tab[tabPanel-hidden="true"]) *,
@@ -9911,7 +10222,6 @@ tab-group:has(tab[tabPanel-hidden="true"])
   line-height:0!important;
   visibility: collapse !important;
 }
-
 tab-group tab, tab-split-view-wrapper{
   border-left: 2px solid var(--tab-group-line-color)!important;
   border-radius:0!important;
@@ -9927,23 +10237,9 @@ tab-group > tab-split-view-wrapper
 {
  margin-inline:0!important;
 }
-
 .tab-group-line{
   display: none!important;
 } 
-tab[nestTab]{
-  .tab-icon-image{
-      content: url("chrome://global/skin/icons/folder.svg")!important;
-  }
-  &[twisted-root]
-  .tab-icon-image{
-      content:  url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill"><path d="M1 3.5C1 2.67157 1.67157 2 2.5 2H6L8 4H13.5C14.3284 4 15 4.67157 15 5.5V12.5C15 13.3284 14.3284 14 13.5 14H2.5C1.67157 14 1 13.3284 1 12.5V3.5Z"/></svg>')!important;
-     margin-inline-start: var(--tab-icon-start);
-  }
-  .tab-label:not([nestLabel]){
-    display:none!important;
-  }
-}
 .tab-group-label {
   margin-block:0!important;
 }
@@ -9966,7 +10262,7 @@ tab[nestTab]{
   background-image: url("chrome://global/skin/icons/folder.svg")!important;
   background-size:  clamp(0px, 16px, calc( var(--tab-height) - var(--tab-close-button-padding) )) auto;
   -moz-context-properties: fill, fill-opacity, stroke!important;
-  fill: silver!important;
+  fill: light-dark(silver,silver)!important;
   background-repeat: no-repeat!important;
   background-position: left var(--tab-icon-end-margin, var(--tab-icon-margin-inline-end)) center!important;
   height: var(--tab-height)!important;
@@ -10012,7 +10308,23 @@ tab-group[collapsed] .tab-group-label-container {
 }
 
 @media (prefers-color-scheme: dark) {
+    .tab-group-editor-swatches label {
+        filter: saturate(1.2) brightness(0.6) contrast(1.4)!important;
+    }
+    @media -moz-pref("browser.nova.enabled") {
     .tab-group-label {
+        --tab-group-background-color:color-mix( var(--tab-group-color), transparent 35%)!important;
+        color: light-dark(var(--tab-group-color-pale), var(--tab-group-color-pale))!important;
+        outline-color: color-mix( var(--tab-group-color) 70%, gold, transparent 10%)!important;
+    }
+    tab-group[collapsed] .tab-group-label {
+      --tab-group-background-color:color-mix( var(--tab-group-color), transparent 40%)!important;
+        outline-color: color-mix( var(--tab-group-color) 10%, silver 30%, transparent 10%)!important;
+    }
+  }
+    @media not -moz-pref("browser.nova.enabled") {
+    .tab-group-label {
+        --tab-group-background-color:color-mix( var(--tab-group-color), transparent 35%)!important;
         color: light-dark(var(--tab-group-color-pale), var(--tab-group-color-pale))!important;
         background-color: color-mix( var(--tab-group-color), transparent 35%)!important;
         outline-color: color-mix( var(--tab-group-color) 70%, gold, transparent 10%)!important;
@@ -10022,9 +10334,12 @@ tab-group[collapsed] .tab-group-label-container {
         outline-color: color-mix( var(--tab-group-color) 10%, silver 30%, transparent 10%)!important;
         filter: saturate(1) brightness(0.85) contrast(1)!important;
     }
+  }
  }
 }
 }
+/*******Tab Groups End ***********/
+
 .popup-main-panel{
   max-width: var(--menuitem-max-width);
 }
@@ -10182,7 +10497,7 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
 @media -moz-pref("treeTabs.style.customBackground") {
 
 @media (prefers-color-scheme: dark) {
-  #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden]) .tab-background {
+  #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab]) .tab-background {
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
       border: 1px solid rgba(55, 55, 55, 0.3);
       border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent));
@@ -10211,7 +10526,7 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
 }
 
 @media (prefers-color-scheme: light) {
-  #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden]) .tab-background {
+  #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab]) .tab-background {
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, white)) 8%, rgba(250, 250, 250, 0.005))!important;
       backdrop-filter: blur(5px);
       border: 1px solid rgba(55, 55, 55, 0.3);
@@ -10237,29 +10552,8 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
   }
 }
 }
-
-#vertical-tabs tab[nestTab] .tab-background {
-   background-color:rgba(100,100,100,0.4)!important;
-}
-@media (prefers-color-scheme: light) {
-  #vertical-tabs tab[nestTab] .tab-background {
-    background-color:oklch(0.97 0.05 205)!important;
-  }
- #vertical-tabs  tab[nestTab] {
-   .tab-icon-image{
-   }
-   &[twisted-root]{
-   .tab-icon-image{
-     fill:rgb(180,160,160)!important;
-   }
-   .tab-background {
-      background-color:rgba(190,170,200,0.4)!important;
-    }
-  }
- }
-}
 .tab-icon-image {
-  #tabbrowser-tabs[orient="vertical"][expanded] tab:not([twisted-root]) &:not([pinned]) {
+  #tabbrowser-tabs[orient="vertical"][expanded] tab:not([twisted-root],[nestTab]) &:not([pinned]) {
         margin-inline-start: var(--tab-icon-start);
   }
 }
