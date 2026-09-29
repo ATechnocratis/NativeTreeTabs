@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.6.0
+// @version        0.3.6.1
 // ==/UserScript==
-const isTab = element => gBrowser.isTab(element);
+const isTab = element => !!(element != null && element.tagName == "tab");
 const moveChildren = true;
 const MAX_STACK_SIZE = 30;
 const CUSTOMIZE_URL = "chrome://browser/content/sidebar/sidebar-customize.html";
@@ -436,6 +436,15 @@ window.nativeTreeTabs = {
     };
     this.observeTopic("treeTabs.shortcuts.flipActive", flipActive, "Ctrl + Shift + F");
     this.shortcuts.push(flipActive);
+
+    let togglAlwaysOnTab = {
+      action: alwaysOnTabToggle,
+      arguments: null,
+      value: null,
+      keys: null
+    };
+    this.observeTopic("treeTabs.shortcuts.toggleAlwaysOnTab", togglAlwaysOnTab, "Ctrl + Shift + A");
+    this.shortcuts.push(togglAlwaysOnTab);
   },
 
   keyboardListener: function(e) {
@@ -2738,7 +2747,7 @@ window.nativeTreeTabs = {
           wrap: false,
           filter: tab => tabVisible(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
         });
-        return foundTab
+        return foundTab;
       }
 
       checkForNextNestClose(aTab);
@@ -3711,7 +3720,7 @@ window.nativeTreeTabs = {
 
     gBrowser.tabContainer.previewPanel.activate = async function(tabOrGroup) {
       try {
-        if (gBrowser.isTab(tabOrGroup)) {
+        if (isTab(tabOrGroup)) {
           if (tabOrGroup.hasAttribute("twisted-root") || tabOrGroup.hasAttribute("nestTab")) {
             function noteHover() {
               tabOrGroup.removeEventListener("TabNoteIconHoverStart", noteHover);
@@ -4327,6 +4336,7 @@ window.nativeTreeTabs = {
       setPanel(newTab, newPanel, window);
       window.gBrowser.selectedTab = newTab;
     }
+    updatePinnedTabsHeight();
     return newPanel;
   },
 
@@ -4612,6 +4622,7 @@ window.nativeTreeTabs = {
         }
       }
     }
+    updatePinnedTabsHeight();
   },
 
   cycleTabPanels: function(dir = 1) {
@@ -7796,6 +7807,11 @@ addTabPanelIconSetter = function() {
   return elementsCreated;
 }
 
+function updatePinnedTabsHeight() {
+  SidebarController._state.expandedPinnedTabsHeight = null;
+  SidebarController._state.updatePinnedTabsHeight();
+}
+
 function smartSidebarResize(enable) {
   if (enable) {
     //sidebar autohide
@@ -7826,6 +7842,105 @@ function toggleSidebars() {
         Services.prefs.setStringPref("sidebar.visibility", "always-show");
       SidebarController._state.updateVisibility(false, false);
     }
+  }
+}
+
+
+function clearAlwaysOnTab(aTab) {
+  //remove the tab browser panel attributes
+  removeTabBrowserAlwaysOn(aTab)
+  aTab.removeAttribute("alwaysOn");
+  //remove indicator
+  let localAlwaysOnIndicator = aTab.querySelector(".tab-always-on");
+  if (localAlwaysOnIndicator != null) {
+    localAlwaysOnIndicator.remove();
+  }
+}
+
+function clearAlwaysOn(tabs = null) {
+  //Remove the attributes that make a tab always displaying
+  // if no tab was given search all tabs
+  if (tabs == null)
+    tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
+  tabs.forEach((t) => {
+    clearAlwaysOnTab(t);
+  });
+  if (tabs.length > 0)
+    return tabs[0];
+}
+
+function findLastAccessedInTree(aTab) {
+  let treeDepth = getTreeDepth(aTab);
+  let nextTab = getNextTab(aTab);
+  let currentBest = nextTab.lastSeenActive;
+  let currentBestTab;
+  while (nextTab) {
+    nextTabTreeDepth = getTreeDepth(nextTab);
+    if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
+      break;
+    }
+    if (nextTab.lastSeenActive >= currentBest && tabVisible(nextTab) && unloadedCheck(nextTab) && !nextTab.hasAttribute("tabPanel-hidden")) {
+      currentBest = nextTab.lastActive;
+      currentBestTab = nextTab;
+    }
+    nextTab = getNextTab(nextTab);
+  }
+  return currentBestTab;
+}
+
+function alwaysOnTabToggle() {
+  //shouldn't be more than one
+  let alwaysOnInPanel = clearAlwaysOn();
+  if (alwaysOnInPanel == null) {
+    setTabAlwayOn();
+    let possibleNext = findLastAccessedInTree(gBrowser.selectedTab);
+    if (possibleNext != null) {
+      gBrowser.selectedTab = possibleNext;
+    }
+  } else {
+    gBrowser.selectedTab = alwaysOnInPanel;
+  }
+}
+
+function setTabAlwayOn(aTab = null) {
+  //set a tab to always display
+  // CSS rules does it for us
+  // here we just set the attributes for them
+  // to work
+  if (aTab == null)
+    aTab = gBrowser.selectedTab;
+  let linkedBrowser = aTab.linkedBrowser;
+  let browserContainer = linkedBrowser.closest(".browserSidebarContainer")
+
+  if (aTab.hasAttribute("alwaysOn")) {
+    //toggle
+    clearAlwaysOn([aTab]);
+  } else {
+    //clear previous always displaying tabs (if they exist)
+    clearAlwaysOn();
+    //set the attributes
+    aTab.setAttribute("alwaysOn", "");
+    browserContainer.setAttribute("pinned", "");
+    let pref = getPref("alwayOnTab.location");
+    if (pref == 1)
+      browserContainer.setAttribute("pinned-right", "")
+    else
+      browserContainer.setAttribute("pinned-left", "")
+    //Indicator on tab
+    let alwaysOnIndicator = document.createElement("image");
+    alwaysOnIndicator.setAttribute("class", "tab-always-on");
+    let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
+    closePrv.after(alwaysOnIndicator)
+    //loads unloaded tabs, also refreshes the layout if the tab was
+    //"unpainted/in the background"
+    let lastActive = gBrowser.selectedTab;
+    gBrowser.selectedTab = aTab;
+    gBrowser.selectedTab = lastActive;
+    gBrowser.warmupTab(aTab);
+    linkedBrowser.style.display = "flex"
+    setTimeout(() => {
+      linkedBrowser.style.display = ""
+    }, 20);
   }
 }
 
@@ -7866,28 +7981,6 @@ function initAlwayDisplayTab() {
     });
   }
 
-  //window-wide accessible function
-  window.clearAlwaysOn = function(tabs = null) {
-    //Remove the attributes that make a tab always displaying
-    // if no tab was given search all tabs
-    if (tabs == null)
-      tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
-    tabs.forEach((t) => {
-      t.removeAttribute("alwaysOn");
-      //also remove the tab browser panel attributes
-      t_BrowserContainer = t.linkedBrowser.closest(".browserSidebarContainer")
-      t_BrowserContainer.removeAttribute("pinned");
-      t_BrowserContainer.removeAttribute("pinned-left");
-      t_BrowserContainer.removeAttribute("pinned-right");
-      let localAlwaysOnIndicator = t.querySelector(".tab-always-on");
-      if (localAlwaysOnIndicator != null) {
-        localAlwaysOnIndicator.remove();
-      }
-    });
-    //remove the indicator
-
-  }
-
   //**********************
   // Add options to set/stop always display, on Tab Context Menu
 
@@ -7913,44 +8006,7 @@ function initAlwayDisplayTab() {
   } catch (error) {}
 
   alwaysOnContext.addEventListener("click", (aEvent) => {
-    //set a tab to always display
-    // CSS rules does it for us
-    // here we just set the attributes for them
-    // to work
-    let aTab = TabContextMenu.contextTab;
-    let linkedBrowser = aTab.linkedBrowser;
-    browserContainer = linkedBrowser.closest(".browserSidebarContainer")
-
-    if (aTab.hasAttribute("alwaysOn")) {
-      //toggle
-      clearAlwaysOn([aTab]);
-    } else {
-      //clear previous always displaying tabs (if they exist)
-      clearAlwaysOn();
-      //set the attributes
-      aTab.setAttribute("alwaysOn", "");
-      browserContainer.setAttribute("pinned", "");
-      let pref = getPref("alwayOnTab.location");
-      if (pref == 1)
-        browserContainer.setAttribute("pinned-right", "")
-      else
-        browserContainer.setAttribute("pinned-left", "")
-      //Indicator on tab
-      let alwaysOnIndicator = document.createElement("image");
-      alwaysOnIndicator.setAttribute("class", "tab-always-on");
-      let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
-      closePrv.after(alwaysOnIndicator)
-      //loads unloaded tabs, also refreshes the layout if the tab was
-      //"unpainted/in the background"
-      let lastActive = gBrowser.selectedTab;
-      gBrowser.selectedTab = aTab;
-      gBrowser.selectedTab = lastActive;
-      gBrowser.warmupTab(aTab);
-      linkedBrowser.style.display = "flex"
-      setTimeout(() => {
-        linkedBrowser.style.display = ""
-      }, 20);
-    }
+    setTabAlwayOn(TabContextMenu.contextTab)
   });
 
   function updateTabContextMenu(aEvent) {
@@ -7969,8 +8025,56 @@ function initAlwayDisplayTab() {
 
   tabContextMenu.addEventListener("popupshowing", updateTabContextMenu);
   //*********************
+  //Add link menus
+  let openInSide = function(aEvent, url) {
 
-  //Add draggable separator between the two panels
+    tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
+    let activeTab = (tabs.length > 0) ? tabs[0] : gBrowser.selectedTab;
+    if (!activeTab.hasAttribute("alwaysOn")) {
+      setTabAlwayOn(activeTab);
+      let newtab = window.gBrowser.addTab(
+        url, {
+          relatedToCurrent: true,
+          inBackground: false,
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        }
+      );
+    } else {
+      // let newtab = gContextMenu.openLinkInTab(aEvent);
+      // openLinkIn(url, 'tab', params)
+      let newtab = window.gBrowser.addTab(
+        url, {
+          openerBrowser: activeTab.linkedBrowser,
+          inBackground: false,
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        }
+      );
+      console.log(newtab);
+    }
+
+  }
+
+  let menuitem = document.createXULElement('menuitem');
+  menuitem.id = 'openLinkInSide';
+  menuitem.label = 'Open Link in the Side';
+  menuitem.hidden = true;
+  menuitem.setAttribute("accesskey",'e');
+  menuitem.addEventListener('command', (aEvent) => openInSide(aEvent, window.gContextMenu.linkURL));
+  document.getElementById('context-openlink').insertAdjacentElement('beforebegin', menuitem);
+
+  let contextMenu = document.getElementById('contentAreaContextMenu');
+  let contentContext = function(e) {
+    let win = e.view;
+    let {
+      gContextMenu
+    } = win;
+    menuitem.hidden = true;
+    gContextMenu.showItem('openLinkInSide', gContextMenu.onSaveableLink || gContextMenu.onPlainTextLink);
+  }
+  contextMenu.addEventListener('popupshowing', contentContext);
+  //***********
+
+  //Add a draggable separator between the two panels
   // dragging the separator resizes the panels
   let separator = document.createElement("div")
   separator.setAttribute("id", "alwaysOn-separator")
@@ -8130,7 +8234,7 @@ function initAlwayDisplayTab() {
         return originalAddTab(uri, params, ...rest);
       }
       if (params.openerBrowser != null) {
-        let browserContainer = params.openerBrowser.closest(".browserSidebarContainer")
+        let browserContainer = params.openerBrowser.closest(".browserSidebarContainer");
         if (browserContainer && browserContainer.hasAttribute("pinned")) {
           // Force foreground – create a shallow copy so we don't mutate the caller's object
           params = Object.assign({}, params, {
@@ -8144,6 +8248,7 @@ function initAlwayDisplayTab() {
       originalAddTab(uri, params, ...rest);
     }
   }
+  
   // The CSS rules that make this possible
   let alwaysOnCSS = `
     #alwaysOn-separator {
@@ -9061,6 +9166,8 @@ let modifyCustomizePage = {
     createKeyInputBox("treeTabs.shortcuts.indentTabOut", "Indent tab:", extra);
     createKeyInputBox("treeTabs.shortcuts.indentTab", "Outdent tab:", extra);
     createKeyInputBox("treeTabs.shortcuts.flipActive", "Switch to last active tab:", extra);
+    createKeyInputBox("treeTabs.shortcuts.toggleAlwaysOnTab", "Toggle Always On Tab", extra);
+
 
     modifyCustomizePage.observeTopic("treeTabs.enabled", extra);
 
