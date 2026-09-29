@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.6.1
+// @version        0.3.6.2
 // ==/UserScript==
 const isTab = element => !!(element != null && element.tagName == "tab");
 const moveChildren = true;
@@ -7872,15 +7872,15 @@ function clearAlwaysOn(tabs = null) {
 function findLastAccessedInTree(aTab) {
   let treeDepth = getTreeDepth(aTab);
   let nextTab = getNextTab(aTab);
-  let currentBest = nextTab.lastSeenActive;
+  let currentBest = nextTab.getAttribute("tree-id");
   let currentBestTab;
   while (nextTab) {
     nextTabTreeDepth = getTreeDepth(nextTab);
     if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
       break;
     }
-    if (nextTab.lastSeenActive >= currentBest && tabVisible(nextTab) && unloadedCheck(nextTab) && !nextTab.hasAttribute("tabPanel-hidden")) {
-      currentBest = nextTab.lastActive;
+    if (nextTab.getAttribute("tree-id") >= currentBest && tabVisible(nextTab) && unloadedCheck(nextTab) && !nextTab.hasAttribute("tabPanel-hidden")) {
+      currentBest = nextTab.getAttribute("tree-id");
       currentBestTab = nextTab;
     }
     nextTab = getNextTab(nextTab);
@@ -8058,7 +8058,7 @@ function initAlwayDisplayTab() {
   menuitem.id = 'openLinkInSide';
   menuitem.label = 'Open Link in the Side';
   menuitem.hidden = true;
-  menuitem.setAttribute("accesskey",'e');
+  menuitem.setAttribute("accesskey", 'e');
   menuitem.addEventListener('command', (aEvent) => openInSide(aEvent, window.gContextMenu.linkURL));
   document.getElementById('context-openlink').insertAdjacentElement('beforebegin', menuitem);
 
@@ -8248,7 +8248,7 @@ function initAlwayDisplayTab() {
       originalAddTab(uri, params, ...rest);
     }
   }
-  
+
   // The CSS rules that make this possible
   let alwaysOnCSS = `
     #alwaysOn-separator {
@@ -10607,7 +10607,7 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
   #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab]) .tab-background {
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
       border: 1px solid rgba(55, 55, 55, 0.3);
-      border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent));
+      border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent))!important;
       backdrop-filter: blur(5px);
   }
   @media -moz-pref("treeTabs.style.contextLineStyle",0){
@@ -10637,7 +10637,7 @@ tab:not([hidden-child],[tabPanel-hidden])[nestTab] .tab-child-count{
       background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, white)) 8%, rgba(250, 250, 250, 0.005))!important;
       backdrop-filter: blur(5px);
       border: 1px solid rgba(55, 55, 55, 0.3);
-      border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(20, 20, 20)))) 15%, rgba(200, 200, 200, 0)) 20%, color-mix(in srgb, silver 45%, transparent));
+      border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(20, 20, 20)))) 15%, rgba(200, 200, 200, 0)) 20%, color-mix(in srgb, silver 45%, transparent))!important;
       opacity: 1;
       filter: saturate(1) brightness(1);
   }
