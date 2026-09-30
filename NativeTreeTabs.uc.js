@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.6.2
+// @version        0.3.6.3
 // ==/UserScript==
 const isTab = element => !!(element != null && element.tagName == "tab");
 const moveChildren = true;
@@ -2664,6 +2664,7 @@ window.nativeTreeTabs = {
     this.observeTopic("treeTabs.tabHeight");
     this.observeTopic("treeTabs.labelFontSize");
     this.observeTopic("treeTabs.tabBorderRadius");
+    this.observeTopic("treeTabs.style.tabLeftRightPadding");
     this.observeTopic("treeTabs.style.tabIconStart");
     this.observeTopic("treeTabs.style.pinnedTabWidth");
     this.observeTopic("treeTabs.style.collapsedChildrenCounter", null, true);
@@ -9104,6 +9105,11 @@ let modifyCustomizePage = {
       step: 1,
       max: 99
     }, "Tree children gap:", extra);
+    createNumberInputBox("treeTabs.style.tabLeftRightPadding", {
+      min: 0,
+      step: 0.5,
+      max: 99
+    }, "Tab sides padding:", extra);
     createNumberInputBox("treeTabs.style.tabIconStart", {
       min: 0,
       step: 0.5,
@@ -9797,9 +9803,7 @@ loadNTTstyle = function() {
   let tabBorderRadius = nativeTreeTabs.checkOrSetPref("treeTabs.tabBorderRadius", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius')));
   let tabHeight = nativeTreeTabs.checkOrSetPref("treeTabs.tabHeight", "30");
   let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", "2");
-  // let pinnedMinWidth = parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-pinned-expanded-background-width'))
-  // if (isNaN(pinnedMinWidth))
-  //   pinnedMinWidth = parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-background-width-pinned-expanded'))
+  let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
   let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
 
   let closeButtonPadding;
@@ -9823,11 +9827,16 @@ loadNTTstyle = function() {
     --label-font-size: ` + labelFontSize + `px;
     --tab-close-button-padding: ` + closeButtonPadding + `px!important;
     --tab-border-radius-forced: ` + tabBorderRadius + `px;
+    --tab-inner-inline-margin: ` + tabLeftRightPadding + `px!important;
+    --tab-margin-inline-inner: ` + tabLeftRightPadding + `px!important;
     --group-first-tab-top-margin:  ` + (1 + rootTabTopMargin * 0.7) + `px;
     --tree-tab-default-color: rgb(130, 120, 140);
     --tab-icon-start: ` + tabIconStart + `px;
     --tab-pinned-expanded-background-width: ` + pinnedTabWidth + `px!important;
     --tab-background-width-pinned-expanded: ` + pinnedTabWidth + `px!important;
+}
+#tabbrowser-tabs tab-split-view-wrapper {
+    --tab-margin-inline-inner:  ` + tabLeftRightPadding + `px!important;
 }
 #vertical-tabs {
  tab[tree-depth="0"] { --tab-indent: 0; }
@@ -9862,10 +9871,13 @@ loadNTTstyle = function() {
 
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
     max-width: calc(100% - var(--tab-indent))!important;
-    padding-inline-start: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))) !important;
+    padding-inline: calc( (( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1% ) + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))) !important;
 }
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab-split-view-wrapper{
     margin-inline: 0 !important;
+}
+#tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"]  tab-split-view-wrapper{
+    margin-inline-end: 0 !important;
 }
 #tabbrowser-tabs:not([expanded]) #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
       margin-inline: 0 !important;
@@ -9878,15 +9890,15 @@ loadNTTstyle = function() {
         padding-inline-start: calc(var(--tab-indent) * 1px)!important;
     }
   #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
-        padding-inline-start: calc(var(--tab-indent) * 1px + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)))!important;
+        padding-inline: calc(var(--tab-indent) * 1px + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)))!important;
   }
 }
 
 #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper tab:first-child .tab-background {
       margin-inline: 0 !important;
 }
-#tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has(tab[tree-depth="0"]){
-   padding-inline-start:var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
+#tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
+   padding-inline-end:var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
 }
 #vertical-tabs tab:not(collapsed, [pinned]) {
     margin-bottom: 0!important;
@@ -9914,7 +9926,6 @@ loadNTTstyle = function() {
 }
 #tabbrowser-arrowscrollbox[orient="vertical"]  tab-split-view-wrapper tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]){
   margin-top: var(--branch-tab-top-margin)!important;
-
 }
 
 #tabbrowser-arrowscrollbox[orient="vertical"] {
@@ -9951,6 +9962,27 @@ loadNTTstyle = function() {
   max-width:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
   min-height:10px!important;
   min-width:10px!important;
+}
+/*remove Nova unnecessary sidebar padding*/
+#tabbrowser-tabs[orient="vertical"] {
+   grid-gap:2px!important;
+}
+@media -moz-pref("browser.nova.enabled") {
+#tabbrowser-tabs[orient="vertical"] {
+  --tab-height-with-margin-padding: 38px!important;
+  --tab-group-label-padding:4px!important;
+  --tab-content-button-size:24px!important;
+}
+#vertical-tabs tab[pinned] .tab-background {
+  margin-block: 0!important;
+}
+#vertical-pinned-tabs-splitter{
+  min-height:2px!important;
+}
+#tabbrowser-tabs[orient="vertical"] .tab-audio-button{
+  --icon-size: 14px!important;
+  --button-size-icon-small:24px!important;
+}
 }
 /*Tab style */
 #vertical-tabs tab {
