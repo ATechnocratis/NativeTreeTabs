@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.6.3
+// @version        0.3.6.4
 // ==/UserScript==
 const isTab = element => !!(element != null && element.tagName == "tab");
 const moveChildren = true;
@@ -94,17 +94,18 @@ window.nativeTreeTabs = {
   init: function() {
 
     //Finds the script version to display
-    let version;
+    let version = "";
+    let scriptName = "Native Tree Tabs"
     try {
       if (typeof _uc !== 'undefined') {
         //Xiaoxiaoflood loader
-        version = Object.values(_uc.scripts).find(x => x.name == "Native Tree Tabs").version;
+        version = Object.values(_uc.scripts).find(x => x.name == scriptName).version;
       } else if (typeof UC_API !== 'undefined') {
         // MrOtherGuy/fx-autoconfig
-        version = UC_API.Scripts.getScriptData().find(x => x.name == "Native Tree Tabs").version;
+        version = UC_API.Scripts.getScriptData().find(x => x.name == scriptName).version;
       } else if (typeof userChrome_js !== 'undefined') {
         //alice0775/userChrome.js not tested yet
-        version = userChrome_js.Scripts.getScriptData().find(x => x.name == "Native Tree Tabs").version;
+        version = userChrome_js.Scripts.getScriptData().find(x => x.name == scriptName).version;
       }
       if (version != null) {
         setPref("treeTabs.version", version);
@@ -286,79 +287,67 @@ window.nativeTreeTabs = {
   handleEvent: function(aEvent) {
 
     switch (aEvent.type) {
-      case "TabOpen":
-        {
-          this.tabOpen(aEvent.target);
-          break;
+      case "TabOpen": {
+        this.tabOpen(aEvent.target);
+        break;
+      }
+      case "SSTabRestoring": {
+        this.tabRestore(aEvent.target);
+        break;
+      }
+      case "TabClose": {
+        this.tabClose(aEvent.target);
+        break;
+      }
+      case "TabMove": {
+        this.tabMove(aEvent.target, aEvent);
+        break;
+      }
+      case "TabSelect": {
+        this.tabSelected(aEvent.target);
+        break;
+      }
+      case "TabUnpinned": {
+        this.tabUnpinned(aEvent.target, aEvent);
+        break;
+      }
+      case "TabGroupUngroup": {
+        this.tabGroupUngroup(aEvent);
+        break;
+      }
+      case "dragstart": {
+        this.tabDragStart(aEvent);
+        break;
+      }
+      case "dragend": {
+        this.tabDragEnd(aEvent);
+        break;
+      }
+      case "click": {
+        if (aEvent.button == 0 && aEvent.currentTarget.className === "tab-icon-stack") {
+          this.twistyClick(aEvent);
+        } else {
+          this.closeTree(aEvent);
         }
-      case "SSTabRestoring":
-        {
-          this.tabRestore(aEvent.target);
-          break;
-        }
-      case "TabClose":
-        {
-          this.tabClose(aEvent.target);
-          break;
-        }
-      case "TabMove":
-        {
-          this.tabMove(aEvent.target, aEvent);
-          break;
-        }
-      case "TabSelect":
-        {
-          this.tabSelected(aEvent.target);
-          break;
-        }
-      case "TabUnpinned":
-        {
-          this.tabUnpinned(aEvent.target, aEvent);
-          break;
-        }
-      case "TabGroupUngroup":
-        {
-          this.tabGroupUngroup(aEvent);
-          break;
-        }
-      case "dragstart":
-        {
-          this.tabDragStart(aEvent);
-          break;
-        }
-      case "dragend":
-        {
-          this.tabDragEnd(aEvent);
-          break;
-        }
-      case "click":
-        {
-          if (aEvent.button == 0 && aEvent.currentTarget.className === "tab-icon-stack") {
-            this.twistyClick(aEvent);
+        break;
+      }
+      case "mousedown": {
+        if (aEvent.button == 0) {
+          let tabgroup = aEvent.target.closest(".tab-group-label-container");
+          if (tabgroup) {
+            this.tabGroupDrag(tabgroup.closest("tab-group"));
           } else {
-            this.closeTree(aEvent);
+            this.markTrueSelectedTab(aEvent);
           }
-          break;
+        } else if (aEvent.button == 2) {
+          this.hoverSelectTabs(aEvent);
         }
-      case "mousedown":
-        {
-          if (aEvent.button == 0) {
-            let tabgroup = aEvent.target.closest(".tab-group-label-container");
-            if (tabgroup) {
-              this.tabGroupDrag(tabgroup.closest("tab-group"));
-            } else {
-              this.markTrueSelectedTab(aEvent);
-            }
-          } else if (aEvent.button == 2) {
-            this.hoverSelectTabs(aEvent);
-          }
-          break;
-        }
-      case "keydown":
-        {
-          this.keyboardListener(aEvent);
-          break;
-        }
+        break;
+      }
+      case "keydown": {
+        this.keyboardListener(aEvent);
+        break;
+      }
     }
   },
 
@@ -438,7 +427,7 @@ window.nativeTreeTabs = {
     this.shortcuts.push(flipActive);
 
     let togglAlwaysOnTab = {
-      action: alwaysOnTabToggle,
+      action: panelAlwaysOnTabToggle,
       arguments: null,
       value: null,
       keys: null
@@ -4482,7 +4471,7 @@ window.nativeTreeTabs = {
     if (panelId == -1) {
       return;
     }
-    return gBrowser.tabGroups.filter(g => g.tabs[0].getAttribute("panel-id") == panelId && !t.hasAttribute("panel-id-pending"));
+    return gBrowser.tabGroups.filter(g => g.tabs[0].getAttribute("panel-id") == panelId && !g.tabs[0].hasAttribute("panel-id-pending"));
   },
 
   tabPanelClose: function(panel) {
@@ -4523,14 +4512,14 @@ window.nativeTreeTabs = {
     let tabs = this.getTabPanelTabs(panel);
     let selectedRoot = getTreeRoot(gBrowser.selectedTab);
     tabs.forEach((tab) => {
-      if (getTreeDepth(tab) == 0) {
-        if (uncollapse) {
-          if (tab.hasAttribute("twisted-root")) {
-            this.toggleTwist(tab);
-          }
-        } else if (tab != selectedRoot)
+      if (uncollapse) {
+        if (tab.hasAttribute("twisted-root")) {
+          this.toggleTwist(tab);
+        }
+      } else if (tab != selectedRoot)
+        if (getTreeDepth(tab) == 0) {
           this.toggleTwist(tab, forced = true);
-      }
+        }
     });
   },
   tabPanelCollapseGroups: function(panel, uncollapse = false) {
@@ -5435,26 +5424,11 @@ setPanel = function(aTab, panel, window) {
 
 makeTabBrowserAlwaysOn = function(aTab) {
   if (aTab.hasAttribute("alwaysOn")) {
-    if (aTab.linkedBrowser)
-      t_BrowserContainer = aTab.linkedBrowser.closest(".browserSidebarContainer")
-    if (t_BrowserContainer == null) return;
+    if (aTab.linkedBrowser == null) return;
     let alwaysOnIndicator = aTab.querySelector(".tab-always-on");
-    if (alwaysOnIndicator == null) {
-      alwaysOnIndicator = document.createElement("image");
-      alwaysOnIndicator.setAttribute("class", "tab-always-on");
-      let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
-      closePrv.after(alwaysOnIndicator);
-    }
-    t_BrowserContainer.setAttribute("pinned", "");
-    let pref = getPref("alwayOnTab.location");
-    if (pref == 1)
-      t_BrowserContainer.setAttribute("pinned-right", "");
-    else
-      t_BrowserContainer.setAttribute("pinned-left", "");
-    aTab.linkedBrowser.style.display = "flex"
-    setTimeout(() => {
-      aTab.linkedBrowser.style.display = ""
-    }, 20);
+    if (alwaysOnIndicator == null)
+      addAlwayOnIndicator(aTab);
+    setBrowserAlwaysOn(aTab.linkedBrowser);
   }
 }
 
@@ -7889,11 +7863,11 @@ function findLastAccessedInTree(aTab) {
   return currentBestTab;
 }
 
-function alwaysOnTabToggle() {
+function panelAlwaysOnTabToggle() {
   //shouldn't be more than one
   let alwaysOnInPanel = clearAlwaysOn();
   if (alwaysOnInPanel == null) {
-    setTabAlwayOn();
+    toggleTabAlwaysOn();
     let possibleNext = findLastAccessedInTree(gBrowser.selectedTab);
     if (possibleNext != null) {
       gBrowser.selectedTab = possibleNext;
@@ -7903,45 +7877,65 @@ function alwaysOnTabToggle() {
   }
 }
 
-function setTabAlwayOn(aTab = null) {
+function addAlwayOnIndicator(aTab) {
+  //adds an indicator on the right end of the tab
+  let alwaysOnIndicator = document.createXULElement("image");
+  alwaysOnIndicator.setAttribute("class", "tab-always-on");
+  let closeButton = aTab.querySelector(".tab-close-button");
+  closeButton.after(alwaysOnIndicator);
+  alwaysOnIndicator.setAttribute("role", "button");
+  alwaysOnIndicator.tooltiptext = "Stop Always On";
+  alwaysOnIndicator.setAttribute("tooltiptext", "Stop Always On");
+  alwaysOnIndicator.title = "Stop Always On";
+  //make clicking on the indicator
+  // to stop the always on display
+  alwaysOnIndicator.addEventListener("mousedown", (aEvent) => {
+    aEvent.preventDefault();
+    aEvent.stopPropagation();
+    clearAlwaysOn([aTab]);
+  });
+}
+
+function setBrowserAlwaysOn(linkedBrowser, aTab = null) {
+  let browserContainer = linkedBrowser.closest(".browserSidebarContainer")
+  browserContainer.setAttribute("pinned", "");
+  let pref = getPref("alwayOnTab.location");
+  if (pref == 1)
+    browserContainer.setAttribute("pinned-right", "")
+  else
+    browserContainer.setAttribute("pinned-left", "")
+  if (aTab != null) {
+    //loads unloaded tabs, also refreshes the layout if the tab was
+    //"unpainted" in the background
+    let lastActive = gBrowser.selectedTab;
+    gBrowser.selectedTab = aTab;
+    gBrowser.selectedTab = lastActive;
+    gBrowser.warmupTab(aTab);
+  }
+  linkedBrowser.style.display = "flex"
+  setTimeout(() => {
+    linkedBrowser.style.display = ""
+  }, 20);
+}
+
+function toggleTabAlwaysOn(aTab = null) {
   //set a tab to always display
   // CSS rules does it for us
   // here we just set the attributes for them
   // to work
   if (aTab == null)
     aTab = gBrowser.selectedTab;
-  let linkedBrowser = aTab.linkedBrowser;
-  let browserContainer = linkedBrowser.closest(".browserSidebarContainer")
-
   if (aTab.hasAttribute("alwaysOn")) {
-    //toggle
+    //stop tab from always displaying
     clearAlwaysOn([aTab]);
   } else {
     //clear previous always displaying tabs (if they exist)
     clearAlwaysOn();
     //set the attributes
     aTab.setAttribute("alwaysOn", "");
-    browserContainer.setAttribute("pinned", "");
-    let pref = getPref("alwayOnTab.location");
-    if (pref == 1)
-      browserContainer.setAttribute("pinned-right", "")
-    else
-      browserContainer.setAttribute("pinned-left", "")
     //Indicator on tab
-    let alwaysOnIndicator = document.createElement("image");
-    alwaysOnIndicator.setAttribute("class", "tab-always-on");
-    let closePrv = aTab.querySelector(".tab-close-button").previousSibling;
-    closePrv.after(alwaysOnIndicator)
-    //loads unloaded tabs, also refreshes the layout if the tab was
-    //"unpainted/in the background"
-    let lastActive = gBrowser.selectedTab;
-    gBrowser.selectedTab = aTab;
-    gBrowser.selectedTab = lastActive;
-    gBrowser.warmupTab(aTab);
-    linkedBrowser.style.display = "flex"
-    setTimeout(() => {
-      linkedBrowser.style.display = ""
-    }, 20);
+    addAlwayOnIndicator(aTab);
+    setBrowserAlwaysOn(aTab.linkedBrowser, aTab)
   }
 }
 
@@ -8007,7 +8001,7 @@ function initAlwayDisplayTab() {
   } catch (error) {}
 
   alwaysOnContext.addEventListener("click", (aEvent) => {
-    setTabAlwayOn(TabContextMenu.contextTab)
+    toggleTabAlwaysOn(TabContextMenu.contextTab)
   });
 
   function updateTabContextMenu(aEvent) {
@@ -8032,7 +8026,7 @@ function initAlwayDisplayTab() {
     tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
     let activeTab = (tabs.length > 0) ? tabs[0] : gBrowser.selectedTab;
     if (!activeTab.hasAttribute("alwaysOn")) {
-      setTabAlwayOn(activeTab);
+      toggleTabAlwaysOn(activeTab);
       let newtab = window.gBrowser.addTab(
         url, {
           relatedToCurrent: true,
@@ -8322,6 +8316,11 @@ function initAlwayDisplayTab() {
         border-radius: 30px;
         margin-right: 4px;
         align-self: center;
+        &:hover {
+          color: var(--button-text-color-ghost-hover);
+          background-color: var(--button-background-color-ghost-hover);
+          outline-color: var(--tab-close-button-border-color-hover);
+        }
     }
     #tabbrowser-tabs[orient="horizontal"] tab[alwaysOn] .tab-content {
         border-bottom: 3px solid rgba(255, 255, 255, 0.9)!important;
@@ -10002,37 +10001,8 @@ loadNTTstyle = function() {
 #vertical-tabs-newtab-button .toolbarbutton-text, #vertical-tabs #tabs-newtab-button .toolbarbutton-text {
     display: none!important;
 }
-/*fix bug https://bugzilla.mozilla.org/show_bug.cgi?id=1921959 */
-#vertical-tabs-newtab-button,
-#tabs-newtab-button{
-  width: 100%!important;
-  margin-inline: 0!important;
-}
-#tabbrowser-tabs[orient="vertical"][expanded] 
-/*if text enalbed 
-#tabs-newtab-button{
-  padding-left:  var(--tab-inline-padding, var(--tab-padding-inline))!important;
-}
-*/
 #tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button, #vertical-tabs-newtab-button {
-  &:hover {
-    background-color: transparent!important;
-    outline-color: transparent!important;
-  }
-}
-#tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button:hover::before, #vertical-tabs-newtab-button:hover::before {
-    background-color: var(--tab-background-color-hover);
-    outline-color: var(--tab-hover-outline-color);
-}
-#tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button::before, #vertical-tabs-newtab-button::before {
-  content:"";
-  position: absolute;
-  display: block;
-  width: calc (100% - var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)));
-  height:var(--tab-min-height);
-  left: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin));
-  right: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin));
-  border-radius: var(--tab-border-radius);
+  border-radius: var(--tab-border-radius-forced)!important;
 }
 /* Audio playing icon enlarge */
 .tab-audio-button {
@@ -10783,25 +10753,9 @@ tab[pending]:not([nestTab],[pinned]) {
   opacity: 0.8!important;
   font-style: italic!important;
 }
-
 tab[pending]:not([nestTab],[pinned]) .tab-icon-image {
   opacity: 1!important;
   filter: grayscale(0.3) brightness(0.8)!important;
-}
-@media -moz-pref("browser.nova.enabled") {
-  /* Fix Firefox bug https://bugzilla.mozilla.org/show_bug.cgi?id=2053433 */
-  #browser:has(#sidebar-container:not([sidebar-positionend])){
-    padding-left:0!important;
-  }
-  #sidebar-container:not([sidebar-positionend]){
-    border-left-width:0!important;
-  }
-  #browser:has(#sidebar-container[sidebar-positionend]){
-    padding-right:0!important;
-  }
-  #sidebar-container[sidebar-positionend]{
-    border-right-width:0!important;
-  }
 }
 
 /*Set icon popup*/
