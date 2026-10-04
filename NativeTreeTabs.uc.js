@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.3.6.4
+// @version        0.3.6.5
 // ==/UserScript==
 const isTab = element => !!(element != null && element.tagName == "tab");
 const moveChildren = true;
@@ -128,6 +128,8 @@ window.nativeTreeTabs = {
     }
     Services.prefs.addObserver("treeTabs.enabled", this);
 
+    this.initPreferences();
+
     let defPanel;
     if (this.tabPanels.length == 0)
       defPanel = this.addDefaultPanel();
@@ -140,7 +142,6 @@ window.nativeTreeTabs = {
     let nestTabElements = addNestTabsInTabContextMenu();
     this.domElements.push(...nestTabElements);
 
-    this.initPreferences();
 
     //Check if tabs existed before initialization
     gBrowser.tabs.forEach(this.attachTabListeners, this);
@@ -4098,10 +4099,13 @@ window.nativeTreeTabs = {
   },
 
   addDefaultPanel: function() {
+    let label = getPref("treeTabs.defaultPanelName");
+    if(label == null)
+      label = "Default Panel";
     let panel0 = {
       "id": "0",
       "count": 0,
-      "label": getPref("treeTabs.defaultPanelName"),
+      "label": label,
       "selectedTab": null,
       "previousSelectedTab": new Array()
     };
