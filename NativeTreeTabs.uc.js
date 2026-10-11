@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.0.1
+// @version        0.4.0.2
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -823,7 +823,9 @@
     },
 
     tabDragEnd: function(aEvent) {
+
       let aTab = aEvent.target;
+
       let rect = aTab.getBoundingClientRect().top;
 
       setTimeout(() => {
@@ -1267,13 +1269,19 @@
         removeSkipNextMoveCheck(aTab);
         return;
       }
+
+      let telemetrySource = (aEvent.detail.metricsContext) ? aEvent.detail.metricsContext.telemetrySource : aEvent.detail.telemetrySource;
+
       //for pinned tabs only fix the Panel overstep (only possible with context meny +> move tab to start/end)
       if (aTab.pinned) {
-        let panelId = aTab.getAttribute("panel-id");
-        if (panelId) {
-          let dir = (prevPosition > newPosition) ? 1 : -1;
-          if (correctPinnedTabLocationAccordingToPanelId(aTab, panelId, dir)) {
-            debugMsg("illegal_move_3_pinned");
+        if (telemetrySource != "drag") {
+          let panelId = aTab.getAttribute("panel-id");
+          if (panelId) {
+            let dir = (prevPosition > newPosition) ? 1 : -1;
+            setTimeout(() => {
+              if (correctPinnedTabLocationAccordingToPanelId(aTab, panelId, dir))
+                debugMsg("illegal_move_3_pinned");
+            }, 1);
           }
         }
         return;
@@ -1285,7 +1293,6 @@
         aTab = aTab.splitview;
       }
 
-      let telemetrySource = (aEvent.detail.metricsContext) ? aEvent.detail.metricsContext.telemetrySource : aEvent.detail.telemetrySource;
       let forceMultiselected = false;
       //Multiple selected case
       if (multiSelected(aTab)) {
@@ -3927,8 +3934,8 @@
                   popup.removeEventListener("mouseover", addHideOnMouseOut);
                   popup.removeEventListener("mouseleave", hidePreviewPopup);
                 });
-                nativeTreeTabs.originalPreviewPanelActivate.apply(this, arguments);
               }
+              return;
             }
             //bugfix of og firefox (tries to show preview with documentHeight:0 )
             //useful for nest tabs that are empty
@@ -6064,23 +6071,23 @@
     }
     return true;
   }
-  //Tab Panels corrections
 
-  function correctTabLocationAccordingToPanelId(xTab, xTabPanelId, dir = -1) {
-    if (xTab.pinned)
-      return correctPinnedTabLocationAccordingToPanelId(xTab, xTabPanelId, dir);
+  //Tab Panels corrections
+  function correctTabLocationAccordingToPanelId(aTab, aTabPanelId, dir = -1) {
+    if (aTab.pinned)
+      return correctPinnedTabLocationAccordingToPanelId(aTab, aTabPanelId, dir);
     //first tab of a Panel here or a wrong one
     let correction = false;
-    let possiblePanelTab = window.gBrowser.tabContainer.findNextTab(xTab, {
+    let possiblePanelTab = window.gBrowser.tabContainer.findNextTab(aTab, {
       direction: dir,
       wrap: false,
-      filter: tab => tab.getAttribute("panel-id") === xTabPanelId && !tab.pinned,
+      filter: tab => tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
     });
     if (possiblePanelTab) {
       let moveFunction = (dir == -1) ? nativeTreeTabs.moveTabAfter : nativeTreeTabs.moveTabBefore;
       correction = true;
-      if (xTab.group) {
-        let tabToMoves = xTab.group;
+      if (aTab.group) {
+        let tabToMoves = aTab.group;
         tabToMoves.tabs.forEach(function(mTab) {
           skipNextMoveCheck(mTab);
         }, this);
@@ -6089,28 +6096,34 @@
           removeSkipNextMoveCheck(mTab);
         }, this);
       } else {
-        skipNextMoveCheck(xTab);
-        moveFunction.call(this, xTab, possiblePanelTab);
-        removeSkipNextMoveCheck(xTab);
+        skipNextMoveCheck(aTab);
+        moveFunction.call(this, aTab, possiblePanelTab);
+        removeSkipNextMoveCheck(aTab);
       }
     }
     return correction;
   }
 
-  function correctPinnedTabLocationAccordingToPanelId(xTab, xTabPanelId, dir = -1) {
-    //first of a Panel here or a wrong one
+  function correctPinnedTabLocationAccordingToPanelId(aTab, aTabPanelId, dir = -1) {
     let correction = false;
-    let possiblePanelTab = window.gBrowser.tabContainer.findNextTab(xTab, {
+    let getTabToCheck = (dir == 1) ? getNextTab : getPreviousTab;
+    let tabTocheck = getTabToCheck.call(this, aTab);
+    //no correction needed
+    if (tabTocheck == null || (tabTocheck.pinned && tabTocheck.getAttribute("panel-id") == aTabPanelId)) {
+      return correction;
+    }
+
+    let possiblePanelTab = window.gBrowser.tabContainer.findNextTab(aTab, {
       direction: dir,
       wrap: false,
-      filter: tab => tab.getAttribute("panel-id") === xTabPanelId && tab.pinned,
+      filter: tab => tab.getAttribute("panel-id") === aTabPanelId && tab.pinned,
     });
     if (possiblePanelTab) {
       let moveFunction = (dir == -1) ? nativeTreeTabs.moveTabAfter : nativeTreeTabs.moveTabBefore;
       correction = true;
-      skipNextMoveCheck(xTab);
-      moveFunction.call(this, xTab, possiblePanelTab);
-      removeSkipNextMoveCheck(xTab);
+      skipNextMoveCheck(aTab);
+      moveFunction.call(this, aTab, possiblePanelTab);
+      removeSkipNextMoveCheck(aTab);
     }
     return correction;
   }
@@ -8791,7 +8804,7 @@
 
       // Check if the script exists in the chrome folder
       // or chrome/JS folder, if not return
-      if (!scriptInChrome.exists() && scriptInChromeJs==null) {
+      if (!scriptInChrome.exists() && scriptInChromeJs == null) {
         setUpdateStatus("error", SCRIPT_FILENAME + " not found on local machine.");
         return;
       }
@@ -11034,6 +11047,11 @@
     else
       closeButtonPadding = 0;
 
+    //FF160 fix dragging
+    const currentBrowserVersion = (AppConstants.MOZ_APP_NAME == "firefox") ? AppConstants.MOZ_APP_VERSION : Services.appinfo.version;
+    const headerHeight = (parseInt(currentBrowserVersion, 10) >= 160) ? document.getElementById("NTT-header")?.getBoundingClientRect().height || 34 : 0;
+
+
     let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
       Ci.nsIStyleSheetService
     );
@@ -11223,6 +11241,12 @@
     #tabbrowser-arrowscrollbox[orient="vertical"] > #tabbrowser-arrowscrollbox-periphery > #tabs-newtab-button, #vertical-tabs-newtab-button {
       border-radius: var(--tab-border-radius-forced)!important;
     }
+
+    /* FF 160+ fix */
+    .tabbrowser-tab[dragtarget]{
+      margin-top:${headerHeight}px!important;
+    }
+
     /* Audio playing icon enlarge */
     .tab-audio-button {
         transform: scale(1.132);
