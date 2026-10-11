@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.0.0
+// @version        0.4.0.1
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -1499,6 +1499,21 @@
       }
       let aTab = aEvent.target.closest(".tabbrowser-tab");
       if (!aTab) return;
+      if (aEvent.target.closest(".tab-icon-stack") && SidebarController._sidebarMain.expanded) {
+        //Makes favicon/twisty click to not select tab
+        // (if not ancestor)
+        let nextTab = getNextTab(aTab);
+        if (aTab.splitview) {
+          if (aTab.splitview.firstChild != aTab)
+            return;
+          nextTab = getNextTab(aTab.splitview);
+        }
+        if (nextTab && getTreeDepth(nextTab) > getTreeDepth(aTab) && !checkIfIsAncestor(gBrowser.selectedTab, aTab)) {
+          // aEvent.preventDefault();
+          aEvent.stopPropagation();
+          return;
+        }
+      }
       if (aTab.hasAttribute("nestTab")) {
         //make nest tabs unselectable 
         function protectSelection() {
@@ -1536,21 +1551,6 @@
         });
         return;
       } else {
-        if (aEvent.target.closest(".tab-icon-stack") && SidebarController._sidebarMain.expanded) {
-          //Makes favicon/twisty click to not select tab
-          // (if not ancestor)
-          let nextTab = getNextTab(aTab);
-          if (aTab.splitview) {
-            if (aTab.splitview.firstChild != aTab)
-              return;
-            nextTab = getNextTab(aTab.splitview);
-          }
-          if (nextTab && getTreeDepth(nextTab) > getTreeDepth(aTab) && !checkIfIsAncestor(gBrowser.selectedTab, aTab)) {
-            // aEvent.preventDefault();
-            aEvent.stopPropagation();
-            return;
-          }
-        }
         this.clickedActiveTab = aTab && aTab.selected ? aTab : null;
       }
     },
@@ -8767,19 +8767,31 @@
       // (if the file is renamed or in unknown location
       //  the update won't happen)
       const chromeDir = FileUtils.getDir("UChrm", []); // profile/chrome/
-      // const scriptPath = PathUtils.join(chromeDir.path, "writeFileTest.uc.js");
-      const chromeJsDir = chromeDir.clone();
-      chromeJsDir.append("js");
 
       const scriptInChrome = chromeDir.clone();
       scriptInChrome.append(SCRIPT_FILENAME);
 
-      const scriptInChromeJs = chromeJsDir.clone();
-      scriptInChromeJs.append(SCRIPT_FILENAME);
+      // Try every possible casing of the "js" folder
+      // Linux support
+      const jsVariants = ["JS", "js", "Js", "jS"];
+      let scriptInChromeJs;
+
+      for (const name of jsVariants) {
+        const dir = chromeDir.clone();
+        dir.append(name);
+        if (dir.exists() && dir.isDirectory()) {
+          const candidate = dir.clone();
+          candidate.append(SCRIPT_FILENAME);
+          if (candidate.exists()) {
+            scriptInChromeJs = candidate;
+            break;
+          }
+        }
+      }
 
       // Check if the script exists in the chrome folder
-      // or chrome/js folder, if not return
-      if (!scriptInChrome.exists() && !scriptInChromeJs.exists()) {
+      // or chrome/JS folder, if not return
+      if (!scriptInChrome.exists() && scriptInChromeJs==null) {
         setUpdateStatus("error", SCRIPT_FILENAME + " not found on local machine.");
         return;
       }
@@ -8802,7 +8814,6 @@
         scriptURL = `https://raw.githubusercontent.com/${REPO}/main/${SCRIPT_FILENAME}`;
         sigURL = scriptURL;
       }
-      console.log(scriptURL);
 
       // Fetch script file + signature
       const [remoteScript, signatureArmored] = await Promise.all([
