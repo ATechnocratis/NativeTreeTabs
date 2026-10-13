@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.0.2
+// @version        0.4.0.3
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -1561,6 +1561,7 @@
         this.clickedActiveTab = aTab && aTab.selected ? aTab : null;
       }
     },
+
     clearHoverTabs: function() {
       if (this.hoverTabs.length > 0) {
         this.hoverTabs.forEach((aTab) => {
@@ -1720,7 +1721,7 @@
       }
 
       //Ignore clicks on buttons
-      if (aEvent.target.closest(".tab-audio-button, .tab-close-button, .tab-icon-overlay")) {
+      if (aEvent.target.closest(".tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-icon-stack")) {
         return;
       }
 
@@ -1879,7 +1880,7 @@
     hiddenSelected: function(aTab) {
       //Find twisted root and unravel it
       let rootId = aTab.getAttribute("hidden-child-rootID");
-      previousTab = this.tabsIds.get(rootId);
+      let previousTab = this.tabsIds.get(rootId);
       if (previousTab != null) {
         this.toggleTwist(previousTab);
       } else {
@@ -6464,7 +6465,7 @@
     }
     menupopup._stayOpen = true;
     let addNewButon = menupopup.querySelector(".add-panel-button");
-    let input = createInput(target, {
+    let input = createInput(addNewButon, {
       replace: false,
       value: '',
       placeholder: "Enter name...",
@@ -7378,7 +7379,8 @@
       window.nativeTreeTabs.tabPanelUnloadAllExpect(panelContext.panel);
     });
     let contextMenuitemOpenNewPanel = addContextItem('Open a new Panel', (aEvent) => {
-      let newPanel = window.nativeTreeTabs.tabPanelOpen(tabs, null, null, forceShow);
+      let forceShow;
+      let newPanel = window.nativeTreeTabs.tabPanelOpen(null, null, null, forceShow = true);
       gBrowser.clearMultiSelectedTabs();
       panelNameRightClick();
       nativeTreeTabs.setIconAndColorPopup.initPanelWithIcon(newPanel);
