@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.0.3
+// @version        0.4.0.4
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -2748,12 +2748,12 @@
       this.observeTopic("treeTabs.style.tabLeftRightPadding");
       this.observeTopic("treeTabs.style.tabIconStart");
       this.observeTopic("treeTabs.style.pinnedTabWidth");
+      this.observeTopic("treeTabs.style.childCounterSize");
       this.observeTopic("treeTabs.style.collapsedChildrenCounter", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customText", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customBackground", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.addColorTabContext", this.addColorTabContext, this.addColorTabContext.value, isBoolean, true);
-
       this.observeTopic("treeTabs.style.customGroups", null, 1, isIntegerValueCheck, {
         minValue: 0,
         maxValue: 5,
@@ -2761,7 +2761,7 @@
       });
       this.observeTopic("treeTabs.style.twistyStyle", null, 0, isIntegerValueCheck, {
         minValue: 0,
-        maxValue: 2,
+        maxValue: 3,
         defaultValue: 0
       });
       this.observeTopic("treeTabs.style.contextLineStyle", null, 1, isIntegerValueCheck, {
@@ -5831,8 +5831,8 @@
       tabChildCount.remove();
       tabChildCount2.remove();
     } else {
-      tabChildCount.textContent = "(" + count + ")";
-      tabChildCount2.textContent = "(" + count + ")";
+      tabChildCount.textContent = count;
+      tabChildCount2.textContent = count;
     }
   }
 
@@ -7917,7 +7917,7 @@
 
     doneBtn.addEventListener("command", handleDone);
     cancelBtn.addEventListener("command", () => {
-      iconSetPopup.hidePopup()
+      iconSetPopup.hidePopup();
     });
 
     removeBtn.addEventListener("command", handleRemove);
@@ -8113,7 +8113,16 @@
         iconSetPopup.openPopup(anchor, "topright topleft", 0, 0, false, false);
       else
         iconSetPopup.openPopup(anchor, "after_start", 0, 0, false, false);
+
+      window.addEventListener("keypress", doneOnEnter);
+      iconSetPopup.addEventListener("popuphiding", (aEvent) => {
+        window.removeEventListener("keypress", doneOnEnter);
+      });
     };
+
+    function doneOnEnter(aEvent) {
+      if (aEvent.key === "Enter") handleDone();
+    }
 
     nativeTreeTabs.setIconAndColorPopup.initPanelWithIcon = function(newPanel) {
       nativeTreeTabs.setIconAndColorPopup.setRandomIcon(newPanel, "TabPanel");
@@ -10208,11 +10217,15 @@
         step: 1,
         max: 99
       }, "Pinned tabs min width:", extra);
+      createNumberInputBox("treeTabs.style.childCounterSize", {
+        min: 10.5,
+        step: 0.1,
+        max: 16
+      }, "Child counter size:", extra);
       createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
       let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
       createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
       createCheckBox("treeTabs.style.addColorTabContext", "Change Tab Color Context option", extra);
-
       createSelectBox("treeTabs.style.customGroups", "Tab Groups style", [{
         label: "Default",
         value: 0
@@ -10233,15 +10246,19 @@
         value: 5
     }], "number", extra);
       createSelectBox("treeTabs.style.twistyStyle", "Collapsed tree root tab style", [{
-        label: "1",
-        value: 0
+          label: "Left",
+          value: 0
     }, {
-        label: "2",
-        value: 1
+          label: "Left alt",
+          value: 3
+     },
+        {
+          label: "Right",
+          value: 1
     }, {
-        label: "3",
-        value: 2
-    }], "number", extra);
+          label: "Right alt",
+          value: 2
+    }, ], "number", extra);
       createSelectBox("treeTabs.style.contextLineStyle", "Container indicator style", [{
         label: "Default",
         value: 0
@@ -11038,6 +11055,8 @@
     let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", "2");
     let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
     let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
+    let childCounterSize = nativeTreeTabs.checkOrSetPref("treeTabs.style.childCounterSize", 13);
+
 
     let closeButtonPadding;
     if (tabHeight > 20)
@@ -11072,6 +11091,7 @@
         --tab-icon-start: ${tabIconStart}px;
         --tab-pinned-expanded-background-width: ${pinnedTabWidth}px!important;
         --tab-background-width-pinned-expanded: ${pinnedTabWidth}px!important;
+        --tab-child-counter-size:${childCounterSize}px!important;
     }
     #tabbrowser-tabs tab-split-view-wrapper {
         --tab-margin-inline-inner:  ${tabLeftRightPadding}px!important;
@@ -11369,7 +11389,8 @@
     }
     }
 
-    @media -moz-pref("treeTabs.style.twistyStyle",0) {
+    @media -moz-pref("treeTabs.style.twistyStyle",0),
+    -moz-pref("treeTabs.style.twistyStyle",3) {
     #tabbrowser-arrowscrollbox[orient="vertical"] tab[twisted-root]:not([hidden-child],[tabPanel-hidden],[nestTab]):hover{
       .tab-icon-image {
          content: url("chrome://global/skin/icons/arrow-right-12.svg")!important;
@@ -11735,14 +11756,54 @@
     .popup-main-panel{
       max-width: var(--menuitem-max-width);
     }
+    @media not -moz-pref("treeTabs.style.twistyStyle",3) {
+      .tab-child-count,.tab-child-count2 {
+         --p: 0px!important;
+      }
+      .tab-child-count:before {
+          content: "(";
+          display: inline;
+      }
+      .tab-child-count:after {
+          content: ")"!important;
+          display: inline;
+      }
+    }
+    .tab-child-count2:before {
+        content: "(";
+        display: inline;
+    }
+    .tab-child-count2:after {
+        content: ")"!important;
+        display: inline;
+    }
+    #tabbrowser-tabs[orient="vertical"][expanded]{
+      tab[twisted-root]:not(:hover) .tab-icon-image {
+          opacity: 0.95;
+      }
+      tab:not([hidden-child], [tabPanel-hidden]) .tab-child-count {
+          --f: calc( var(--tab-child-counter-size) + 2px - 11px);
+          --p: 3px;
+          font-size: calc( 8px + var(--f))!important;
+          margin-left: calc( 11px + var(--f)/2 + var(--p))!important;
+          margin-top: calc( 9px - var(--f))!important;
+      }
+    }
+    @media -moz-pref("treeTabs.style.twistyStyle",1),
+    -moz-pref("treeTabs.style.twistyStyle",2) {
+      .tab-child-count2 {
+          --f: calc( var(--tab-child-counter-size) + 2px - 11px);
+          font-size: calc( 11px + var(--f)/1.5 )!important;
+      }
+    }
     tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
       margin-left: -12px !important;
       margin-top: 7px;
       position: absolute;
-      font-size: 10px;
     }
     #tabbrowser-tabs[orient="vertical"]:not([expanded]){
      tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
+        font-size: 10px;
         padding-bottom:0!important;
       }
     }
@@ -11751,7 +11812,7 @@
       display:none!important;
     }
     tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count2{
-      padding-bottom:2px;
+      padding-bottom:unset;
     }
     #tabbrowser-tabs[orient="vertical"]:not([expanded]){
      tab .tab-child-count2{
@@ -11784,17 +11845,20 @@
     }
     #tabbrowser-tabs[orient="vertical"]:not([expanded])
       tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
-        margin-left: 12px !important;
+        --p:3px;
+        margin-left:calc( 12px + var(--p))!important;
         margin-top: 7px;
     }
 
-    @media -moz-pref("treeTabs.style.twistyStyle",0) {
+    @media -moz-pref("treeTabs.style.twistyStyle",0),
+    -moz-pref("treeTabs.style.twistyStyle",3) {
       .tab-child-count2{
         font-size:0;
         right:0;
         position: absolute!important;
       }
       .tab-child-count2::before{
+        --p: 31px;
         display:none!important;
         content: url("chrome://global/skin/icons/resizer.svg")!important;
         transform: scaleX(1.4) scaleY(1)!important;
@@ -11804,7 +11868,7 @@
         min-height: 20px!important;
         display: block!important;
         margin-top: -1px!important;
-        margin-left: calc( ( -1 * var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)) ) - 18px )!important;
+        margin-left: calc( ( - 1 * var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)) ) - 18px )!important;
         fill: black!important;
         background: transparent!important;
         position: absolute!important;
@@ -11816,25 +11880,26 @@
       }
       #tabbrowser-tabs[orient="vertical"][expanded]
       tab:not([tab-note],[selected]):hover .tab-child-count2{
-        display:inherit!important;
+        display:inline-block!important;
       }
       tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
-        display:inherit!important;
-        margin-left: 12px !important;
+        display:inline-block!important;
+        margin-left:  margin-left: calc( 11px + var(--f)/2 + var(--p))!important;
         margin-top: 7px;
       }
     }
 
     @media -moz-pref("treeTabs.style.twistyStyle",2) {
        tab-split-view-wrapper tab:not([hidden-child],[tabPanel-hidden]) .tab-child-count{
-        display:inherit!important;
+        display:inline-block!important;
         margin-left: 12px !important;
         margin-top: 7px;
       }
     }
 
     @media not -moz-pref("treeTabs.style.collapsedChildrenCounter") {
-      @media not -moz-pref("treeTabs.style.twistyStyle",0) {
+      @media -moz-pref("treeTabs.style.twistyStyle",1),
+      -moz-pref("treeTabs.style.twistyStyle",2) {
         .tab-child-count2{
             opacity:0;
             display:none!important;
