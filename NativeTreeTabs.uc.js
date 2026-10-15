@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.0.4
+// @version        0.4.1.0
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -17,7 +17,6 @@
 */
 
 (function() {
-
 /************************************************************/
 /*************       Main Object segment        *************/
 /************************************************************/
@@ -149,8 +148,8 @@
         if (version != null) {
           setPref("treeTabs.version", version);
         }
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       }
 
       this._debuggingMsg = (getPref("treeTabs.debuggingEnabled")) ? true : false;
@@ -180,7 +179,6 @@
 
       let nestTabElements = addNestTabsInTabContextMenu();
       this.domElements.push(...nestTabElements);
-
 
       //Check if tabs existed before initialization
       gBrowser.tabs.forEach(this.attachTabListeners, this);
@@ -229,6 +227,9 @@
       //add Always Display Tab functionality
       let [alwaysOnElements] = initAlwayDisplayTab();
       this.domElements.push(...alwaysOnElements);
+
+      //add media play/pause button on every tab
+      addMediaControl();
 
       //-------------------
       console.log("Native Tree Tabs loaded.");
@@ -479,14 +480,14 @@
       this.shortcuts.push(togglAlwaysOnTab);
     },
 
-    keyboardListener: function(e) {
+    keyboardListener: function(aEvent) {
 
       const modsAndKey = {
-        ctrl: e.ctrlKey,
-        alt: e.altKey,
-        shift: e.shiftKey,
-        meta: e.metaKey,
-        key: e.keyCode
+        ctrl: aEvent.ctrlKey,
+        alt: aEvent.altKey,
+        shift: aEvent.shiftKey,
+        meta: aEvent.metaKey,
+        key: aEvent.keyCode
       };
 
       for (const shortcut of this.shortcuts) {
@@ -496,8 +497,8 @@
           shortcut.keys.alt === modsAndKey.alt &&
           shortcut.keys.shift === modsAndKey.shift &&
           shortcut.keys.meta === modsAndKey.meta) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
+          aEvent.preventDefault();
+          aEvent.stopImmediatePropagation();
           shortcut.action.call(this, shortcut.arguments);
           break;
         }
@@ -793,10 +794,10 @@
 
         if (aTab.splitview) {
           aTab.splitview.setAttribute("dragStartPos", getPosition(aTab));
-          aTab.splitview.setAttribute("dragStartY", event.clientY);
+          aTab.splitview.setAttribute("dragStartY", aEvent.clientY);
         } else
           aTab.setAttribute("dragStartPos", getPosition(aTab));
-        aTab.setAttribute("dragStartY", event.clientY);
+        aTab.setAttribute("dragStartY", aEvent.clientY);
 
         if (aTab.hasAttribute("nestTab")) {
           if (!aTab.hasAttribute("twisted-root")) {
@@ -850,15 +851,18 @@
       if (previousTab && previousTab.splitViewId) {
         previousTab = previousTab.tabs[0];
       }
-
-      let nextTab = getNextTab(aTab);
       let oldDepth = getTreeDepth(aTab);
+
       while (previousTab && (isHidden(previousTab) || multiSelected(previousTab))) {
         previousTab = getPreviousTab(previousTab);
       }
+
+      let nextTab = getNextTab(aTab);
+
       while (nextTab && (isHidden(nextTab) || multiSelected(nextTab))) {
         nextTab = getNextTab(nextTab);
       }
+
       if (previousTab) {
         let rectPrv = previousTab.getBoundingClientRect().top;
         //Stop case where wrong previousTab is set
@@ -1128,7 +1132,7 @@
         let nextInPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
           direction: 1,
           wrap: false,
-          filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+          filter: tab => tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
         });
         if (nextInPanel) {
           if (group) {
@@ -1156,7 +1160,7 @@
         let previousnPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
           direction: -1,
           wrap: false,
-          filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+          filter: tab => tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
         });
         if (previousnPanel) {
           if (group) {
@@ -1543,17 +1547,17 @@
 
         let released = false;
 
-        const onMouseUp = () => {
+        const handleMouseUp = () => {
           if (released) {
             return;
           }
           released = true;
-          document.removeEventListener("mouseup", onMouseUp, {
+          document.removeEventListener("mouseup", handleMouseUp, {
             once: true
           });
           clearInterval(revertInterval);
         };
-        document.addEventListener("mouseup", onMouseUp, {
+        document.addEventListener("mouseup", handleMouseUp, {
           once: true
         });
         return;
@@ -1594,7 +1598,7 @@
       let prevDelta = 0;
       let ogout = true;
 
-      let handleMousemove = function(aEvent) {
+      let handleMouseMove = function(aEvent) {
         if (ogout) {
           nativeTreeTabs.getHoverTabsSorted().forEach((t) => {
             t.removeAttribute("multiselected");
@@ -1608,7 +1612,7 @@
         let aTab = aEvent.target.closest(".tabbrowser-tab");
         if (!aTab || aTab.pinned) {
           if (aEvent.target.closest("sidebar-main") == null) {
-            document.removeEventListener("mousemove", handleMousemove);
+            document.removeEventListener("mousemove", handleMouseMove);
           }
           return;
         }
@@ -1652,7 +1656,7 @@
       }
 
       let handleMouseUp = function(aEvent) {
-        document.removeEventListener("mousemove", handleMousemove);
+        document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleMouseUp, true);
         if (nativeTreeTabs.hoverTabs.length < 2) {
           nativeTreeTabs.clearHoverTabs();
@@ -1661,7 +1665,7 @@
         document.addEventListener("click", clearOnClick);
         previousOver = null;
       };
-      document.addEventListener("mousemove", handleMousemove);
+      document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp, true);
     },
 
@@ -1721,7 +1725,7 @@
       }
 
       //Ignore clicks on buttons
-      if (aEvent.target.closest(".tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-icon-stack")) {
+      if (aEvent.target.closest('.tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-note-icon,.tab-media-button, [role="button"]')) {
         return;
       }
 
@@ -1745,7 +1749,7 @@
         let nextInPanel = window.gBrowser.tabContainer.findNextTab(aTab, {
           direction: 1,
           wrap: false,
-          filter: tab => visibleOrInGroup(tab) && tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
+          filter: tab => tab.getAttribute("panel-id") === aTabPanelId && !tab.pinned,
         });
         if (nextInPanel) {
           skipNextMoveCheck(aTab);
@@ -1906,6 +1910,7 @@
         previousTab.removeAttribute("skipUntwist");
       }
     },
+
     toggleTwist: function(aTab, forced = false) {
       let nextTab;
       if (aTab.splitview) {
@@ -1923,6 +1928,12 @@
       let rootId = aTab.getAttribute("tree-id").toString();
       if (aTab.hasAttribute("twisted-root") && !forced) {
         unhide = true;
+        if (aTab.getAttribute("mediaPlaying") == "playingChild") {
+          aTab.removeAttribute("mediaPlaying");
+          if (typeof aTab.mediaChangeHandler == "function") {
+            aTab.mediaChangeHandler();
+          }
+        }
         aTab.removeAttribute("twisted-root");
         deleteCustomTabValue(aTab, "twisted-root");
       } else {
@@ -1945,6 +1956,9 @@
           }
           nextTab.setAttribute("hidden-child-rootID", rootId);
           setCustomTabValue(nextTab, "hidden-child-rootID", rootId);
+          if (nextTab.mediaChangeController != null && nextTab.mediaChangeController.isPlaying) {
+            aTab.setAttribute("mediaPlaying", "playingChild");
+          }
         }
         if (!nextTab.hasAttribute("nestTab"))
           count++;
@@ -1965,6 +1979,9 @@
               }
               nextTab.setAttribute("hidden-child-rootID", rootId);
               setCustomTabValue(nextTab, "hidden-child-rootID", rootId);
+              if (nextTab.mediaChangeController != null && nextTab.mediaChangeController.isPlaying) {
+                aTab.setAttribute("mediaPlaying", "playingChild");
+              }
             }
             count++;
             nextTab = getNextTab(nextTab);
@@ -1976,6 +1993,9 @@
             }
             if (!nextTab.hasAttribute("nestTab"))
               count++;
+            if (!unhide && nextTab.mediaChangeController != null && nextTab.mediaChangeController.isPlaying) {
+              aTab.setAttribute("mediaPlaying", "playingChild");
+            }
             nextTab = getNextTab(nextTab);
           }
         } else nextTab = getNextTab(nextTab);
@@ -1984,7 +2004,13 @@
     },
 
     nestClick: function(aEvent) {
+      //Ignore clicks on buttons
+      if (aEvent.target.closest('.tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-note-icon,.tab-media-button, [role="button"]')) {
+        return;
+      }
+
       let aTab = aEvent.target.closest('tab');
+
       if (aEvent.button == 0) {
         if (aEvent.ctrlKey || aEvent.shiftKey) {
           return;
@@ -2754,6 +2780,7 @@
       this.observeTopic("treeTabs.style.customBackground", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.addColorTabContext", this.addColorTabContext, this.addColorTabContext.value, isBoolean, true);
+
       this.observeTopic("treeTabs.style.customGroups", null, 1, isIntegerValueCheck, {
         minValue: 0,
         maxValue: 5,
@@ -2822,8 +2849,8 @@
           }
           //Always return the og return value
           return nativeTreeTabs.originalAddTab.call(this, uri, params, ...rest);
-        } catch (e) {
-          console.error(e);
+        } catch (error) {
+          console.error(error);
           return nativeTreeTabs.originalAddTab.apply(this, arguments);
         }
       }
@@ -2889,7 +2916,7 @@
             let foundTab = window.gBrowser.tabContainer.findNextTab(aTab, {
               direction: dir,
               wrap: false,
-              filter: tab => tabVisible(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+              filter: tab => tabVisibleNoNest(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
             });
             return foundTab;
           }
@@ -2918,7 +2945,7 @@
                     let depth = getTreeDepth(possibleSwitch);
                     if (depth <= activeDepth)
                       break;
-                    if (unloadedCheck(possibleSwitch) && !possibleSwitch.hasAttribute("nestTab") && tabVisible(possibleSwitch))
+                    if (unloadedCheck(possibleSwitch) && tabVisibleNoNest(possibleSwitch))
                       return possibleSwitch;
                     possibleSwitch = getNextTab(possibleSwitch);
                   }
@@ -2931,7 +2958,7 @@
                       let depth = getTreeDepth(possibleSwitch);
                       if (depth < activeDepth)
                         break;
-                      if (depth == activeDepth && unloadedCheck(possibleSwitch) && tabVisible(possibleSwitch))
+                      if (depth == activeDepth && unloadedCheck(possibleSwitch) && tabVisibleNoNest(possibleSwitch))
                         return possibleSwitch;
                       possibleSwitch = getPreviousTab(possibleSwitch)
                     }
@@ -2945,7 +2972,7 @@
                       let depth = getTreeDepth(possibleSwitch);
                       if (depth < activeDepth)
                         break;
-                      if (depth == activeDepth && unloadedCheck(possibleSwitch) && tabVisible(possibleSwitch))
+                      if (depth == activeDepth && unloadedCheck(possibleSwitch) && tabVisibleNoNest(possibleSwitch))
                         return possibleSwitch;
                       possibleSwitch = getNextTab(possibleSwitch);
                     }
@@ -2957,7 +2984,7 @@
                       if (possibleSwitch.hasAttribute("tabPanel-hidden"))
                         break;
                       let depth = getTreeDepth(possibleSwitch);
-                      if (depth < activeDepth && unloadedCheck(possibleSwitch) && tabVisible(possibleSwitch))
+                      if (depth < activeDepth && unloadedCheck(possibleSwitch) && tabVisibleNoNest(possibleSwitch))
                         return possibleSwitch;
                       if (depth < activeDepth)
                         break;
@@ -2989,7 +3016,7 @@
                     if (possibleSwitch.hasAttribute("tabPanel-hidden"))
                       break;
                     let depth = getTreeDepth(possibleSwitch);
-                    if (depth == 0 && unloadedCheck(possibleSwitch) && tabVisible(possibleSwitch))
+                    if (depth == 0 && unloadedCheck(possibleSwitch) && tabVisibleNoNest(possibleSwitch))
                       return possibleSwitch;
                     possibleSwitch = getPreviousTab(possibleSwitch)
                   }
@@ -2999,7 +3026,7 @@
                     if (possibleSwitch.hasAttribute("tabPanel-hidden"))
                       break;
                     let depth = getTreeDepth(possibleSwitch);
-                    if (depth == 0 && unloadedCheck(possibleSwitch) && tabVisible(possibleSwitch))
+                    if (depth == 0 && unloadedCheck(possibleSwitch) && tabVisibleNoNest(possibleSwitch))
                       return possibleSwitch;
                     possibleSwitch = getNextTab(possibleSwitch)
                   }
@@ -3505,14 +3532,14 @@
               nextTab = this.findNextTab(startTab, {
                 direction: aDir,
                 wrap: false,
-                filter: tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+                filter: tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
               });
             } else {
               // nextTab = (aDir == 1) ? (getNextTab(startTab) : getPreviousTab(startTab);
               nextTab = this.findNextTab(startTab, {
                 direction: aDir,
                 wrap: false,
-                filter: tab => tabVisible(tab) && unloadedCheck(tab),
+                filter: tab => tabVisibleNoNest(tab) && unloadedCheck(tab),
               });
             }
             let startTabPanelId = startTab.getAttribute("panel-id");
@@ -3526,13 +3553,13 @@
                 let possiblePin = this.findNextTab(startTab, {
                   direction: aDir,
                   wrap: false,
-                  filter: tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === startTabPanelId,
+                  filter: tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === startTabPanelId,
                 });
                 if (possiblePin == null) {
                   possiblePin = this.findNextTab(startTab, {
                     direction: aDir,
                     wrap: false,
-                    filter: tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === startTabPanelId,
+                    filter: tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === startTabPanelId,
                   });
                 }
                 if (possiblePin && possiblePin != startTab) {
@@ -3551,14 +3578,14 @@
                 let nextPanelTab;
                 nextPanelId = nativeTreeTabs.tabPanels[nextPanelIndex].id.toString();
                 if (aDir == 1) {
-                  nextPanelTab = this.allTabs.find(tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                  nextPanelTab = this.allTabs.find(tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
                   if (nextPanelTab == null) {
-                    nextPanelTab = this.allTabs.find(tab => visibleOrInGroup(tab) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                    nextPanelTab = this.allTabs.find(tab => visibleNoNestOrInGroup(tab) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
                   }
                 } else {
-                  nextPanelTab = this.allTabs.findLast(tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                  nextPanelTab = this.allTabs.findLast(tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
                   if (nextPanelTab == null) {
-                    nextPanelTab = this.allTabs.findLast(tab => visibleOrInGroup(tab) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
+                    nextPanelTab = this.allTabs.findLast(tab => visibleNoNestOrInGroup(tab) && unloadedCheck(tab) && tab.getAttribute("panel-id") === nextPanelId);
                   }
                 }
                 if (nextPanelTab && nextPanelTab != startTab) {
@@ -3588,21 +3615,21 @@
           let newTab = null;
           if (startTab && startTab.hidden) {
             if (aDir == 1) {
-              newTab = this.allTabs.find(tab => tabVisible(tab) && !tab.hasAttribute("tabPanel-hidden"));
+              newTab = this.allTabs.find(tab => tabVisibleNoNest(tab) && !tab.hasAttribute("tabPanel-hidden"));
             } else {
-              newTab = this.allTabs.findLast(tab => tabVisible(tab) && !tab.hasAttribute("tabPanel-hidden"));
+              newTab = this.allTabs.findLast(tab => tabVisibleNoNest(tab) && !tab.hasAttribute("tabPanel-hidden"));
             }
           } else {
             newTab = this.findNextTab(startTab, {
               direction: aDir,
               wrap: aWrap,
-              filter: tab => tabVisible(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+              filter: tab => tabVisibleNoNest(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
             });
             if (newTab == null) {
               newTab = this.findNextTab(startTab, {
                 direction: aDir,
                 wrap: true,
-                filter: tab => tabVisible(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
+                filter: tab => tabVisibleNoNest(tab) && unloadedCheck(tab) && !tab.hasAttribute("tabPanel-hidden"),
               });
             }
           }
@@ -3632,7 +3659,7 @@
             return aTab.successor;
           }
 
-          if (aTab && aTab.owner != null && tabVisible(aTab.owner) &&
+          if (aTab && aTab.owner != null && tabVisibleNoNest(aTab.owner) &&
             !excludeTabs.has(aTab.owner) &&
             Services.prefs.getBoolPref("browser.tabs.selectOwnerOnClose")
           ) {
@@ -3719,10 +3746,10 @@
       //Close pinned tab from keyboard selects next in Panel if possible
       // OG function selects next tab
       this.originalCloseTabOrWindow = BrowserCommands.closeTabOrWindow;
-      BrowserCommands.closeTabOrWindow = function(event) {
+      BrowserCommands.closeTabOrWindow = function(aEvent) {
         try {
-          if (event &&
-            (event.ctrlKey || event.metaKey || event.altKey) &&
+          if (aEvent &&
+            (aEvent.ctrlKey || aEvent.metaKey || aEvent.altKey) &&
             gBrowser.selectedTab.pinned
           ) {
             gBrowser.tabContainer.advanceSelectedTab(1, true);
@@ -3884,12 +3911,12 @@
                 while (nextTab && getTreeDepth(nextTab) > rootDepth) {
                   if (!nextTab.hasAttribute("nestTab")) {
                     let item = document.createXULElement("toolbarbutton");
-                    let img = nextTab.querySelector(".tab-icon-image");
-                    if (img) {
-                      img = img.src;
+                    let image = nextTab.querySelector(".tab-icon-image");
+                    if (image) {
+                      image = image.src;
                     }
                     let itemTab = nextTab;
-                    item.setAttribute("image", img);
+                    item.setAttribute("image", image);
                     item.setAttribute("label", nextTab.label);
                     item.setAttribute("class", "tab-preview-item subviewbutton subviewbutton-iconic group-preview-button");
                     item.addEventListener("click", (aEvent) => {
@@ -3917,8 +3944,8 @@
                   popup.addEventListener("mouseleave", hidePreviewPopup);
                 }
 
-                function mousoverElement(e) {
-                  let t = e.target;
+                function mousoverElement(aEvent) {
+                  let t = aEvent.target;
                   let popupTarget = t.closest("panel");
                   let tab = t.closest("tab");
                   let splitter = t.closest("splitter");
@@ -4269,8 +4296,8 @@
         let tabBackground = aTab.querySelector(".tab-background");
         if (!tabBackground) return;
         tabBackground.style.setProperty("background-color", color);
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       }
     },
 
@@ -4301,8 +4328,8 @@
 
         tabIconImage.style.setProperty("content", `url("chrome://browser/content/profiles/assets/48_${iconContent}.svg")`);
         tabIconImage.style.setProperty("stroke", iconColor);
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       }
     },
 
@@ -4328,8 +4355,8 @@
         }
         if (panel === this.selectedPanel)
           this.updatePanelHeaderIcon(panel);
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       }
     },
 
@@ -4752,7 +4779,7 @@
       gBrowser.tabs.forEach(function(aTab) {
         if (aTab.hasAttribute("panel-id")) {
           if (aTab.getAttribute("panel-id") === panelId) {
-            if (panelTopTab == null && ((tabVisible(aTab) || inNoCollapsedGroup(aTab)) && unloadedCheck(aTab))) {
+            if (panelTopTab == null && ((tabVisibleNoNest(aTab) || inNoCollapsedGroup(aTab)) && unloadedCheck(aTab))) {
               panelTopTab = aTab;
             }
             unHideTab(aTab);
@@ -4772,20 +4799,20 @@
         //Show the last selected tab of the Panel if it exists
         // else show the first (top) tab of the Panel
         let pSTab = panel.selectedTab;
-        if (pSTab == null || pSTab.getAttribute("panel-id") != panel.id || !window.gBrowser.tabs.includes(pSTab) || !(tabVisible(pSTab) || inNoCollapsedGroup(pSTab))) {
-          while (panel.previousSelectedTab.length > 0 && (pSTab == null || (!window.gBrowser.tabs.includes(pSTab) || pSTab.getAttribute("panel-id") != panel.id || !(tabVisible(pSTab) || inNoCollapsedGroup(pSTab))))) {
+        if (pSTab == null || pSTab.getAttribute("panel-id") != panel.id || !window.gBrowser.tabs.includes(pSTab) || !(tabVisibleNoNest(pSTab) || inNoCollapsedGroup(pSTab))) {
+          while (panel.previousSelectedTab.length > 0 && (pSTab == null || (!window.gBrowser.tabs.includes(pSTab) || pSTab.getAttribute("panel-id") != panel.id || !(tabVisibleNoNest(pSTab) || inNoCollapsedGroup(pSTab))))) {
             pSTab = panel.previousSelectedTab.pop();
           }
         }
-        if (pSTab && window.gBrowser.tabs.includes(pSTab) && (tabVisible(pSTab) || inNoCollapsedGroup(pSTab)) && unloadedCheck(pSTab) &&
+        if (pSTab && window.gBrowser.tabs.includes(pSTab) && (tabVisibleNoNest(pSTab) || inNoCollapsedGroup(pSTab)) && unloadedCheck(pSTab) &&
           pSTab.getAttribute("panel-id") === panelId) {
           window.gBrowser.selectedTab = pSTab;
         } else if (panelTopTab != null) {
           window.gBrowser.selectedTab = panelTopTab;
         } else {
-          let findTab = window.gBrowser.tabContainer.allTabs.find(tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === panelId);
+          let findTab = window.gBrowser.tabContainer.allTabs.find(tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && unloadedCheck(tab) && tab.getAttribute("panel-id") === panelId);
           if (findTab == null) {
-            findTab = window.gBrowser.tabContainer.allTabs.find(tab => (tabVisible(tab) || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === panelId);
+            findTab = window.gBrowser.tabContainer.allTabs.find(tab => (tabVisibleNoNest(tab) || inNoCollapsedGroup(tab)) && tab.getAttribute("panel-id") === panelId);
           }
           if (findTab == null) {
             findTab = window.gBrowser.tabContainer.allTabs.find(tab => tab.getAttribute("panel-id") === panelId && !tab.hasAttribute("nestTab"));
@@ -4896,7 +4923,7 @@
           else if (noMove == -1)
             nativeTreeTabs.moveTabsToStart(tabsToMove, previousTab);
         } catch (error) {
-          console.error(error)
+          console.error(error);
         }
         this.afterTabsForPanelMove(tabsToMove, panel, group);
         if (saveSelectedTab != null) {
@@ -5732,6 +5759,14 @@
     return (aTab.tabs[0].multiselected || aTab.tabs[1].multiselected);
   }
 
+  function getTwitstedRoot(aTab) {
+    if (aTab.splitViewId == null) {
+      if (aTab.hasAttribute("hidden-child-rootID"))
+        return aTab.getAttribute("hidden-child-rootID");
+    } else return getTwitstedRoot(aTab.tabs[0]);
+    return null;
+  }
+
   function isHiddenChild(aTab) {
     if (aTab.splitViewId == null) {
       if (aTab.hasAttribute("hidden-child"))
@@ -5754,14 +5789,26 @@
     return false;
   }
 
+  function visibleNoNestOrInGroup(aTab) {
+    if (tabVisibleNoNest(aTab) || aTab.group)
+      return true;
+    return false;
+  }
+
   function visibleOrInGroup(aTab) {
     if (tabVisible(aTab) || aTab.group)
       return true;
     return false;
   }
 
+  function tabVisibleNoNest(aTab) {
+    if (aTab.hasAttribute("nestTab"))
+      return false;
+    return tabVisible(aTab);
+  }
+
   function tabVisible(aTab) {
-    if ((aTab.hasAttribute("hidden-child") && nativeTreeTabs.hopOverCollapsedTabs.value) || aTab.hasAttribute("nestTab")) {
+    if (aTab.hasAttribute("hidden-child") && nativeTreeTabs.hopOverCollapsedTabs.value) {
       return false;
     }
     return aTab.visible;
@@ -5773,6 +5820,28 @@
     if ((!aTab.linkedPanel && nativeTreeTabs.hopOverCollapsedTabsIncludeRestoredTabs.value) || aTab.hasAttribute("discarded"))
       return false;
     return true;
+  }
+
+  function getPossibleTwistedRoot(aTab) {
+    let twistedRoot;
+    let twistedRootId = getTwitstedRoot(aTab);
+    if (twistedRootId != null) {
+      twistedRoot = window.nativeTreeTabs.tabsIds.get(twistedRootId);
+    }
+    return twistedRoot;
+  }
+
+  function getAllTwistedRoots(aTab) {
+    let twistedRoots = new Array();
+    let root = aTab;
+    while (true) {
+      root = getPossibleTwistedRoot(root);
+      if (root != null) {
+        twistedRoots.push(root);
+      } else {
+        return twistedRoots;
+      }
+    }
   }
 
   function increaseChildCount(aTab) {
@@ -6183,8 +6252,8 @@
       } else if (typeof value == "boolean") {
         prefBranch.setBoolPref(prefName, value);
       }
-    } catch (e) {
-      console.error("pref", e);
+    } catch (error) {
+      console.error("pref", error);
     }
   }
 
@@ -6210,8 +6279,8 @@
     try {
       var prefBranch = getPrefBranch();
       prefBranch.clearUserPref(prefName);
-    } catch (e) {
-      console.error("pref", e);
+    } catch (error) {
+      console.error("pref", error);
     }
   }
 
@@ -6841,18 +6910,18 @@
       buttonBox.setAttribute("pack", "center");
       buttonBox.style.padding = "8px 0 12px";
 
-      let doneBtn = document.createXULElement("button");
-      doneBtn.setAttribute("label", "Done");
-      doneBtn.style.minWidth = "90px";
-      doneBtn.style.minHeight = "30px";
+      let doneButton = document.createXULElement("button");
+      doneButton.setAttribute("label", "Done");
+      doneButton.style.minWidth = "90px";
+      doneButton.style.minHeight = "30px";
 
-      let cancelBtn = document.createXULElement("button");
-      cancelBtn.setAttribute("label", "Cancel");
-      cancelBtn.style.minWidth = "90px";
-      doneBtn.style.minHeight = "30px";
+      let cancelButton = document.createXULElement("button");
+      cancelButton.setAttribute("label", "Cancel");
+      cancelButton.style.minWidth = "90px";
+      doneButton.style.minHeight = "30px";
 
-      buttonBox.appendChild(doneBtn);
-      buttonBox.appendChild(cancelBtn);
+      buttonBox.appendChild(doneButton);
+      buttonBox.appendChild(cancelButton);
       menuMainDiv.appendChild(buttonBox);
 
       function handleDone() {
@@ -6867,12 +6936,12 @@
         popup.hidePopup();
       }
 
-      doneBtn.addEventListener("command", handleDone);
-      cancelBtn.addEventListener("command", handleCancel);
+      doneButton.addEventListener("command", handleDone);
+      cancelButton.addEventListener("command", handleCancel);
 
-      textbox.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") handleDone();
-        if (e.key === "Escape") handleCancel();
+      textbox.addEventListener("keypress", (aEvent) => {
+        if (aEvent.key === "Enter") handleDone();
+        if (aEvent.key === "Escape") handleCancel();
       });
 
       return popup;
@@ -6927,7 +6996,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.includes(("#" + nestContext.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.splice(0, 0, ("#" + nestContext.id));
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
 
     //Set Color option
     let setColorNestContext = document.createXULElement("menuitem");
@@ -6942,7 +7013,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.includes(("#" + setColorNestContext.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.unshift("#" + setColorNestContext.id);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
 
 
     //Set Color option for normal Tabs
@@ -6959,7 +7032,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[3].items.includes(("#" + setColorTabContext.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[3].items.splice(2, 0, ("#" + setColorTabContext.id));
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
 
 
     //Set Icon option
@@ -6975,7 +7050,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.includes(("#" + setIconNestContext.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.unshift("#" + setIconNestContext.id);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
 
     //Rename option
     let renameNestContext = document.createXULElement("menuitem");
@@ -6990,7 +7067,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.includes(("#" + renameNestContext.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[0].items.unshift("#" + renameNestContext.id);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
 
     //Insert first
     tabContextMenu.prepend(setColorNestContext);
@@ -7128,7 +7207,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.includes(("#" + submenu.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.splice(1, 0, ("#" + submenu.id));
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
     submenu.setAttribute("label", "Move to Panel...");
     submenu.setAttribute("accesskey", "a");
 
@@ -7456,12 +7537,12 @@
         draggedItem.classList.add("dragging");
         draggedItem.style.top = containerOffsetY + "px";
         draggedItem.style.backgroundColor = "-moz-menuhover";
-        document.addEventListener("mousemove", handleMousemove);
+        document.addEventListener("mousemove", handleMouseMove);
         document.addEventListener("mouseup", handleMouseUp, true);
       }
     });
 
-    let handleMousemove = function(aEvent) {
+    let handleMouseMove = function(aEvent) {
       if (isDragging && draggedItem) {
         helddown++;
         let itemSibilings = Array.from(panelMenuMainDiv.querySelectorAll("#tab-panels-menupopup-view > menuitem:not(.dragging)"));
@@ -7480,7 +7561,7 @@
         }
         panelMenuMainDiv.insertBefore(draggedItem, nextItem);
       } else {
-        document.removeEventListener("mousemove", handleMousemove);
+        document.removeEventListener("mousemove", handleMouseMove);
       }
     }
 
@@ -7599,26 +7680,26 @@
 
     // Populate dynamically
     ICONS.forEach(iconName => {
-      let btn = document.createXULElement("toolbarbutton");
-      btn.classList.add("icon-selector");
-      btn.classList.add("profile-icon-option");
-      btn.setAttribute("iconName", iconName);
-      btn.setAttribute("tooltiptext", iconName);
-      btn.style.setProperty("list-style-image", `url("chrome://browser/content/profiles/assets/48_${iconName}.svg")`);
-      btn.addEventListener("command", () => {
-        iconSetPopup.selected = btn;
+      let button = document.createXULElement("toolbarbutton");
+      button.classList.add("icon-selector");
+      button.classList.add("profile-icon-option");
+      button.setAttribute("iconName", iconName);
+      button.setAttribute("tooltiptext", iconName);
+      button.style.setProperty("list-style-image", `url("chrome://browser/content/profiles/assets/48_${iconName}.svg")`);
+      button.addEventListener("command", () => {
+        iconSetPopup.selected = button;
         changeSelected(iconName);
       });
-      grid.appendChild(btn);
+      grid.appendChild(button);
     });
 
     function changeSelected(iconName) {
-      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
-        const isSelected = btn.getAttribute("iconName") === iconName;
-        btn.toggleAttribute("checked", isSelected);
-        btn.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
-        btn.style.outlineOffset = isSelected ? "2px" : "";
-        btn.style.backgroundColor = isSelected ?
+      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
+        const isSelected = button.getAttribute("iconName") === iconName;
+        button.toggleAttribute("checked", isSelected);
+        button.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
+        button.style.outlineOffset = isSelected ? "2px" : "";
+        button.style.backgroundColor = isSelected ?
           "var(--arrowpanel-dimmed, rgba(0,0,0,.08))" :
           "";
       });
@@ -7825,8 +7906,8 @@
       currentColor = color;
       previewSwatch.style.background = color;
       hexLabel.setAttribute("value", color);
-      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
-        btn.style.stroke = color;
+      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
+        button.style.stroke = color;
       });
       // Keep saturation slider gradient in sync with current hue/lightness
       satSlider.style.background = `linear-gradient(to right, #888, ${hslToHex(currentHue, 100, currentLight)})`;
@@ -7871,19 +7952,19 @@
     buttonBox.style.padding = "8px 0 12px";
     buttonBox.style.marginTop = "8px";
 
-    let doneBtn = document.createXULElement("button");
-    doneBtn.setAttribute("label", "Done");
-    doneBtn.style.minWidth = "90px";
-    doneBtn.style.minHeight = "30px";
+    let doneButton = document.createXULElement("button");
+    doneButton.setAttribute("label", "Done");
+    doneButton.style.minWidth = "90px";
+    doneButton.style.minHeight = "30px";
 
-    let cancelBtn = document.createXULElement("button");
-    cancelBtn.setAttribute("label", "Cancel");
-    cancelBtn.style.minWidth = "90px";
-    doneBtn.style.minHeight = "30px";
+    let cancelButton = document.createXULElement("button");
+    cancelButton.setAttribute("label", "Cancel");
+    cancelButton.style.minWidth = "90px";
+    doneButton.style.minHeight = "30px";
 
 
-    let removeBtn = document.createXULElement("button");
-    removeBtn.setAttribute("label", "Remove icon");
+    let removeButton = document.createXULElement("button");
+    removeButton.setAttribute("label", "Remove icon");
 
     function handleDone() {
       if (iconSetPopup.mode == "NestTabColor") {
@@ -7915,16 +7996,16 @@
       iconSetPopup.hidePopup();
     }
 
-    doneBtn.addEventListener("command", handleDone);
-    cancelBtn.addEventListener("command", () => {
+    doneButton.addEventListener("command", handleDone);
+    cancelButton.addEventListener("command", () => {
       iconSetPopup.hidePopup();
     });
 
-    removeBtn.addEventListener("command", handleRemove);
+    removeButton.addEventListener("command", handleRemove);
 
-    buttonBox.appendChild(doneBtn);
-    buttonBox.appendChild(removeBtn);
-    buttonBox.appendChild(cancelBtn);
+    buttonBox.appendChild(doneButton);
+    buttonBox.appendChild(removeButton);
+    buttonBox.appendChild(cancelButton);
     iconSetPopup.appendChild(buttonBox);
     document.getElementById("mainPopupSet").appendChild(iconSetPopup);
 
@@ -8026,10 +8107,10 @@
         if (element.icon == null) {
           //pick a random icon (if possible, not already used) if Panel hasn't one set
           currentSelected = getNotUsedIcon("TabPanel");
-          removeBtn.setAttribute("hidden", "true");
+          removeButton.setAttribute("hidden", "true");
         } else {
-          removeBtn.removeAttribute("hidden");
-          removeBtn.setAttribute("label", "Remove icon");
+          removeButton.removeAttribute("hidden");
+          removeButton.setAttribute("label", "Remove icon");
           currentSelected = element.icon;
         }
         if (element.iconColor)
@@ -8049,8 +8130,8 @@
               currentSelected = icon[0];
               color = icon[1];
               foundStored = true;
-              removeBtn.removeAttribute("hidden");
-              removeBtn.setAttribute("label", "Default icon");
+              removeButton.removeAttribute("hidden");
+              removeButton.setAttribute("label", "Default icon");
 
             }
           }
@@ -8063,7 +8144,7 @@
             color = randomColorHSL(40, 80, 10, 15);
 
           currentSelected = getNotUsedIcon("NestTab");
-          removeBtn.setAttribute("hidden", "true");
+          removeButton.setAttribute("hidden", "true");
         }
       }
       if (type == "NestTabColor") {
@@ -8072,8 +8153,8 @@
           color = getCustomTabValue(element, "customColor");
           if (color) {
             foundStored = true;
-            removeBtn.removeAttribute("hidden");
-            removeBtn.setAttribute("label", "Default");
+            removeButton.removeAttribute("hidden");
+            removeButton.setAttribute("label", "Default");
           }
         }
         if (foundStored == false) {
@@ -8082,7 +8163,7 @@
             color = randomColorHSL(45, 50, 35, 0);
           else
             color = randomColorHSL(80, 80, 15, 15);
-          removeBtn.setAttribute("hidden", "true");
+          removeButton.setAttribute("hidden", "true");
         }
         grid.setAttribute("hidden", "true");
         title.setAttribute("value", "Select Color");
@@ -8096,14 +8177,14 @@
       iconSetPopup.selected = null;
       iconSetPopup.element = element;
 
-      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(btn => {
-        const isSelected = btn.getAttribute("iconName") === currentSelected;
-        btn.toggleAttribute("checked", isSelected);
+      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
+        const isSelected = button.getAttribute("iconName") === currentSelected;
+        button.toggleAttribute("checked", isSelected);
         if (isSelected)
-          iconSetPopup.selected = btn;
-        btn.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
-        btn.style.outlineOffset = isSelected ? "2px" : "";
-        btn.style.backgroundColor = isSelected ?
+          iconSetPopup.selected = button;
+        button.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
+        button.style.outlineOffset = isSelected ? "2px" : "";
+        button.style.backgroundColor = isSelected ?
           "var(--arrowpanel-dimmed, rgba(0,0,0,.08))" :
           "";
       });
@@ -8197,7 +8278,7 @@
   function findLastAccessedInTree(aTab) {
     let treeDepth = getTreeDepth(aTab);
     let nextTab = getNextTab(aTab);
-    let currentBest = nextTab.getAttribute("tree-id");
+    let currentBest = (nextTab) ? nextTab.getAttribute("tree-id") : null;
     let currentBestTab;
     while (nextTab) {
       let nextTabTreeDepth = getTreeDepth(nextTab);
@@ -8348,7 +8429,9 @@
         if (!TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.includes(("#" + alwaysOnContext.id)))
           TabContextMenu.MENU_SECTIONS.altstructure.tabContextMenu[2].items.splice(2, 0, ("#" + alwaysOnContext.id));
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error(error);
+    }
 
     alwaysOnContext.addEventListener("click", (aEvent) => {
       toggleTabAlwaysOn(TabContextMenu.contextTab)
@@ -8404,8 +8487,8 @@
     document.getElementById('context-openlink').insertAdjacentElement('beforebegin', menuitem);
 
     let contextMenu = document.getElementById('contentAreaContextMenu');
-    let contentContext = function(e) {
-      let win = e.view;
+    let contentContext = function(aEvent) {
+      let win = aEvent.view;
       let {
         gContextMenu
       } = win;
@@ -8495,11 +8578,11 @@
       separator.classList.add('dragging');
       styleSvc.loadAndRegisterSheet(draggingStyle, styleSvc.AUTHOR_SHEET);
       aEvent.preventDefault();
-      document.addEventListener("mousemove", handleMousemove, true);
+      document.addEventListener("mousemove", handleMouseMove, true);
       document.addEventListener("mouseup", handleMouseUp, true);
     });
 
-    let handleMousemove = function(aEvent) {
+    let handleMouseMove = function(aEvent) {
       if (!isDragging) return;
       const alwayOnContainer = document.querySelector('#tabbrowser-tabpanels > .browserSidebarContainer[pinned]');
       const rect = tabbrowserTabbox.getBoundingClientRect();
@@ -8549,7 +8632,9 @@
         //remove previous stylesheet
         try {
           styleSvc.unregisterSheet(previouStyle, styleSvc.AGENT_SHEET);
-        } catch (e) {}
+        } catch (error) {
+          console.error(error);
+        }
       }
       previouStyle = styleURI;
     };
@@ -8560,7 +8645,7 @@
       isDragging = false;
       separator.classList.remove('dragging');
       styleSvc.unregisterSheet(draggingStyle, styleSvc.AUTHOR_SHEET);
-      document.removeEventListener("mousemove", handleMousemove, true);
+      document.removeEventListener("mousemove", handleMouseMove, true);
       document.removeEventListener("mouseup", handleMouseUp, true);
       //save the new margins 
       setPref("alwayOnTab.percent", percent);
@@ -8638,17 +8723,41 @@
         border-radius: 30px;
         margin-right: 4px;
         align-self: center;
+        min-width: 0;
         &:hover {
           color: var(--button-text-color-ghost-hover);
           background-color: var(--button-background-color-ghost-hover);
           outline-color: var(--tab-close-button-border-color-hover);
         }
     }
+    #tabbrowser-tabs[orient="vertical"]:not([expanded]){
+      .tab-always-on{
+        display:none;
+      }
+    }
+
+    #tabbrowser-tabs[orient="vertical"][expanded]
+    tab[alwaysOn][pinned] {
+       & .tab-content {
+         contain: content!important;
+       }
+     }
+
+    tab[alwaysOn][pinned] .tab-icon-stack{
+      background-image: url("chrome://browser/skin/split-view-left-16.svg")!important;
+      border-bottom: 3px solid rgba(255, 255, 255, 0.9)!important;
+    }
+    tab[alwaysOn][pinned] .tab-icon-stack{
+      border-bottom: 3px solid rgba(255, 255, 255, 0.9)!important;
+    }
     #tabbrowser-tabs[orient="horizontal"] tab[alwaysOn] .tab-content {
-        border-bottom: 3px solid rgba(255, 255, 255, 0.9)!important;
+      border-bottom: 3px solid rgba(255, 255, 255, 0.9)!important;
+    }
+    #tabbrowser-tabs[orient="vertical"]:not([expanded]) tab[alwaysOn] .tab-content {
+      border-left: 3px solid light-dark(black,rgba(255, 255, 255, 0.9))!important;
     }
     #tabbrowser-tabs[orient="vertical"] tab[alwaysOn]:not([pinned]) .tab-content {
-        border-right: 3px solid light-dark(black,rgba(255, 255, 255, 0.9))!important;
+      border-right: 3px solid light-dark(black,rgba(255, 255, 255, 0.9))!important;
     }
     #tabbrowser-tabbox:has(.browserSidebarContainer[pinned]:not(.deck-selected)):not(:has(.split-view-panel.deck-selected)) #alwaysOn-separator {
         display: block!important;
@@ -8685,13 +8794,348 @@
     #tabbrowser-tabpanels:has(>.browserSidebarContainer[pinned-right]:not([deck-selected])) .browserSidebarContainer:not([pinned],.split-view-panel){
       width: calc( ${percent + '%'}  - 2px );
     }
-  `
+   `
     let alwaysOnStyleURI = Services.io.newURI(
       `data:text/css;charset=UTF=8,${encodeURIComponent(alwaysOnCSS)}`
     );
     styleSvc.loadAndRegisterSheet(alwaysOnStyleURI, styleSvc.AGENT_SHEET);
 
     return [elementsCreated];
+  }
+
+  function addMediaControl() {
+
+    const PLAY_ICON = "chrome://global/skin/media/play-fill.svg";
+    const PAUSE_ICON = "chrome://global/skin/media/pause-fill.svg";
+
+
+    function createPlayPauseButton(tab) {
+      //play/pause button next to audio mute button
+      //if exists return it
+      if (tab._mediaButton) return tab._mediaButton;
+
+      const button = document.createXULElement("image");
+      button.className = "tab-media-button";
+      button.setAttribute("role", "button");
+      //button evene
+      attachPlayPauseHandlers(button, tab);
+      tab._mediaButton = button;
+      return button;
+    }
+
+    function attachPlayPauseHandlers(button, aTab) {
+      let startX = 0,
+        startY = 0;
+      let moved = false;
+      let tracking = false;
+
+      // Make the button clickable without selecting
+      // the tab, but also let it pass drag events
+      // same as audio button on tabs.
+
+      //capture mousedown
+      button.addEventListener("mousedown", aEvent => {
+        if (aEvent.button !== 0) return;
+        startX = aEvent.clientX;
+        startY = aEvent.clientY;
+        moved = false;
+        tracking = true;
+        aEvent.stopPropagation();
+      }, true);
+
+      // Detect movement (dragging)
+      const handleMouseMove = aEvent => {
+        if (!tracking) return;
+        if (Math.abs(aEvent.clientX - startX) > 4 || Math.abs(aEvent.clientY - startY) > 4) {
+          moved = true;
+        }
+      };
+
+      // Mouse up 
+      const handleMouseUp = aEvent => {
+        if (!tracking) return;
+        tracking = false;
+        window.removeEventListener("mousemove", handleMouseMove, true);
+        window.removeEventListener("mouseup", handleMouseUp, true);
+
+        // If the pointer moved enough => it was a drag, do nothing
+        if (moved) return;
+
+        // Pure click => run play/pause
+        aEvent.stopPropagation();
+        aEvent.preventDefault();
+
+        const browser = aTab.linkedBrowser;
+        if (!browser) return;
+
+        // get media controller
+        const mediaController = browser?.browsingContext?.mediaController;
+
+        //Collapsed tree root with playing child(ren)
+        // pause every child
+        if (aTab.getAttribute("mediaPlaying") == "playingChild") {
+          let nextTab = getNextTab(aTab);
+          let treeDepth = getTreeDepth(aTab);
+          while (nextTab) {
+            let nextTabTreeDepth = getTreeDepth(nextTab);
+            if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
+              break;
+            }
+            if (nextTab.mediaChangeController != null) {
+              nextTab.mediaChangeController.pause("user");
+            }
+            nextTab = getNextTab(nextTab);
+          }
+          //Pause root too
+          if (mediaController.isPlaying) {
+            mediaController.pause("user");
+          }
+        } else {
+          //No collapsed root tab
+          // toggle playing state
+          if (mediaController.isPlaying) {
+            mediaController.pause("user");
+          } else {
+            mediaController.play();
+          }
+        }
+        // // refresh icon XXXX NO NEEDED
+        // listener will update the icon
+        // setTimeout(() => updateMediaIcon(aTab), 120);
+      };
+
+      button.addEventListener("mousedown", () => {
+        window.addEventListener("mousemove", handleMouseMove, true);
+        window.addEventListener("mouseup", handleMouseUp, true);
+      }, true);
+    }
+
+    function insertButton(aTab) {
+      const button = createPlayPauseButton(aTab);
+      if (button == null)
+        return;
+      toggleMediaButton(aTab, null);
+
+      // Insert as sibling of the real mute/play button
+      const audioButton = aTab.querySelector(".tab-audio-button");
+      if (audioButton && audioButton.parentNode && !button.parentNode) {
+        audioButton.parentNode.insertBefore(button, audioButton);
+      } else if (!button.parentNode) {
+        // Fallback placement
+        const stack = aTab.querySelector(".tab-icon-stack") || aTab.querySelector(".tab-content");
+        if (stack) stack.appendChild(button);
+      }
+    }
+
+    function updateFromChildrenPlaybackStatus(aTab) {
+
+      let mediaController = aTab.mediaChangeController;
+      let forced;
+      let nextTab = getNextTab(aTab);
+      let treeDepth = getTreeDepth(aTab);
+
+      while (nextTab) {
+        let nextTabTreeDepth = getTreeDepth(nextTab);
+        if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
+          break;
+        }
+        if (nextTab.mediaChangeController != null && nextTab.mediaChangeController.isAnyMediaBeingControlled &&
+          nextTab.mediaChangeController.isPlaying) {
+          //a child is playing, update the attribute
+          aTab.setAttribute("mediaPlaying", "playingChild");
+          // no need to check for others
+          return;
+        }
+        nextTab = getNextTab(nextTab);
+      }
+      //no child is playing, check own state
+      toggleMediaButton(aTab, null, forced = true);
+    }
+
+    function setMediaPlaying(aTab, state, forced = false) {
+
+      let twistedRoots = getAllTwistedRoots(aTab);
+      if (state) {
+        //if the tab has any hidden childs that are currently playing
+        // keep the child state on top
+        if (forced || aTab.getAttribute("mediaPlaying") != "playingChild") {
+          aTab.setAttribute("mediaPlaying", "playing");
+        }
+        //if the tab is collapsed, show the state on the collapsed tree roots
+        // might be many (a collapsed tree inside a collapsed tree ...)
+        twistedRoots.forEach(function(root) {
+          root.setAttribute("mediaPlaying", "playingChild");
+        });
+      } else {
+        //don't show as paused if it has a collapsed child playing
+        if (forced || aTab.getAttribute("mediaPlaying") != "playingChild") {
+          aTab.setAttribute("mediaPlaying", "paused");
+        }
+        //media paused, remove  the pause  button in parents
+        twistedRoots.forEach(function(root) {
+          if (root != null && root.getAttribute("mediaPlaying") == "playingChild") {
+            // check if no other child are playing 
+            // else if root has its own playback show it instead
+            // else remove the button
+            updateFromChildrenPlaybackStatus(root);
+            // setMediaPlaying(root, root.mediaChangeController.isPlaying, true);
+          }
+        });
+      }
+    }
+
+    function removeMediaPlaying(aTab, forced = false) {
+      //makes the button not show (CSS attribute rule check)
+      aTab.removeAttribute("mediaPlaying");
+      //If the tab is hidden update the roots too
+      let twistedRoots = getAllTwistedRoots(aTab);
+      twistedRoots.forEach(function(root) {
+        if (root != null && root.getAttribute("mediaPlaying") == "playingChild") {
+          // check if no other child are playing 
+          // else if root has its own playback show it instead
+          // else remove the button
+          updateFromChildrenPlaybackStatus(root);
+        }
+      });
+    }
+
+    function toggleMediaButton(aTab, mediaController, forced = false) {
+
+      if (mediaController == null) {
+        // mediaController = aTab?.linkedBrowser?.browsingContext?.mediaController;
+        mediaController = aTab.mediaChangeController;
+      }
+      // is there any controllable media?
+      if (mediaController != null && mediaController.isAnyMediaBeingControlled) {
+        setMediaPlaying(aTab, mediaController.isPlaying, forced);
+      } else {
+        //no => remove button
+        removeMediaPlaying(aTab);
+      }
+      clearTimeout(aTab.mediaCheckTimer);
+      aTab.mediaCheckTimer = setTimeout(() => {
+        //check again in a while, cause the controller might not be updated
+        // to the correct values
+        if (aTab.mediaChangeController == null || !aTab.mediaChangeController?.isAnyMediaBeingControlled) {
+          removeMediaPlaying(aTab);
+        } else {
+          setMediaPlaying(aTab, aTab.mediaChangeController.isPlaying, forced);
+        }
+      }, 1000);
+    }
+
+    function checkMediaInAWhile(aTab, mediaController) {
+      clearTimeout(aTab.mediaCheckTimer);
+      aTab.mediaCheckTimer = setTimeout(() => {
+        toggleMediaButton(aTab, mediaController);
+      }, 300);
+    }
+
+    function registerMediaChangeHandler(aTab) {
+      if (!aTab || aTab.closing) return;
+
+      unregisterMediaChangeHandler(aTab);
+
+      let mediaController = aTab.linkedBrowser?.browsingContext?.mediaController;
+
+      if (mediaController == null) {
+        return;
+      }
+      //The funcion that runs on any change
+      aTab.mediaChangeHandler = function(aEvent) {
+        // make sure the button on tab is insterted
+        const button = createPlayPauseButton(aTab);
+        //will run after a while to give time for the
+        // controller to initialize and to not change the
+        // state for micro-time changes 
+        checkMediaInAWhile(aTab, mediaController);
+      };
+      //monitor playback changes
+      aTab.mediaChangeController = mediaController;
+      aTab.mediaChangeController.addEventListener(
+        "playbackstatechange",
+        aTab.mediaChangeHandler
+      );
+      //close
+      aTab.mediaChangeController.addEventListener(
+        "deactivated",
+        aTab.mediaChangeHandler
+      );
+      // The built-inc controller doesn't work correctly
+      // it will show no media being controller if the 
+      // media has no sound or is muted in its player
+      // so for media that start with no sound it will
+      // so that they are not controlled, but if later
+      // the audio changes it will show they are controlled.
+      // So we monitor this too, to restore the button when 
+      // the sound comes back/starts. 
+      aTab.mediaChangeController.addEventListener(
+        "audiblechange",
+        aTab.mediaChangeHandler
+      );
+    }
+
+    function unregisterMediaChangeHandler(aTab) {
+      //remove listeners
+      if (aTab.mediaChangeController != null) {
+        aTab.mediaChangeController.removeEventListener(
+          "playbackstatechange",
+          aTab.mediaChangeHandler
+        );
+        aTab.mediaChangeController.removeEventListener(
+          "deactivated",
+          aTab.mediaChangeHandler
+        );
+        aTab.mediaChangeController.removeEventListener(
+          "audiblechange",
+          aTab.mediaChangeHandler
+        );
+      }
+      aTab.mediaChangeHandler = null;
+      aTab.mediaChangeController = null;
+      //remove icon on tab
+      removeMediaPlaying(aTab);
+    }
+
+    function attachTabMediaListeners() {
+      //insert media control button on every tab that opens
+      // it will stay hidden while no media is controlled
+      gBrowser.tabContainer.addEventListener("TabOpen", aEvent => {
+        insertButton(aEvent.target);
+      });
+
+      //also in any existing tabs
+      for (let tab of gBrowser.tabs) {
+        insertButton(tab);
+        if (tab.linkedBrowser != null)
+          registerMediaChangeHandler(tab);
+      }
+      //monitor for media playback on every document
+      gBrowser.tabContainer.addEventListener("TabBrowserInserted", aEvent => {
+        registerMediaChangeHandler(aEvent.target);
+      });
+
+      gBrowser.tabContainer.addEventListener("TabRemotenessChange", aEvent => {
+        registerMediaChangeHandler(aEvent.target);
+      });
+
+      gBrowser.tabContainer.addEventListener("TabClose", aEvent => {
+        unregisterMediaChangeHandler(aEvent.target);
+      });
+
+      gBrowser.tabContainer.addEventListener("TabBrowserDiscarded", aEvent => {
+        unregisterMediaChangeHandler(aEvent.target);
+      });
+
+      //window close => unregister to not interfere
+      gBrowser.documentGlobal.addEventListener("unload", () => {
+        gBrowser.tabs.forEach(unregisterMediaChangeHandler, this);
+      }, {
+        once: true
+      });
+    }
+    //run
+    attachTabMediaListeners();
   }
 
 /************************************************************/
@@ -8759,28 +9203,28 @@
           link.href = "#";
           link.textContent = "(Changelog)";
           link.style.cssText = "margin-left:6px; cursor:pointer; text-decoration:underline;";
-          link.addEventListener("click", (e) => {
-            e.preventDefault();
+          link.addEventListener("click", (aEvent) => {
+            aEvent.preventDefault();
             openChangelog(updateStatus.fromVer, updateStatus.toVer);
           });
           label.appendChild(link);
         }
       }
       if (updateUIElements.button) {
-        const btn = updateUIElements.button;
+        const button = updateUIElements.button;
         if (state === "updated") {
-          btn.innerText = "Click to Restart Browser to apply Update";
-          btn.disabled = false;
+          button.innerText = "Click to Restart Browser to apply Update";
+          button.disabled = false;
         } else if ((state === "available" || state === "changelog") && getPref("treeTabs.update.autoUpdate") === false) {
-          btn.innerText = "Update to new version";
-          btn.disabled = false;
+          button.innerText = "Update to new version";
+          button.disabled = false;
         } else {
-          btn.innerText = "Check for new version";
-          btn.disabled = (state === "checking");
+          button.innerText = "Check for new version";
+          button.disabled = (state === "checking");
         }
       }
-    } catch (e) {
-      console.error(e)
+    } catch (error) {
+      console.error(error);
     }
   }
 
@@ -8933,9 +9377,9 @@
         remoteVer
       );
 
-    } catch (e) {
-      console.error("Update verification failed:", e);
-      setUpdateStatus("error", "Failed: " + (e.message || e));
+    } catch (error) {
+      console.error("Update verification failed:", error);
+      setUpdateStatus("error", "Failed: " + (error.message || error));
       // No install
     }
   }
@@ -8989,7 +9433,9 @@
         const chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"]
           .getService(Ci.nsIChromeRegistry);
         scriptURI = chromeReg.convertChromeURL(Services.io.newURI(scriptURI)).spec;
-      } catch (e) {}
+      } catch (error) {
+        console.error(error);
+      }
     }
     const code = await (await fetch(scriptURI)).text();
     const match = code.match(/^\/\/\s*@version\s+(.+)$/mi);
@@ -9000,7 +9446,7 @@
     // Loads OpenPGP.js
     // check if cached version exist if no try to download.
 
-    //no need to reload if already loaded once
+    // no need to reload if already loaded once
     if (globalThis.openpgp) return globalThis.openpgp;
 
     const OPENPGP_URL = "https://cdn.jsdelivr.net/npm/openpgp@6.3.2/dist/openpgp.min.js";
@@ -9015,7 +9461,9 @@
         if (info.size > 0) {
           needsDownload = false;
         }
-      } catch (_) {}
+      } catch (error) {
+        console.error(error);
+      }
     }
     if (force || needsDownload) {
       const res = await fetch(OPENPGP_URL, {
@@ -9039,11 +9487,11 @@
     try {
       // Load via the trusted resource: URL -----
       Services.scriptloader.loadSubScript(scriptURL, globalThis);
-    } catch (e) {
+    } catch (error) {
       if (needsDownload == false) {
         // error occurred when using the cached version
         // force download and retry  
-        console.warn("[OpenPGP] Error with local version" + e)
+        console.warn("[OpenPGP] Error with local version" + error);
         return loadOpenPgp(true);
       }
     } finally {
@@ -9058,7 +9506,7 @@
     return globalThis.openpgp;
   }
 
-  //removes v for vN.N.N
+  // removes v for vN.N.N
   // or removes v. from v.N.N.N and add 0.
   function normalizeRepoVersion(raw) {
     if (!raw) return null;
@@ -9076,7 +9524,7 @@
 
   function extractVersionFromCommitTitle(title) {
     if (!title) return null;
-    //find vNumber.Number or V.Number.Number
+    // find vNumber.Number or V.Number.Number
     // prefer v.N.N.N then vN.N.N
     let m = title.match(/\bv\.(\d+(?:\.\d+)*)\b/i);
     if (m) return normalizeRepoVersion("v." + m[1]);
@@ -9085,7 +9533,7 @@
     return null;
   }
 
-  /** Compare normalized versions: a > b */
+  // Compare normalized versions: a > b
   function versionGreater(a, b) {
     return isNewVersion(a, b, false);
   }
@@ -9094,9 +9542,9 @@
     return a === b || isNewVersion(a, b, false);
   }
 
-  //commit details
-  //return the content of each section (Added,Changed.Fixed)
-  // and  cunategorized lines 
+  // commit details
+  // return the content of each section (Added,Changed.Fixed)
+  // and  un-categorized lines 
   function parseCommitBody(body) {
     const sections = {
       Added: [],
@@ -9241,8 +9689,8 @@
         user-select: text;
       `;
       // Click anywhere outside of the popup to close it
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) closeChangelogOverlay();
+      overlay.addEventListener("click", (aEvent) => {
+        if (aEvent.target === overlay) closeChangelogOverlay();
       });
 
       // Outer panel (flex column)
@@ -9290,11 +9738,11 @@
         headerText.appendChild(sub);
       }
       // close button
-      const closeBtn = document.createElementNS(HTML_NS, "button");
-      closeBtn.type = "button";
-      closeBtn.title = "Close";
-      closeBtn.setAttribute("aria-label", "Close");
-      closeBtn.style.cssText = `
+      const closeButton = document.createElementNS(HTML_NS, "button");
+      closeButton.type = "button";
+      closeButton.title = "Close";
+      closeButton.setAttribute("aria-label", "Close");
+      closeButton.style.cssText = `
         flex: 0 0 auto;
         width: 32px; height: 32px; padding: 0;
         border: none; border-radius: 8px;
@@ -9312,11 +9760,11 @@
        fill: var(--button-icon-fill);
        stroke: var(--button-icon-stroke);
       `;
-      closeBtn.appendChild(closeImg);
-      closeBtn.addEventListener("click", closeChangelogOverlay);
+      closeButton.appendChild(closeImg);
+      closeButton.addEventListener("click", closeChangelogOverlay);
 
       header.appendChild(headerText);
-      header.appendChild(closeBtn);
+      header.appendChild(closeButton);
       panel.appendChild(header);
 
       // ---- Scrollable body ----
@@ -9337,7 +9785,7 @@
         body.appendChild(empty);
       }
 
-      for (const e of entries) {
+      for (const entry of entries) {
         const card = document.createElementNS(HTML_NS, "section");
         card.style.cssText = `
           background: light-dark(#ffffff, #2c2c2e);
@@ -9346,21 +9794,21 @@
         `;
 
         const ver = document.createElementNS(HTML_NS, "div");
-        ver.textContent = e.version;
+        ver.textContent = entry.version;
         ver.style.cssText =
           "font-weight: 700; color: light-dark(#1a612a, #80d1a3);";
         card.appendChild(ver);
 
         const meta = document.createElementNS(HTML_NS, "div");
         meta.textContent =
-          "Released " + formatChangelogDate(e.date) +
-          (e.sha ? " · " + e.sha : "");
+          "Released " + formatChangelogDate(entry.date) +
+          (entry.sha ? " · " + entry.sha : "");
         meta.style.cssText =
           "font-size: 0.85rem; opacity: 0.65; margin-top: 2px;";
         card.appendChild(meta);
 
         const title = document.createElementNS(HTML_NS, "h2");
-        title.textContent = e.title;
+        title.textContent = entry.title;
         title.style.cssText = "font-size: 1rem; margin: 8px 0 10px;";
         card.appendChild(title);
 
@@ -9387,7 +9835,7 @@
           Changed,
           Fixed,
           other
-        } = e.sections;
+        } = entry.sections;
         addSection("Added", Added);
         addSection("Changed", Changed);
         addSection("Fixed", Fixed);
@@ -9395,9 +9843,9 @@
         if (!Added.length && !Changed.length && !Fixed.length) {
           if (other.length) {
             addSection("Details", other);
-          } else if (e.body) {
+          } else if (entry.body) {
             const pre = document.createElementNS(HTML_NS, "pre");
-            pre.textContent = e.body;
+            pre.textContent = entry.body;
             pre.style.cssText =
               "white-space: pre-wrap; margin: 8px 0 0; font: inherit; opacity: 0.75;";
             card.appendChild(pre);
@@ -9411,8 +9859,8 @@
       document.documentElement.appendChild(overlay);
 
       // Close popup with escape key
-      const onKey = (ev) => {
-        if (ev.key === "Escape") {
+      const onKey = (aEvent) => {
+        if (aEvent.key === "Escape") {
           closeChangelogOverlay();
           window.removeEventListener("keydown", onKey, true);
         }
@@ -9423,9 +9871,9 @@
         msg,
         updateStatus.remoteVer);
 
-    } catch (e) {
-      console.error("Changelog failed:", e);
-      setUpdateStatus("error", "Changelog failed: " + (e.message || e));
+    } catch (error) {
+      console.error("Changelog failed:", error);
+      setUpdateStatus("error", "Changelog failed: " + (error.message || error));
     }
   }
 
@@ -9554,9 +10002,9 @@
         link.href = null;
         link.textContent = versionString;
         link.setAttribute("modified", "");
-        link.addEventListener("click", async (e) => {
+        link.addEventListener("click", async (aEvent) => {
           //opens release notes
-          e.preventDefault();
+          aEvent.preventDefault();
           let localVersion = await getLocalVersion();
           openChangelog("0", localVersion, true);
         });
@@ -9617,13 +10065,13 @@
           input.removeAttribute("unset");
         }
 
-        function clearVal(e) {
+        function clearVal(aEvent) {
           setPref(pref, "");
           input.value = "Press new keys...";
           input.setAttribute("unset", "");
         }
 
-        function resetVal(e) {
+        function resetVal(aEvent) {
           setPref(pref, "reset");
           setTimeout(() => {
             setValue(input, getPref(pref));
@@ -9631,22 +10079,22 @@
 
         }
 
-        const captureHandler = (e) => {
+        const captureHandler = (aEvent) => {
           const mods = {
-            ctrl: e.ctrlKey,
-            alt: e.altKey,
-            shift: e.shiftKey,
-            meta: e.metaKey
+            ctrl: aEvent.ctrlKey,
+            alt: aEvent.altKey,
+            shift: aEvent.shiftKey,
+            meta: aEvent.metaKey
           };
-          if (e.key == "Escape") {
+          if (aEvent.key == "Escape") {
             input.blur();
             return;
           }
-          if (e.key == "Backspace") {
-            e.preventDefault();
-            e.stopImmediatePropagation();
+          if (aEvent.key == "Backspace") {
+            aEvent.preventDefault();
+            aEvent.stopImmediatePropagation();
             return;
-          } else if (e.key.length > 1 && !(e.key.startsWith("Arrow"))) {
+          } else if (aEvent.key.length > 1 && !(aEvent.key.startsWith("Arrow"))) {
             //only accept "normal" keys
             return;
           }
@@ -9654,9 +10102,9 @@
             capture: true
           });
 
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          const shortcutStr = formatShortcut(mods, e.keyCode);
+          aEvent.preventDefault();
+          aEvent.stopImmediatePropagation();
+          const shortcutStr = formatShortcut(mods, aEvent.keyCode);
 
           // Save to pref
           setPref(pref, shortcutStr)
@@ -9686,13 +10134,13 @@
 
         let b3 = doc.createElement("button");
         b3.setAttribute("class", "extra-button restore-button");
-        b3.addEventListener("click", (e) => resetVal(e));
+        b3.addEventListener("click", (aEvent) => resetVal(aEvent));
         b3.title = "Restore to Default";
         b3.setAttribute("label", "Restore to Default");
 
         let b4 = doc.createElement("button");
         b4.setAttribute("class", "extra-button delete-button");
-        b4.addEventListener("click", (e) => clearVal(e));
+        b4.addEventListener("click", (aEvent) => clearVal(aEvent));
         b4.title = "Clear shortcut";
         b4.setAttribute("label", "Clear shortcut");
 
@@ -9744,7 +10192,7 @@
           }
         }
 
-        function changeVal(e, dir) {
+        function changeVal(aEvent, dir) {
           if (dir == 1)
             input.stepUp();
           else
@@ -9752,7 +10200,7 @@
           let check = checkAndSetPref();
         }
 
-        function resetVal(e) {
+        function resetVal(aEvent) {
           clearUserPref(pref);
           input.value = getPref(pref);
         }
@@ -9770,18 +10218,18 @@
         });
 
         let b1 = doc.createElement("button");
-        b1.addEventListener("click", (e) => changeVal(e, -1));
+        b1.addEventListener("click", (aEvent) => changeVal(aEvent, -1));
         b1.innerHTML = "-";
         b1.setAttribute("label", "Increase");
 
         let b2 = doc.createElement("button");
         b2.innerHTML = "+";
-        b2.addEventListener("click", (e) => changeVal(e, 1));
+        b2.addEventListener("click", (aEvent) => changeVal(aEvent, 1));
         b2.setAttribute("label", "Decrease");
 
         let b3 = doc.createElement("button");
         b3.setAttribute("class", "extra-button restore-button");
-        b3.addEventListener("click", (e) => resetVal(e));
+        b3.addEventListener("click", (aEvent) => resetVal(aEvent));
         b3.title = "Restore to Default";
         b3.setAttribute("label", "Restore to Default");
 
@@ -9824,13 +10272,13 @@
         let collapseButton = doc.createElement("button");
         collapseButton.setAttribute('class', 'extra-button collapse-button');
         collapseContainer.appendChild(collapseButton);
-        collapseContainer.addEventListener("click", (e) => togglePress(e));
+        collapseContainer.addEventListener("click", (aEvent) => togglePress(aEvent));
 
         let mainDiv = doc.createElement("div");
         let itemsMenu = doc.createElement('menulist');
         let itemsMenuHider = doc.createElement('menulist');
         itemsMenuHider.setAttribute('class', 'menulist-hider');
-        itemsMenuHider.addEventListener("click", (e) => togglePress(e));
+        itemsMenuHider.addEventListener("click", (aEvent) => togglePress(aEvent));
 
         mainDiv.appendChild(itemsMenu);
         mainDiv.appendChild(itemsMenuHider);
@@ -9885,34 +10333,34 @@
             let index = parseInt(order[i], 10);
             let item = options.find(option => option.value == index);
             if (item) {
-              let emptyOpt = doc.createElement("div");
-              emptyOpt.setAttribute('class', 'ContentSelectDropdown-item-0 ntt-list-item');
-              emptyOpt.setAttribute("value", item.value);
-              emptyOpt.setAttribute("label", item.label);
-              emptyOpt.setAttribute("image", "chrome://global/skin/icons/move-16.svg");
-              emptyOpt.setAttribute("draggable", "true");
+              let emptyOption = doc.createElement("div");
+              emptyOption.setAttribute('class', 'ContentSelectDropdown-item-0 ntt-list-item');
+              emptyOption.setAttribute("value", item.value);
+              emptyOption.setAttribute("label", item.label);
+              emptyOption.setAttribute("image", "chrome://global/skin/icons/move-16.svg");
+              emptyOption.setAttribute("draggable", "true");
 
               let optionImg = doc.createElement("img");
               optionImg.setAttribute("src", "chrome://global/skin/icons/move-16.svg");
 
-              let emptyOptlabel = doc.createElement("label");
-              emptyOptlabel.textContent = item.label;
+              let emptyOptionlabel = doc.createElement("label");
+              emptyOptionlabel.textContent = item.label;
 
               let buttonContainer = doc.createElement("div");
               buttonContainer.setAttribute('class', 'input-container');
               let b1 = doc.createElement("button");
-              b1.addEventListener("click", (e) => moveItem(e, -1));
+              b1.addEventListener("click", (aEvent) => moveItem(aEvent, -1));
               b1.setAttribute('class', 'extra-button moveup-button');
               let b2 = doc.createElement("button");
-              b2.addEventListener("click", (e) => moveItem(e, 1));
+              b2.addEventListener("click", (aEvent) => moveItem(aEvent, 1));
               b2.setAttribute('class', 'extra-button movedown-button');
 
-              emptyOpt.appendChild(optionImg);
-              emptyOpt.appendChild(emptyOptlabel);
+              emptyOption.appendChild(optionImg);
+              emptyOption.appendChild(emptyOptionlabel);
               buttonContainer.appendChild(b1);
               buttonContainer.appendChild(b2);
-              emptyOpt.appendChild(buttonContainer);
-              itemsMenu.appendChild(emptyOpt);
+              emptyOption.appendChild(buttonContainer);
+              itemsMenu.appendChild(emptyOption);
             }
           }
         }
@@ -9946,7 +10394,7 @@
             draggedItem.style.top = containerOffsetY + "px";
             draggedItem.style.position = "absolute";
             draggedItem.style.backgroundColor = "-moz-menuhover";
-            doc.addEventListener("mousemove", handleMousemove);
+            doc.addEventListener("mousemove", handleMouseMove);
             doc.addEventListener("mouseup", handleMouseUp, true);
 
             let nextItem = draggedItem.nextSibling;
@@ -9957,7 +10405,7 @@
           }
         });
 
-        let handleMousemove = function(aEvent) {
+        let handleMouseMove = function(aEvent) {
           if (isDragging && draggedItem) {
             helddown++;
             draggedItem.style.top = (containerOffsetY - (clientTop - aEvent.clientY)) + "px";
@@ -9977,7 +10425,7 @@
             }
             itemsMenu.insertBefore(draggedItem, nextItem);
           } else {
-            doc.removeEventListener("mousemove", handleMousemove);
+            doc.removeEventListener("mousemove", handleMouseMove);
           }
         }
 
@@ -10044,16 +10492,16 @@
         selectBox.setAttribute("label", label);
 
         for (var i = 0; i < options.length; i++) {
-          let emptyOpt = doc.createElement("option");
-          emptyOpt.setAttribute("value", options[i].value);
-          emptyOpt.setAttribute("label", options[i].label);
-          selectBox.appendChild(emptyOpt);
+          let emptyOption = doc.createElement("option");
+          emptyOption.setAttribute("value", options[i].value);
+          emptyOption.setAttribute("label", options[i].label);
+          selectBox.appendChild(emptyOption);
         }
         if (pref != null) {
           let prefValue = getPref(pref);
           selectBox.value = prefValue;
 
-          selectBox.addEventListener("change", (e) => {
+          selectBox.addEventListener("change", (aEvent) => {
             let value = selectBox.value;
             if (type == "boolean") {
               if (value == "true")
@@ -10092,14 +10540,14 @@
           if (prefValue == true) {
             checkBox.setAttribute("checked", "");
           }
-          checkBox.addEventListener("change", (e) => {
-            if (e.target.checked) {
+          checkBox.addEventListener("change", (aEvent) => {
+            if (aEvent.target.checked) {
               setPref(pref, true);
             } else {
               setPref(pref, false);
             }
-            e.preventDefault();
-            e.stopPropagation();
+            aEvent.preventDefault();
+            aEvent.stopPropagation();
           });
           modifyCustomizePage.observeTopic(pref, checkBox);
 
@@ -10226,6 +10674,7 @@
       let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
       createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
       createCheckBox("treeTabs.style.addColorTabContext", "Change Tab Color Context option", extra);
+
       createSelectBox("treeTabs.style.customGroups", "Tab Groups style", [{
         label: "Default",
         value: 0
@@ -10246,19 +10695,18 @@
         value: 5
     }], "number", extra);
       createSelectBox("treeTabs.style.twistyStyle", "Collapsed tree root tab style", [{
-          label: "Left",
-          value: 0
+        label: "Left",
+        value: 0
     }, {
-          label: "Left alt",
-          value: 3
-     },
-        {
-          label: "Right",
-          value: 1
+        label: "Left alt",
+        value: 3
     }, {
-          label: "Right alt",
-          value: 2
-    }, ], "number", extra);
+        label: "Right",
+        value: 1
+    }, {
+        label: "Right alt",
+        value: 2
+    }], "number", extra);
       createSelectBox("treeTabs.style.contextLineStyle", "Container indicator style", [{
         label: "Default",
         value: 0
@@ -10306,10 +10754,10 @@
       createCheckBox("treeTabs.update.autoUpdate", "Enable automatic updates", extra);
 
       // Action button
-      let updateBtn = doc.createElement("button");
-      updateBtn.className = "ntt-update-button";
-      updateBtn.setAttribute.innerText = "Check for new version";
-      extra.appendChild(updateBtn);
+      let updateButton = doc.createElement("button");
+      updateButton.className = "ntt-update-button";
+      updateButton.setAttribute.innerText = "Check for new version";
+      extra.appendChild(updateButton);
 
       // Status label
       let statusLabel = doc.createElement("label");
@@ -10319,11 +10767,11 @@
 
       // keep references so setUpdateStatus can update them live
       updateUIElements.label = statusLabel;
-      updateUIElements.button = updateBtn;
+      updateUIElements.button = updateButton;
       setUpdateStatus(updateStatus.state, updateStatus.message, updateStatus.remoteVer);
 
       // Button click
-      updateBtn.addEventListener("click", async () => {
+      updateButton.addEventListener("click", async () => {
         if (updateStatus.state === "updated") {
           // Restart browser
           Services.startup.quit(Services.startup.eAttemptQuit | Services.startup.eRestart);
@@ -10384,7 +10832,7 @@
       text-decoration: underline;
     }
     .ntt-select{
-      padding-block: 5px;
+      padding-block: 4px;
       background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
       --select-max-width:50%;
       width:100px;
@@ -10769,19 +11217,19 @@
         }
         updateStatus.firstStartCompleted = true;
       }, 1500);
-    } catch (e) {
+    } catch (error) {
       setTimeout(() => {
         updateStatus.firstStartCompleted = true;
       }, 1500);
-      console.error(e);
+      console.error(error);
     }
   })();
 
   function startNativeTreeTabs() {
     try {
       nativeTreeTabs.init();
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     }
   }
 
@@ -12094,6 +12542,43 @@
           border-inline: 3px solid color-mix(in srgb, var( --tree-domain-color, var( --identity-icon-color, light-dark(rgb(190, 190, 190), rgba(120, 120, 120, 0.5)))) 80%, rgba(0, 0, 0, 0.5)) !important;
         }
       }
+    }
+
+    /*Media play/pause control inside tab */
+    .tab-media-button {
+        -moz-context-properties: fill;
+        fill: currentColor;
+        background: transparent !important;
+        border: none !important;
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        background-color: transparent;
+        background-repeat: no-repeat;
+        background-position: center;
+        -moz-context-properties: fill, stroke !important;
+        fill: light-dark(black, white);
+        border-radius: 30px;
+        margin-right: 4px;
+        margin-left: -2.5px;
+        align-self: center;
+        display: none;
+        #sidebar-container[sidebar-launcher-expanded] tab[mediaPlaying="playingChild"] & {
+            display: flex;
+            list-style-image: url("chrome://global/skin/media/pause-fill.svg");
+        }
+        tab[mediaPlaying="playing"] & {
+            display: flex;
+            list-style-image: url("chrome://global/skin/media/pause-fill.svg");
+        }
+        #sidebar-container[sidebar-launcher-expanded] tab[mediaPlaying="paused"] & {
+            display: flex;
+            list-style-image: url("chrome://global/skin/media/play-fill.svg");
+        }
+        tab:is([muted], [soundplaying]) & {
+            margin-left: 3px;
+            margin-right: 0px;
+        }
     }
 
     /*Styles unloaded tab from previous Session */  
