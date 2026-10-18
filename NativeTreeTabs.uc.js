@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.1.0
+// @version        0.4.1.1
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -301,13 +301,9 @@
         aTab.removeAttribute("tree-depth");
         aTab.removeAttribute("panel-id");
         aTab.removeAttribute("tabPanel-hidden");
-        aTab.removeAttribute("twisted-root");
+        unsetAsTwistedRoot(aTab);
         aTab.removeAttribute("hidden-child");
         aTab.removeAttribute("hidden-child-rootID");
-        let tCC = aTab.querySelector(".tab-child-count");
-        if (tCC != null) tCC.remove();
-        let tCC2 = aTab.querySelector(".tab-child-count2");
-        if (tCC2 != null) tCC2.remove();
         if (aTab.hasAttribute("nestTab")) {
           let nestLabel = aTab.querySelector("[nestLabel]");
           if (nestLabel)
@@ -657,7 +653,7 @@
       if (aTab.splitViewId != null) {
         aTab = aTab.tabs[0];
       }
-      if (aTab.splitview && !splitViewCreation && (prevPosition >= newPosition)) {
+      if (aTab.splitview && (prevPosition >= newPosition)) {
         nextTab = gBrowser.tabs[possibleChildIndex + 1];
       }
       let aTabTreeId = aTab.getAttribute("tree-id");
@@ -763,7 +759,7 @@
       }
 
       if (aTab.splitview) {
-        aTab.splitview.addEventListener("dragend", this);
+        aTab.splitview.addEventListener("dragend", this, true);
       }
 
       let selectedTabs = gBrowser.selectedTabs;
@@ -895,15 +891,17 @@
       }
 
       let tabHeight = (Services.prefs.getPrefType("treeTabs.tabHeight") != 32) ? 30 :
-        Services.prefs.getStringPref("treeTabs.tabHeight");
+        parseInt(Services.prefs.getStringPref("treeTabs.tabHeight"), 10);
 
       if (aTab.hasAttribute("dragStartY")) {
         //Prevent small accidental drag events from changing the tree structure
         let dragStartY = parseInt(aTab.getAttribute("dragStartY"), 10);
         aTab.removeAttribute("dragStartY");
+        const currentBrowserVersion = (AppConstants.MOZ_APP_NAME == "firefox") ? AppConstants.MOZ_APP_VERSION : Services.appinfo.version;
+        const v160 = (parseInt(currentBrowserVersion, 10) >= 160) ? true : false;
         let dragDistance = aEvent.clientY - dragStartY;
         debugMsg("dragDistance: " + dragDistance);
-        if ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7)) {
+        if (!v160 && ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7))) {
           if ((dragDistance > 0 && dragDistance < 7 + tabHeight / 3 - 10) || (dragDistance <= 0 && dragDistance > -7 - tabHeight / 3 + 10))
             return;
         }
@@ -911,9 +909,9 @@
 
       //temp hack 
       if (childrenCount > 1 && !insideMove) {
-        let childMargin = getComputedStyle(nextTab).getPropertyValue("margin-top");
+        let childMargin = tryToGetComputedStyle(nextTab, "margin-top", 0);
         childMargin = parseInt(childMargin, 10);
-        let shelfMargin = getComputedStyle(aTab).getPropertyValue("margin-top");
+        let shelfMargin = tryToGetComputedStyle(aTab, "margin-top", 0);
         shelfMargin = parseInt(shelfMargin, 10);
         childrenCount = (childrenCount - 1) * (aTab.offsetHeight + childMargin) + shelfMargin;
       } else {
@@ -979,10 +977,10 @@
             setTreeDepth(previousTab, oldDepth);
             setTreeDepth(aTab, previousTabDepth);
             if (aTab.hasAttribute("twisted-root")) {
-              aTab.removeAttribute("twisted-root");
-              deleteCustomTabValue(aTab, "twisted-root");
+              unsetAsTwistedRoot(aTab);
               previousTab.setAttribute("twisted-root", true);
               setCustomTabValue(previousTab, "twisted-root", 'true');
+              restoreCount(previousTab)
             }
             //dirty swap
             let oldTreeId = aTab.getAttribute("tree-id");
@@ -1934,8 +1932,7 @@
             aTab.mediaChangeHandler();
           }
         }
-        aTab.removeAttribute("twisted-root");
-        deleteCustomTabValue(aTab, "twisted-root");
+        unsetAsTwistedRoot(aTab);
       } else {
         aTab.setAttribute("twisted-root", true);
         setCustomTabValue(aTab, "twisted-root", 'true');
@@ -2225,16 +2222,16 @@
     },
 
     attachTabListeners: function(aTab) {
-      aTab.addEventListener("dragend", this);
-      aTab.addEventListener("dragstart", this);
+      aTab.addEventListener("dragend", this, true);
+      aTab.addEventListener("dragstart", this, true);
       aTab.querySelector(".tab-icon-stack").addEventListener("click", this);
       aTab.querySelector(".tab-close-button").addEventListener("click", this, true);
     },
 
     removeTabListeners: function() {
       gBrowser.tabs.forEach(function(aTab) {
-        aTab.removeEventListener("dragend", this);
-        aTab.removeEventListener("dragstart", this);
+        aTab.removeEventListener("dragend", this, true);
+        aTab.removeEventListener("dragstart", this, true);
         aTab.querySelector(".tab-icon-stack").removeEventListener("click", this);
         aTab.querySelector(".tab-close-button").removeEventListener("click", this, true);
         aTab.removeEventListener("click", this.previousSwitch, true);
@@ -3232,23 +3229,23 @@
       };
 
       //Overwrite add, unsplit and tab reverse functions of the splitview object
-      function getFirstSplitViewTabChildren(t) {
+      function getFirstSplitViewTabChildren(t, setSecondTabAsNewTwistedRoot = null) {
         let firstChildren = new Array();
-        let tDepth = getTreeDepth(t);
-        let firstTabId = t.tabs[0].getAttribute("tree-id");
+        const tDepth = getTreeDepth(t);
+        const firstTabId = t.tabs[0].getAttribute("tree-id");
         if (tDepth == null) {
           return firstChildren;
         }
         let nextTab = getNextTab(t);
         while (isTab(nextTab)) {
-          nextDepth = getTreeDepth(nextTab);
+          let nextDepth = getTreeDepth(nextTab);
           if (nextDepth == null || nextDepth <= tDepth) {
             break;
           }
           if (nextTab.getAttribute("opener-id") == firstTabId) {
             firstChildren.push(nextTab);
             nextTab.setAttribute("saveDepthLevel", nextDepth);
-            childDepth = getTreeDepth(nextTab);
+            let childDepth = getTreeDepth(nextTab);
             nextTab = getNextTab(nextTab);
             while (isTab(nextTab)) {
               nextDepth = getTreeDepth(nextTab);
@@ -3260,6 +3257,10 @@
               nextTab = getNextTab(nextTab);
             }
           } else {
+            if (setSecondTabAsNewTwistedRoot != null) {
+              nextTab.setAttribute("hidden-child-rootID", setSecondTabAsNewTwistedRoot);
+              setCustomTabValue(nextTab, "hidden-child-rootID", setSecondTabAsNewTwistedRoot);
+            }
             nextTab = getNextTab(nextTab);
           }
         }
@@ -3285,26 +3286,56 @@
       }
 
       let splitviewsProto = customElements.get("tab-split-view-wrapper").prototype;
+      //splitview separation
       let originalUnsplitTabs = splitviewsProto.unsplitTabs;
       splitviewsProto.unsplitTabs = function(trigger = null) {
         try {
           if (window.nativeTreeTabs._initialized == false) {
             return originalUnsplitTabs.apply(this, arguments);
           }
+          //moves the children of each of the two tabs under their correct parent
           let saveFirstTabChildren;
-          let firstTab;
+          let firstTab, secondTab;
+          let makeSecondTabTwistedRoot;
+
           if (this.tabs != null && this.tabs.length > 1 && this.tabs[0] != null) {
             firstTab = this.tabs[0];
-            saveFirstTabChildren = getFirstSplitViewTabChildren(this);
+            secondTab = this.tabs[1];
+            if (firstTab.hasAttribute("twisted-root") && this.tabs[1] != null) {
+              //If the tree was collapsed make sure both tabs are set
+              // as collapsed roots
+              makeSecondTabTwistedRoot = secondTab.getAttribute("tree-id");
+            }
+            saveFirstTabChildren = getFirstSplitViewTabChildren(this, makeSecondTabTwistedRoot);
           }
+
+
           this.tabs.forEach(function(sTab) {
             skipNextMoveCheck(sTab);
           }, this);
+
           let toReturn = originalUnsplitTabs.apply(this, arguments);
+
           this.tabs.forEach(function(sTab) {
             removeSkipNextMoveCheck(sTab);
           }, this);
+
           maybeMoveSplitChildren(saveFirstTabChildren, firstTab);
+
+          if (makeSecondTabTwistedRoot != null) {
+            const secondTabNextTab = getNextTab(secondTab);
+            if (secondTabNextTab && getTreeDepth(secondTabNextTab) > getTreeDepth(secondTab)) {
+              secondTab.setAttribute("twisted-root", "");
+              setCustomTabValue(secondTab, "twisted-root", 'true');
+              restoreCount(secondTab);
+            }
+            if (saveFirstTabChildren.length < 1) {
+              unsetAsTwistedRoot(firstTab);
+            } else {
+              restoreCount(firstTab);
+            }
+          }
+
           return toReturn;
         } catch (error) {
           console.error(error);
@@ -3335,6 +3366,8 @@
         }
       };
 
+      //split view creation
+      //move children of both tabs under the combined tab
       let originalAddTabs = splitviewsProto.addTabs;
       splitviewsProto.addTabs = function(tabs, {
         isSessionRestore = false,
@@ -3344,9 +3377,14 @@
           if (window.nativeTreeTabs._initialized == false) {
             return originalAddTabs.apply(this, arguments);
           }
-          let splitDepth;
-          let ogTabs = this.tabs.slice();
+          let splitDepth, movingTab, movingOldPosition, movingOldDepth, insertBefore, insertOldPosition, insertOldDepth, isAncestor;
           let replacingTab = false;
+          tabs.forEach(function forceUnCollapse(t) {
+            //force uncollapse trees
+            if (t.hasAttribute("twisted-root")) {
+              nativeTreeTabs.toggleTwist(t);
+            }
+          });
           if (indexOfReplacedTab > -1 && this.tabs.length > 0 && tabs.length == 1 && !tabs[0].pinned) {
             replacingTab = true;
             movingTab = tabs[0];
@@ -3360,7 +3398,7 @@
               let tDepth = getTreeDepth(t);
               let tNext = getNextTab(t);
               while (tNext) {
-                tNextDepth = getTreeDepth(tNext);
+                let tNextDepth = getTreeDepth(tNext);
                 if (tDepth == null || tNextDepth <= tDepth) {
                   break;
                 }
@@ -3445,7 +3483,7 @@
               skipNextMoveCheck(t);
             });
             let moveSecondTabChildren = false;
-            let secondOldDepth;
+            let movingOldPosition, movingOldDepth, insertOldPosition, insertOldDepth;
             let movingTab = tabsToAdd.find(t => t != insertBefore);
             let isAncestor = (tabsToAdd.length > 1 && checkIfIsAncestor(insertBefore, movingTab)) ?
               true : false;
@@ -3460,10 +3498,10 @@
               insertOldDepth = getTreeDepth(insertBefore);
 
               function makeSureOpenerIsSet(t) {
-                let tDepth = getTreeDepth(t);
+                const tDepth = getTreeDepth(t);
                 let tNext = getNextTab(t);
                 while (tNext) {
-                  tNextDepth = getTreeDepth(tNext);
+                  let tNextDepth = getTreeDepth(tNext);
                   if (tDepth == null || tNextDepth <= tDepth) {
                     break;
                   }
@@ -5657,6 +5695,15 @@
     }
   }
 
+  function unsetAsTwistedRoot(aTab) {
+    aTab.removeAttribute("twisted-root");
+    deleteCustomTabValue(aTab, "twisted-root");
+    let tCC = aTab.querySelector(".tab-child-count");
+    if (tCC != null) tCC.remove();
+    let tCC2 = aTab.querySelector(".tab-child-count2");
+    if (tCC2 != null) tCC2.remove();
+  }
+
   function hideTab(aTab, panelId) {
     if (aTab.group) {
       aTab.group.tabs.forEach(function(cTab) {
@@ -6284,6 +6331,15 @@
     }
   }
 
+  function tryToGetComputedStyle(element, property, defaultValue) {
+    try {
+      return parseInt(window.getComputedStyle(element).getPropertyValue(property), 10);
+    } catch (error) {
+      console.error(error);
+      return defaultValue;
+    }
+  }
+
   function parseShortcut(str) {
     //input string (example: "Ctrl + Shift + A")
     // returns object, with modifiers values plus keycode 
@@ -6408,7 +6464,7 @@
       return;
     }
     let panel = window.nativeTreeTabs.selectedPanel;
-    let prvWidth = getComputedStyle(tabPanelName).getPropertyValue("width");
+    let prvWidth = tryToGetComputedStyle(tabPanelName, "width", 200);
     let replace, value, placeholder, width, minWidth, minHeight, textAlign, fontSize, color, padding
     let input = createInput(tabPanelName, {
       replace: true,
@@ -6454,7 +6510,7 @@
     }
     let menupopup = document.getElementById('tab-panels-menupopup');
     menupopup._stayOpen = true;
-    let prvWidth = getComputedStyle(target).getPropertyValue("width");
+    let prvWidth = tryToGetComputedStyle(target, "width", 200);
     let input = createInput(target, {
       replace: false,
       value: panel.label,
@@ -8899,6 +8955,8 @@
             mediaController.play();
           }
         }
+        //remove dot on favicon (tab not selected after location changed )
+        aTab.removeAttribute("titlechanged");
         // // refresh icon XXXX NO NEEDED
         // listener will update the icon
         // setTimeout(() => updateMediaIcon(aTab), 120);
@@ -11498,7 +11556,7 @@
     let rootTabTopMargin = nativeTreeTabs.checkOrSetPref("treeTabs.rootTabTopMargin", "10");
     let branchTabTopMargin = nativeTreeTabs.checkOrSetPref("treeTabs.branchTabTopMargin", "4");
     let labelFontSize = nativeTreeTabs.checkOrSetPref("treeTabs.labelFontSize", "13.4");
-    let tabBorderRadius = nativeTreeTabs.checkOrSetPref("treeTabs.tabBorderRadius", parseInt(window.getComputedStyle(document.querySelector(["tab"])).getPropertyValue('--tab-border-radius')));
+    let tabBorderRadius = nativeTreeTabs.checkOrSetPref("treeTabs.tabBorderRadius", tryToGetComputedStyle(document.querySelector(["tab"]), '--tab-border-radius', 8));
     let tabHeight = nativeTreeTabs.checkOrSetPref("treeTabs.tabHeight", "30");
     let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", "2");
     let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
@@ -11713,10 +11771,11 @@
     }
 
     /* FF 160+ fix */
-    .tabbrowser-tab[dragtarget]{
-      margin-top:${headerHeight}px!important;
+    #vertical-tabs {
+      .tabbrowser-tab[dragtarget],tab-split-view-wrapper[dragtarget]{
+        margin-top:${headerHeight}px!important;
+      }
     }
-
     /* Audio playing icon enlarge */
     .tab-audio-button {
         transform: scale(1.132);
