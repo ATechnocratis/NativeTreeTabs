@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.1.1
+// @version        0.4.1.2
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -9508,6 +9508,7 @@
     if (globalThis.openpgp) return globalThis.openpgp;
 
     const OPENPGP_URL = "https://cdn.jsdelivr.net/npm/openpgp@6.3.2/dist/openpgp.min.js";
+    const OPENPGP_SHA384 = "Q6tBjZrAPJTIxj5F9KxCni/T9dTGDsXfi4U7aBZOl+3zPHpzU6gKcyKzAhs8Xeoa";
     const chromeDir = FileUtils.getDir("UChrm", []); // profile/chrome/
     const cachePath = PathUtils.join(chromeDir.path, "openpgp.min.js");
 
@@ -9529,6 +9530,11 @@
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const code = await res.text();
+      const digest = await crypto.subtle.digest("SHA-384", new TextEncoder().encode(code));
+      const digestB64 = btoa(String.fromCharCode(...new Uint8Array(digest)));
+      if (digestB64 !== OPENPGP_SHA384) {
+        throw new Error("[OpenPGP] Integrity check failed: downloaded script hash mismatch");
+      }
       await IOUtils.writeUTF8(cachePath, code);
     }
 
