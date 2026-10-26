@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.1.2
+// @version        0.4.2.0
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -52,6 +52,7 @@
     originalRemoveAllTabsBut: null,
     originalPreviewPanelActivate: null,
     originalPreviewPanelDeactivate: null,
+    originalGoBack: null,
     shortcuts: new Array(),
     customStyle: new Array(),
     domElements: new Array(),
@@ -81,6 +82,9 @@
       value: "0,2,1,3,4,5,8,9,6,7"
     },
     openNewTabsLocation: {
+      value: 0,
+    },
+    goBackBehavior: {
       value: 0,
     },
     moveNewTabsDirectlyUnderParent: {
@@ -130,6 +134,9 @@
     },
 
     init: function() {
+
+      // Disable the enable/disable toggle button
+      setPref("treeTabs.loading", true);
 
       //Finds the script version to display
       let version = "";
@@ -229,14 +236,18 @@
       this.domElements.push(...alwaysOnElements);
 
       //add media play/pause button on every tab
-      addMediaControl();
+      mediaControl.attachTabMediaListeners();
 
       //-------------------
       console.log("Native Tree Tabs loaded.");
       this._initialized = true;
+      clearUserPref("treeTabs.loading");
     },
 
     uninit: function() {
+      // used to disable enable/disable button
+      setPref("treeTabs.loading", true);
+
       //Remove listeners and observers
       gBrowser.removeTabsProgressListener(this);
       this._tabEvents.forEach(function(aEvent) {
@@ -246,9 +257,8 @@
         Services.prefs.removeObserver(topic, this);
       };
 
-      this.removeTabListeners();
-
       window.removeEventListener("keydown", this, true);
+      gBrowser.tabContainer.removeEventListener("mousedown", this, true);
 
       Object.values(this).filter(key => key != null && key.hasOwnProperty("onEnable")).forEach(function(property) {
         if (property.value === true) {
@@ -257,7 +267,6 @@
       });
 
       //Restore default functions
-      gBrowser.tabContainer.removeEventListener("mousedown", this);
       gBrowser.addTab = this.originalAddTab;
       gBrowser.removeTab = this.originalRemoveTab;
       gBrowser.removeTabs = this.originalRemoveTabs;
@@ -275,6 +284,7 @@
       gBrowser.RemoveAllTabsBut = this.originalRemoveAllTabsBut;
       gBrowser.tabContainer.previewPanel.activate = this.originalPreviewPanelActivate;
       gBrowser.tabContainer.previewPanel.deactivate = this.originalPreviewPanelDeactivate;
+      gBrowser.goBack = this.originalGoBack;
 
       nativeTreeTabs.hoverTabs.forEach((aTab) => {
         aTab.removeAttribute("multiselected");
@@ -296,27 +306,49 @@
       });
 
       this.tabPanels = new Array();
-      gBrowser.tabs.forEach(function(aTab) {
-        aTab.removeAttribute("tree-id");
-        aTab.removeAttribute("tree-depth");
-        aTab.removeAttribute("panel-id");
-        aTab.removeAttribute("tabPanel-hidden");
-        unsetAsTwistedRoot(aTab);
-        aTab.removeAttribute("hidden-child");
-        aTab.removeAttribute("hidden-child-rootID");
-        if (aTab.hasAttribute("nestTab")) {
-          let nestLabel = aTab.querySelector("[nestLabel]");
-          if (nestLabel)
-            nestLabel.remove();
-          aTab.removeAttribute("nestTab");
-        }
-      }, this);
 
       clearAlwaysOn();
 
       stopAutoUpdateChecker();
 
-      this._initialized = false;
+      mediaControl.unregisterTabMediaListeners();
+
+      async function freeTabs() {
+        // For each tab
+        // remove all the attributes the script sets
+        // and each custom element appended
+        // Keeps the customtabdata
+        function freeTab(aTab) {
+          nativeTreeTabs.removeTabListeners(aTab);
+          aTab.removeAttribute("tree-id");
+          aTab.removeAttribute("tree-depth");
+          aTab.removeAttribute("panel-id");
+          aTab.removeAttribute("tabPanel-hidden");
+          unsetAsTwistedRoot(aTab, false);
+          aTab.removeAttribute("hidden-child");
+          aTab.removeAttribute("hidden-child-rootID");
+          if (aTab.hasAttribute("nestTab")) {
+            let nestLabel = aTab.querySelector("[nestLabel]");
+            if (nestLabel)
+              nestLabel.remove();
+            aTab.removeAttribute("nestTab");
+          }
+          // let mediaButon = aTab.querySelector("tab-media-button");
+          // if (mediaButon)
+
+        }
+
+        for (let tab of gBrowser.tabs) {
+          await freeTab(tab);
+        }
+
+        //true finish
+        window.nativeTreeTabs._initialized = false;
+        clearUserPref("treeTabs.loading");
+      }
+
+      freeTabs();
+      //will finish when freeTabs ends
     },
 
     onLocationChange(browser, webProgress, request, locationURI, flags) {
@@ -1105,6 +1137,27 @@
           if (getPosition(aTab) == gBrowser.tabs.length - 1)
             setTreeDepth(aTab, '0');
           this.updateChildrenFromIndex(aTab, prevPosition, getPosition(aTab), tabOriginalDepth, false, forceMultiselected);
+          let untTwistTreeTab = newPosition;
+          while (true) {
+            // Find the collapsed trees, the tab moved in and
+            // untwist them
+            if (untTwistTreeTab == null) {
+              break;
+            }
+            let rootId = untTwistTreeTab.getAttribute("hidden-child-rootID");
+            if (rootId == null) {
+              break;
+            }
+            let root = this.tabsIds.get(rootId);
+            if (root == null) {
+              break;
+            }
+            // Only if moved inside the tree
+            // if it became sibling to a collapsed root don't untwist it
+            if (getTreeDepth(root) < getTreeDepth(aTab))
+              this.toggleTwist(root);
+            untTwistTreeTab = root;
+          }
           return true;
         } else {
           groupMove.tabs.forEach(function(gTab) {
@@ -2216,7 +2269,7 @@
     },
 
     tabOpen: function(aTab) {
-      setPanelLite(aTab, window.nativeTreeTabs.selectedPanel, window);
+      // setPanelLite(aTab, window.nativeTreeTabs.selectedPanel, window);
       this.initTreeDepth(aTab);
       this.observeTab(aTab, ["pending", "bursting", "open"], this.initTab);
     },
@@ -2228,16 +2281,14 @@
       aTab.querySelector(".tab-close-button").addEventListener("click", this, true);
     },
 
-    removeTabListeners: function() {
-      gBrowser.tabs.forEach(function(aTab) {
-        aTab.removeEventListener("dragend", this, true);
-        aTab.removeEventListener("dragstart", this, true);
-        aTab.querySelector(".tab-icon-stack").removeEventListener("click", this);
-        aTab.querySelector(".tab-close-button").removeEventListener("click", this, true);
-        aTab.removeEventListener("click", this.previousSwitch, true);
-        if (aTab.hasAttribute("nestTab"))
-          aTab.removeEventListener("click", this.nestClick);
-      }, this);
+    removeTabListeners: function(aTab) {
+      aTab.removeEventListener("dragend", this, true);
+      aTab.removeEventListener("dragstart", this, true);
+      aTab.querySelector(".tab-icon-stack").removeEventListener("click", this);
+      aTab.querySelector(".tab-close-button").removeEventListener("click", this, true);
+      aTab.removeEventListener("click", this.previousSwitch, true);
+      if (aTab.hasAttribute("nestTab"))
+        aTab.removeEventListener("click", this.nestClick);
     },
 
     initTab: function(aTab) {
@@ -2390,13 +2441,10 @@
           if (!restorePanelLabel) {
             restorePanelLabel = "Restored Panel";
           }
-          let previousPanelIndex;
 
-          if (previousTab) {
-            previousPanelIndex = previousTab.getAttribute("panel-id");
-          }
           let forceShow;
-          panel = this.tabPanelOpen(null, restorePanelLabel, panelId, forceShow = false, previousPanelIndex);
+          panel = this.tabPanelOpen(null, restorePanelLabel, panelId, forceShow = false, -1);
+
           let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
           if (restorePanelIcon) {
             this.setPanelIcon(panel, restorePanelIcon);
@@ -2413,48 +2461,6 @@
             //usually for the first Tab Panel
             let checkIt;
             addNewPanelInMenu(panel, checkIt = false);
-          } else {
-            //Panel is in menu
-            if (!aTab.pinned && previousTab && previousTab.hasAttribute("panel-id") && previousTab.getAttribute("panel-id") != panel.id.toString()) {
-              //check if same Panel tabs exist already but we are in wrong position
-              let moveToCorrect = correctTabLocationAccordingToPanelId(aTab, panel.id.toString());
-              if (moveToCorrect == false) {
-                //no other same Panel tabs exist
-                let previousPanelId = previousTab.getAttribute("panel-id");
-                let previousPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === previousPanelId);
-                if (previousPanelIndex && nativeTreeTabs.tabPanels.indexOf(panel) < previousPanelIndex) {
-                  //Panel is in wrong position on the menu => move it
-                  // probably caused by pinned tab restore (happens first of all)
-                  moveItemInTheArray(nativeTreeTabs.tabPanels, nativeTreeTabs.tabPanels.indexOf(panel), previousPanelIndex);
-                  let menupopup = document.getElementById('tab-panels-menupopup-view');
-                  //Put it in the right position
-                  if (menupopup) {
-                    let panelItemInmenu = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
-                    let prevPanelItemInmenu = menupopup.querySelector('[panel-id="' + previousPanelId + '"]');
-                    if (prevPanelItemInmenu && panelItemInmenu) {
-                      prevPanelItemInmenu.after(panelItemInmenu);
-                    }
-                  }
-                  let tabContextMenupopup = document.getElementById("tab-context-panel-actions");
-                  let contextItem = tabContextMenupopup.querySelector('#moveTo-panel-' + panel.id.toString());
-                  let prevItemContext = tabContextMenupopup.querySelector('#moveTo-panel-' + previousPanelId);
-                  if (tabContextMenupopup && contextItem && prevItemContext) {
-                    prevItemContext.after(contextItem);
-                  }
-                }
-              }
-            } else if (!aTab.pinned && !previousTab && nativeTreeTabs.tabPanels.indexOf(panel) != 0) {
-              //Case of no previous tab in strip (excluding pinned tabs)
-              // Panel should be first in the array but isn't => move it
-              // let menupopup = document.getElementById('tab-panels-menupopup-view');
-              // if (menupopup) {
-              //   let panelItemInmenu = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
-              //   let firstPanelInMenu = menupopup.parentNode.querySelector('#tab-panels-menupopup-view > menuitem');
-              //   if (panelItemInmenu && firstPanelInMenu) {
-              //     menupopup.insertBefore(panelItemInmenu, firstPanelInMenu);
-              //   }
-              // }
-            }
           }
         }
         setPanel(aTab, panel, window);
@@ -2496,22 +2502,32 @@
         unHideTab(aTab);
       }
       let aTabPanelId = aTab.getAttribute("panel-id");
-      //Tab position mismatch in Panels
-      //check if opened under another Panel tabs and is not the first tab of a Panel
+      let movedBefore = false;
+      let movedAfter = false;
+      let checkPosition = false;
+      // Check if other tabs in the same Tab Panel exists
+      // if the tab is not sticked to them
+      // move it there, (pinned status is taken in account)
       if (isTab(previousTab)) {
         if (previousTab.getAttribute("panel-id") != aTabPanelId) {
-          //Opened after another Panels tabs while tabs of the same Panels exist
-          // before them
-          correctTabLocationAccordingToPanelId(aTab, aTabPanelId);
+          checkPosition = true;
+          // Opened after another Panels tabs while tabs of the same Panels exist before them?
+          // move backwards
+          movedBefore = correctTabLocationAccordingToPanelId(aTab, aTabPanelId, -1);
         }
       } else {
         let nextTab = getNextTab(aTab);
-        if (isTab(nextTab) && nextTab.getAttribute("panel-id") != aTabPanelId) {
-          //opened at top and there are another Panel tabs between the opened tab and its Panel tabs 
-          //edge case (unless open new tab at top from script settings is enabled, this shouldn't happen)
-          //check if opened as topmost tab while the Panel is not the first one
-          correctTabLocationAccordingToPanelId(aTab, aTabPanelId, 1);
+        if (isTab(nextTab) && !nextTab.hasAttribute("panel-id-pending") && nextTab.getAttribute("panel-id") != aTabPanelId) {
+          checkPosition = true;
+          // Opened at (top) and there are another Panel tabs between the opened tab and its Panel tabs 
+          // edge case (unless open new tab at top from script settings is enabled, this shouldn't happen)
+          movedAfter = correctTabLocationAccordingToPanelId(aTab, aTabPanelId, 1);
         }
+      }
+      if (!aTab.pinned && checkPosition && movedBefore == false && movedAfter == false) {
+        // Will check non pinned tabs that have no other tabs of the same Tab Panel existing (or initialized yet)
+        // if they are in the right position according to their Panel Index
+        fixTabOrPanelPosition(aTab, aTabPanelId);
       }
 
     },
@@ -2621,8 +2637,9 @@
         nativeTreeTabs.customStyle.forEach(function(style) {
           styleSvc.unregisterSheet(style[0], style[1]);
         });
-        nativeTreeTabs.customStyle.push(loadNTTstyle());
         nativeTreeTabs.customStyle.push(loadTabPanelsstyle());
+        nativeTreeTabs.customStyle.push(loadNTTstyle());
+
       }
     },
 
@@ -2743,8 +2760,11 @@
         maxValue: 2,
         defaultValue: 0
       });
-
-
+      this.observeTopic("treeTabs.behavior.goBackBehavior", this.goBackBehavior, this.goBackBehavior.value, isIntegerValueCheck, {
+        minValue: 0,
+        maxValue: 2,
+        defaultValue: 0
+      });
 
       let switchOnCloseValueCheck = function(prefName, val) {
         let newValue = val;
@@ -3122,7 +3142,7 @@
             //move it according to its Tab Panel Index
             let aTabTabPanelId = aTab.getAttribute("panel-id");
             let aTabTabPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === aTabTabPanelId);
-            findCorrectPinPosition(getPreviousTab(aTab), [aTab], aTabTabPanelId, aTabTabPanelIndex);
+            moveTabsAccordingToTheirPanelIndex(getPreviousTab(aTab), [aTab], aTabTabPanelId, aTabTabPanelIndex);
           }
           removeSkipNextMoveCheck(aTab);
           return toReturn;
@@ -4036,6 +4056,29 @@
           return nativeTreeTabs.originalPreviewPanelDeactivate.apply(this, arguments);
         }
       }
+
+      // Going back, when there is no page to go back
+      this.originalGoBack = gBrowser.goBack;
+      gBrowser.goBack = function(requireUserInteraction) {
+        try {
+          if (nativeTreeTabs.goBackBehavior.value != 0 && !gBrowser.selectedTab.pinned && this.selectedBrowser?.webNavigation?.canGoBack === false && gBrowser.tabs.length > 1) {
+            // Tab doesn't have a previous location to go back to
+            let tabToClose = this.selectedTab;
+            if (nativeTreeTabs.goBackBehavior.value === 2) {
+              //select previous active tab
+              nativeTreeTabs.flipActive();
+            }
+            // Close the tab
+            let animate, suppressWarnAboutClosingWindow;
+            gBrowser.removeTab(tabToClose, animate = false, suppressWarnAboutClosingWindow = false);
+            return;
+          }
+          return nativeTreeTabs.originalGoBack.apply(this, arguments)
+        } catch (error) {
+          console.error(error);
+          return nativeTreeTabs.originalGoBack.apply(this, arguments);
+        }
+      };
     },
 
     addTabGroupCreateListeners: function() {
@@ -4424,6 +4467,68 @@
       }
     },
 
+
+
+    movePanelObject: function(index1, swapIndex, id1, id2, first, where) {
+      // Moves Panel with id1 before/after the panel with id2
+      // in array, list and context menu
+      moveItemInTheArray(this.tabPanels, index1, swapIndex);
+      let menupopup = document.getElementById('tab-panels-menupopup-view');
+      //Put it in the right position
+      if (menupopup) {
+        let panelItemInmenu = menupopup.querySelector('[panel-id="' + id1 + '"]');
+        let prevPanelItemInmenu = (first) ? menupopup.firstChild : menupopup.querySelector('[panel-id="' + id2 + '"]');
+        if (prevPanelItemInmenu && panelItemInmenu) {
+          panelItemInmenu.parentNode.insertBefore(panelItemInmenu, prevPanelItemInmenu);
+          if(where == "after"){
+            prevPanelItemInmenu.after(panelItemInmenu);
+          }
+         else{
+            panelItemInmenu.parentNode.insertBefore(panelItemInmenu, prevPanelItemInmenu);
+          }
+        }
+      }
+      let tabContextMenupopup = document.getElementById("tab-context-panel-actions");
+      let contextItem = tabContextMenupopup.querySelector('#moveTo-panel-' + id1);
+      let prevItemContext = (first) ? tabContextMenupopup.firstChild : tabContextMenupopup.querySelector('#moveTo-panel-' + id2);
+      if (tabContextMenupopup && contextItem && prevItemContext) {
+         if(where == "after"){
+            prevItemContext.after(contextItem);
+         }
+        else{
+          contextItem.parentNode.insertBefore(contextItem, prevItemContext);
+         }
+      }
+    },
+
+    movePanelObjectBeforeAnother: function(index1, index2, id1, id2, first = false) {
+      let swapIndex;
+      if (first || index2 == 0) {
+        swapIndex = 0
+      } else if (index1 == index2) {
+        return;
+      } else if (index1 < index2) {
+        swapIndex = index2 - 1;
+      } else {
+        swapIndex = index2;
+      }
+      this.movePanelObject(index1, swapIndex, id1, id2, first,"before");
+    },
+
+    movePanelObjectAfterAnother: function(index1, index2, id1, id2, first = false) {
+      let swapIndex;
+      if (first) {
+        swapIndex = 0
+      } else if (index1 == index2) {
+        return;
+      } else if (index1 < index2) {
+        swapIndex = index2;
+      } else {
+        swapIndex = index2 + 1;
+      }
+     this.movePanelObject(index1, swapIndex, id1, id2, first,"after");
+    },
+
     tabPanelOpen: function(tabs = null, label = null, id = null, forceShow = false, index = null, group = false) {
       let show = true;
       // if (tabs != null && !tabs.includes(window.gBrowser.selectedTab) && !forceShow) {
@@ -4460,7 +4565,7 @@
 
       let checkPanel = (id != null) ? false : true;
 
-      if (this.tabPanels.length === 1 && this.tabPanels[0].count > 0) {
+      if (this.tabPanels.length == 1) {
         if (!findPanelInMenu(this.tabPanels[0])) {
           addNewPanelInMenu(this.tabPanels[0], !checkPanel);
         }
@@ -4475,8 +4580,15 @@
       }
 
       this.tabPanels.push(newPanel);
-      let position = (id != null) ? index : -1;
-      addNewPanelInMenu(newPanel, checkPanel, position);
+      addNewPanelInMenu(newPanel, checkPanel);
+
+      if (id != null && index != -1) {
+        //force moves the new Panel to the given index
+        let previousPanelIndex = (index != null) ? this.tabPanels.findIndex(x => x.id.toString() === index) : null;
+        let first = (previousPanelIndex == null) ? true : false;
+        this.movePanelObjectAfterAnother(this.tabPanels.length - 1, previousPanelIndex, newPanelId, index, first)
+      }
+
 
       if (show && id == null) {
         this.changeSelectedPanel(newPanel);
@@ -4565,42 +4677,47 @@
         if (!beforePanel) {
           return;
         }
-        //first tab of the before Panel
+        // Find the first tab of the next-to-be Panel
         let pTab = gBrowser.tabs.find(tab => !tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === beforePanelId);
 
         if (!isTab(pTab)) {
-          //check for pinned tabs
+          // No tab to move before found
+          // Check for pinned tabs
           pTab = gBrowser.tabs.find(tab => tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === beforePanelId);
           if (!isTab(pTab)) {
             return positionPinnedTabsBasedOnTabPanelIndex(null, panel);
           }
           indexOfBeforePanel = nativeTreeTabs.tabPanels.indexOf(beforePanel);
           if (indexOfBeforePanel === nativeTreeTabs.tabPanels.length - 1) {
-            //last
+            // last => move to end
             position = null;
           } else {
-            while (position == null && indexOfBeforePanel > 0) {
-              let previousBeforePanel = this.tabPanels[indexOfBeforePanel - 1];
+            // Make it work for up and down move => <0 ++ kai this.tabPanels.length > 0,--
+            // analoga an pige panw i katw
+            while (position == null && indexOfBeforePanel < this.tabPanels.length) {
+              let previousBeforePanel = this.tabPanels[indexOfBeforePanel + 1];
               let previousBeforePanelId = previousBeforePanel.id.toString();
               pTab = gBrowser.tabs.find(tab => !tab.pinned && tab.hasAttribute("panel-id") && tab.getAttribute("panel-id") === previousBeforePanelId);
               if (isTab(pTab)) {
                 position = pTab;
-                afterMove = true;
+                // afterMove = true;
+                afterMove = false;
+
                 break;
               }
-              indexOfBeforePanel--;
+              indexOfBeforePanel++;
             }
-            if (position == null) {
-              //top of tab strip move
-              position = gBrowser.tabs[gBrowser.pinnedTabCount];
-              //bug this fails if every single taab is pinned?
-              if (gBrowser.pinnedTabCount < gBrowser.tabs.length && position.getAttribute("panel-id") === panelId) {
-                //tabs already in correct position only array is wrong
-                let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-                moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, indexOfBeforePanel);
-                return positionPinnedTabsBasedOnTabPanelIndex(null, panel);
-              }
-            }
+            // if (position == null) {
+            //   //top of tab strip move XXXXXXX bottom
+            //   position = gBrowser.tabs[gBrowser.pinnedTabCount];
+            //   //bug this fails if every single taab is pinned?
+            //   if (gBrowser.pinnedTabCount < gBrowser.tabs.length && position.getAttribute("panel-id") === panelId) {
+            //     //tabs already in correct position only array is wrong
+            //     let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
+            //     moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, indexOfBeforePanel);
+            //     return positionPinnedTabsBasedOnTabPanelIndex(null, panel);
+            //   }
+            // }
           }
         } else {
           position = pTab;
@@ -4688,7 +4805,7 @@
           }, this);
           let panelId = panel.id.toString();
           let panelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === panelId);
-          findCorrectPinPosition(getPreviousTab(pinnedTabs[0]), pinnedTabs, panelId, panelIndex);
+          moveTabsAccordingToTheirPanelIndex(getPreviousTab(pinnedTabs[0]), pinnedTabs, panelId, panelIndex);
         }
       }
     },
@@ -5695,9 +5812,11 @@
     }
   }
 
-  function unsetAsTwistedRoot(aTab) {
+  function unsetAsTwistedRoot(aTab, hardFormat = true) {
     aTab.removeAttribute("twisted-root");
-    deleteCustomTabValue(aTab, "twisted-root");
+    if (hardFormat) {
+      deleteCustomTabValue(aTab, "twisted-root");
+    }
     let tCC = aTab.querySelector(".tab-child-count");
     if (tCC != null) tCC.remove();
     let tCC2 = aTab.querySelector(".tab-child-count2");
@@ -5893,6 +6012,9 @@
 
   function increaseChildCount(aTab) {
     let root = getRootTab(aTab);
+    if (!isTab(root)) {
+      return;
+    }
     if (root.splitview)
       root = root.splitview.tabs[0];
     while (isTab(root) && (!root.hasAttribute("twisted-root"))) {
@@ -6191,8 +6313,9 @@
 
   //Tab Panels corrections
   function correctTabLocationAccordingToPanelId(aTab, aTabPanelId, dir = -1) {
-    if (aTab.pinned)
+    if (aTab.pinned) {
       return correctPinnedTabLocationAccordingToPanelId(aTab, aTabPanelId, dir);
+    }
     //first tab of a Panel here or a wrong one
     let correction = false;
     let possiblePanelTab = window.gBrowser.tabContainer.findNextTab(aTab, {
@@ -6221,6 +6344,89 @@
     return correction;
   }
 
+  function fixTabOrPanelPosition(aTab, aTabPanelId) {
+
+    let aTabTabPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === aTabPanelId);
+
+    let previousTab = getPreviousTab(aTab);
+    let previousPanelId = (previousTab != null) ? previousTab.getAttribute("panel-id") : null;
+    let previousPanelIndex = (previousPanelId != null) ? nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === previousPanelId) : null;
+
+    let nextTab = getNextTab(aTab);
+    let nextPanelId = (nextTab != null && !nextTab.hasAttribute("panel-id-pending")) ? nextTab.getAttribute("panel-id") : null;
+    let nextPanelIndex = (nextPanelId != null) ? nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === nextPanelId) : null;
+
+    // Check for Tab Panel order mismatch by comparing Tab Panel of the tab  with previous and next tabs, Tab Panels.
+    if (aTabTabPanelIndex != null && (
+        (previousPanelIndex != null && aTabTabPanelIndex < previousPanelIndex) ||
+        (nextPanelIndex != null && aTabTabPanelIndex > nextPanelIndex) ||
+        (nextPanelIndex == null && previousPanelIndex == null) ||
+        (previousPanelIndex != null && nextPanelIndex == null)
+      )) {
+
+      let possiblePinnedPanelTab = (gBrowser.pinnedTabCount > 0) ? [...gBrowser.pinnedTabsContainer.childNodes].filter(t => t.getAttribute("panel-id") === aTabPanelId) : null;
+      if (possiblePinnedPanelTab != null && possiblePinnedPanelTab.length > 0) {
+        // Pinned tab(s) of the same Tab Panel exist
+        // respect the Panel order and move the tab 
+        // (if its in wrong position)
+        // (Edge case of giving priority to pinned tabs 
+        // only if the Panel index agrees with them
+        // Must have  for panels with only pinned tabs 
+        // ,or else their new tabs will always open in bottom,
+        // with no respect for the Panel index)
+        // Should also move the pinned tabs if they are in 
+        // wrong position? (Is it possible-Extreme edge case?)
+        let correctPosition;
+        let moveToStart = false;
+        nextPanelIndex = (aTabTabPanelIndex >= nativeTreeTabs.tabPanels.length) ? null : aTabTabPanelIndex + 1;
+        nextPanelId = (nextPanelIndex != null && nativeTreeTabs.tabPanels.length > nextPanelIndex) ? nativeTreeTabs.tabPanels[nextPanelIndex].id.toString() : null;
+        while (nextPanelId) {
+          //loop all Panel from the start to find the true next Panel first tab position to put the tab before.
+          let possibleCorrection = gBrowser.tabContainer.findNextTab(gBrowser.tabs[gBrowser.pinnedTabCount - 1], {
+            direction: 1,
+            wrap: false,
+            filter: tab => tab.getAttribute("panel-id") == nextPanelId && !tab.pinned,
+          });
+          if (possibleCorrection) {
+            correctPosition = possibleCorrection;
+            break;
+          } else {
+            nextPanelIndex = (nextPanelIndex >= nativeTreeTabs.tabPanels.length) ? null : nextPanelIndex + 1;
+            nextPanelId = (nextPanelIndex != null && nativeTreeTabs.tabPanels.length > nextPanelIndex) ? nativeTreeTabs.tabPanels[nextPanelIndex].id.toString() : null;
+          }
+        }
+        if (correctPosition != null && correctPosition != getNextTab(aTab)) {
+          // correction = true;
+          skipNextMoveCheck(aTab);
+          nativeTreeTabs.moveTabBefore(aTab, correctPosition);
+          removeSkipNextMoveCheck(aTab);
+        }
+      } else if ((possiblePinnedPanelTab == null || possiblePinnedPanelTab.length == 0) && previousPanelIndex != null && nextPanelIndex == null) {
+        // No pinned tabs => MUST be after the previous tab panel
+        // priority of Tab Panels order respect normal tabs before pinned tabs
+        if (previousPanelIndex != aTabTabPanelIndex - 1) {
+          nativeTreeTabs.movePanelObjectAfterAnother(aTabTabPanelIndex, previousPanelIndex, aTabPanelId, previousPanelId);
+        }
+      }
+      //Panel is in wrong order=> set the right index
+      else if (nextPanelIndex == null && previousPanelIndex == null) {
+        // Edge case: First tab in the strip, with no pinned tabs in its Panel
+        // make sure its Panel moves/is the first in order
+        if (aTabTabPanelIndex != 0) {
+          nativeTreeTabs.movePanelObjectAfterAnother(aTabTabPanelIndex, null, aTabPanelId, null, true);
+        }
+      } else if (previousPanelIndex != null && aTabTabPanelIndex < previousPanelIndex) {
+        // Move panel after previous tab, Tab Panel
+        // should recheck...... if missorder still exists?
+        nativeTreeTabs.movePanelObjectAfterAnother(aTabTabPanelIndex, previousPanelIndex, aTabPanelId, previousPanelId);
+      } else if (nextPanelIndex != null && aTabTabPanelIndex > nextPanelIndex) {
+        // Move panel before next tab, Tab Panel
+        // should recheck......
+        nativeTreeTabs.movePanelObjectBeforeAnother(aTabTabPanelIndex, nextPanelIndex, aTabPanelId, nextPanelId);
+      }
+    }
+  }
+
   function correctPinnedTabLocationAccordingToPanelId(aTab, aTabPanelId, dir = -1) {
     let correction = false;
     let getTabToCheck = (dir == 1) ? getNextTab : getPreviousTab;
@@ -6245,24 +6451,33 @@
     return correction;
   }
 
-  function findCorrectPinPosition(previousTab, pinnedTabs, aTabTabPanelId, aTabTabPanelIndex) {
+  function moveTabsAccordingToTheirPanelIndex(previousTab, pinnedTabs, aTabTabPanelId, aTabTabPanelIndex, dir = -1) {
     let returnVal = false;
     if (isTab(previousTab) && previousTab.hasAttribute("panel-id")) {
       let previousTabTabPanelId = previousTab.getAttribute("panel-id");
       if (previousTabTabPanelId != aTabTabPanelId) {
         let previousPanelIndex = nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === previousTabTabPanelId);
-        if (previousPanelIndex && aTabTabPanelIndex < previousPanelIndex) {
+        if (previousPanelIndex == null) {
+          return returnVal;
+        }
+        let compare = (dir == -1) ? (aTabTabPanelIndex < previousPanelIndex) : (aTabTabPanelIndex > previousPanelIndex);
+        if (compare) {
           let tabCheck = gBrowser.tabContainer.findNextTab(previousTab, {
-            direction: -1,
+            direction: dir,
             wrap: false,
             filter: tab => tab.getAttribute("panel-id") != previousTabTabPanelId,
           });
-          if (tabCheck == null || !(returnVal = findCorrectPinPosition(tabCheck, pinnedTabs, aTabTabPanelId, aTabTabPanelIndex))) {
-            let moveBefore = (tabCheck == null) ? gBrowser.tabs[0] : getNextTab(tabCheck);
+          if (tabCheck == null || !(returnVal = moveTabsAccordingToTheirPanelIndex(tabCheck, pinnedTabs, aTabTabPanelId, aTabTabPanelIndex, dir))) {
             pinnedTabs.forEach(function(cTab) {
               skipNextMoveCheck(cTab);
             }, this);
-            gBrowser.moveTabsBefore(pinnedTabs, moveBefore);
+            if (dir == -1) {
+              let moveBefore = (tabCheck == null) ? gBrowser.tabs[0] : getNextTab(tabCheck);
+              gBrowser.moveTabsBefore(pinnedTabs, moveBefore);
+            } else {
+              let moveAfter = (tabCheck == null) ? gBrowser.tabs[gBrowser.tabs.length - 1] : getPreviousTab(tabCheck);
+              gBrowser.moveTabsAfter(pinnedTabs, moveAfter);
+            }
             pinnedTabs.forEach(function(cTab) {
               removeSkipNextMoveCheck(cTab);
             }, this);
@@ -6630,14 +6845,12 @@
     }, lostFocus, menupopup);
   }
 
-  function addNewPanelInMenu(panel, checkIt = false, position = -1) {
+  function addNewPanelInMenu(panel, checkIt = false) {
     let menuitem = document.createXULElement('menuitem');
     menuitem.setAttribute('panel-id', panel.id);
     menuitem.setAttribute('label', panel.label);
     menuitem.setAttribute('type', 'radio');
     menuitem.setAttribute("draggable", "true");
-
-    // menuitem.addEventListener("click", (aEvent) => menuItemClick(aEvent, panel, aEvent.target));
 
     let panelContext = document.getElementById('tab-panels-contextmenu');
     menuitem.addEventListener("auxclick", (aEvent) => {
@@ -6647,9 +6860,6 @@
     });
 
     let menupopup = document.getElementById('tab-panels-menupopup-view');
-    //Put it in the right position
-    //Move it in the Panel array too
-
     let tabContextMenupopup = document.getElementById("tab-context-panel-actions");
     let contextItem = addMenuItem(tabContextMenupopup, "" + panel.label, (aTab, aEvent) => {
       let forceShow = (aEvent.ctrlKey) ? true : false;
@@ -6659,32 +6869,7 @@
     }, false, "moveTo-panel-" + panel.id.toString());
 
     if (menupopup) {
-      if (position === -1) {
-        menupopup.appendChild(menuitem);
-      } else if (position == null) {
-        //first place
-        let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-        moveItemInTheArray(nativeTreeTabs.tabPanels, indexOfPanel, 0);
-        menupopup.firstChild.after(menuitem);
-        tabContextMenupopup.firstChild.after(contextItem);
-      } else {
-        let prevItem = menupopup.querySelector('[panel-id="' + position.toString() + '"]');
-        if (prevItem) {
-          //already added to tabPanels so indexes differ in the menu by + 1
-          // no need to add it because menu first child is start button so indexes
-          // of menu are +1 always
-          // let itemIndex = Array.prototype.indexOf.call(menupopup.children, prevItem);
-          // let indexOfPanel = nativeTreeTabs.tabPanels.indexOf(panel);
-          prevItem.after(menuitem);
-
-        } else {
-          menupopup.appendChild(menuitem);
-        }
-        let prevItemContext = tabContextMenupopup.querySelector('#moveTo-panel-' + position.toString());
-        if (prevItemContext) {
-          prevItemContext.after(contextItem);
-        }
-      }
+      menupopup.appendChild(menuitem);
       if (checkIt) {
         menuitem.setAttribute("checked", "");
       }
@@ -8859,13 +9044,9 @@
     return [elementsCreated];
   }
 
-  function addMediaControl() {
+  window.mediaControl = {
 
-    const PLAY_ICON = "chrome://global/skin/media/play-fill.svg";
-    const PAUSE_ICON = "chrome://global/skin/media/pause-fill.svg";
-
-
-    function createPlayPauseButton(tab) {
+    createPlayPauseButton: function(tab) {
       //play/pause button next to audio mute button
       //if exists return it
       if (tab._mediaButton) return tab._mediaButton;
@@ -8874,12 +9055,12 @@
       button.className = "tab-media-button";
       button.setAttribute("role", "button");
       //button evene
-      attachPlayPauseHandlers(button, tab);
+      this.attachPlayPauseHandlers(button, tab);
       tab._mediaButton = button;
       return button;
-    }
+    },
 
-    function attachPlayPauseHandlers(button, aTab) {
+    attachPlayPauseHandlers: function(button, aTab) {
       let startX = 0,
         startY = 0;
       let moved = false;
@@ -8966,13 +9147,13 @@
         window.addEventListener("mousemove", handleMouseMove, true);
         window.addEventListener("mouseup", handleMouseUp, true);
       }, true);
-    }
+    },
 
-    function insertButton(aTab) {
-      const button = createPlayPauseButton(aTab);
+    insertButton: function(aTab) {
+      const button = this.createPlayPauseButton(aTab);
       if (button == null)
         return;
-      toggleMediaButton(aTab, null);
+      this.toggleMediaButton(aTab, null);
 
       // Insert as sibling of the real mute/play button
       const audioButton = aTab.querySelector(".tab-audio-button");
@@ -8983,9 +9164,9 @@
         const stack = aTab.querySelector(".tab-icon-stack") || aTab.querySelector(".tab-content");
         if (stack) stack.appendChild(button);
       }
-    }
+    },
 
-    function updateFromChildrenPlaybackStatus(aTab) {
+    updateFromChildrenPlaybackStatus: function(aTab) {
 
       let mediaController = aTab.mediaChangeController;
       let forced;
@@ -9007,10 +9188,10 @@
         nextTab = getNextTab(nextTab);
       }
       //no child is playing, check own state
-      toggleMediaButton(aTab, null, forced = true);
-    }
+      this.toggleMediaButton(aTab, null, forced = true);
+    },
 
-    function setMediaPlaying(aTab, state, forced = false) {
+    setMediaPlaying: function(aTab, state, forced = false) {
 
       let twistedRoots = getAllTwistedRoots(aTab);
       if (state) {
@@ -9032,17 +9213,18 @@
         //media paused, remove  the pause  button in parents
         twistedRoots.forEach(function(root) {
           if (root != null && root.getAttribute("mediaPlaying") == "playingChild") {
+            //WARNING CHECK FOR INFINITY LOOP
             // check if no other child are playing 
             // else if root has its own playback show it instead
             // else remove the button
-            updateFromChildrenPlaybackStatus(root);
-            // setMediaPlaying(root, root.mediaChangeController.isPlaying, true);
+            this.updateFromChildrenPlaybackStatus(root);
+            // this.setMediaPlaying(root, root.mediaChangeController.isPlaying, true);
           }
-        });
+        }, this);
       }
-    }
+    },
 
-    function removeMediaPlaying(aTab, forced = false) {
+    removeMediaPlaying: function(aTab, forced = false) {
       //makes the button not show (CSS attribute rule check)
       aTab.removeAttribute("mediaPlaying");
       //If the tab is hidden update the roots too
@@ -9052,12 +9234,12 @@
           // check if no other child are playing 
           // else if root has its own playback show it instead
           // else remove the button
-          updateFromChildrenPlaybackStatus(root);
+          this.updateFromChildrenPlaybackStatus(root);
         }
       });
-    }
+    },
 
-    function toggleMediaButton(aTab, mediaController, forced = false) {
+    toggleMediaButton: function(aTab, mediaController, forced = false) {
 
       if (mediaController == null) {
         // mediaController = aTab?.linkedBrowser?.browsingContext?.mediaController;
@@ -9065,56 +9247,60 @@
       }
       // is there any controllable media?
       if (mediaController != null && mediaController.isAnyMediaBeingControlled) {
-        setMediaPlaying(aTab, mediaController.isPlaying, forced);
+        this.setMediaPlaying(aTab, mediaController.isPlaying, forced);
       } else {
-        //no => remove button
-        removeMediaPlaying(aTab);
+        // no => remove button
+        this.removeMediaPlaying(aTab);
       }
       clearTimeout(aTab.mediaCheckTimer);
       aTab.mediaCheckTimer = setTimeout(() => {
         //check again in a while, cause the controller might not be updated
         // to the correct values
         if (aTab.mediaChangeController == null || !aTab.mediaChangeController?.isAnyMediaBeingControlled) {
-          removeMediaPlaying(aTab);
+          this.removeMediaPlaying(aTab);
         } else {
-          setMediaPlaying(aTab, aTab.mediaChangeController.isPlaying, forced);
+          this.setMediaPlaying(aTab, aTab.mediaChangeController.isPlaying, forced);
         }
       }, 1000);
-    }
+    },
 
-    function checkMediaInAWhile(aTab, mediaController) {
+    checkMediaInAWhile: function(aTab, mediaController) {
       clearTimeout(aTab.mediaCheckTimer);
       aTab.mediaCheckTimer = setTimeout(() => {
-        toggleMediaButton(aTab, mediaController);
+        this.toggleMediaButton(aTab, mediaController);
       }, 300);
-    }
+    },
 
-    function registerMediaChangeHandler(aTab) {
+    registerMediaChangeHandler: function(aTab) {
       if (!aTab || aTab.closing) return;
 
-      unregisterMediaChangeHandler(aTab);
+      this.unregisterMediaChangeHandler(aTab);
 
-      let mediaController = aTab.linkedBrowser?.browsingContext?.mediaController;
+      let mediaController;
+
+      if (aTab.linkedBrowser != null && aTab.linkedBrowser.browsingContext != null)
+        mediaController = aTab.linkedBrowser.browsingContext.mediaController;
 
       if (mediaController == null) {
         return;
       }
-      //The funcion that runs on any change
-      aTab.mediaChangeHandler = function(aEvent) {
+      // The funcion that runs on any change
+      aTab.mediaChangeHandler = (aEvent) => {
         // make sure the button on tab is insterted
-        const button = createPlayPauseButton(aTab);
-        //will run after a while to give time for the
+        const button = this.createPlayPauseButton(aTab);
+        // will run after a while to give time for the
         // controller to initialize and to not change the
         // state for micro-time changes 
-        checkMediaInAWhile(aTab, mediaController);
+        // change this to window.mediaControl
+        this.checkMediaInAWhile(aTab, mediaController);
       };
-      //monitor playback changes
+      // monitor playback changes
       aTab.mediaChangeController = mediaController;
       aTab.mediaChangeController.addEventListener(
         "playbackstatechange",
         aTab.mediaChangeHandler
       );
-      //close
+      // close
       aTab.mediaChangeController.addEventListener(
         "deactivated",
         aTab.mediaChangeHandler
@@ -9131,9 +9317,9 @@
         "audiblechange",
         aTab.mediaChangeHandler
       );
-    }
+    },
 
-    function unregisterMediaChangeHandler(aTab) {
+    unregisterMediaChangeHandler: function(aTab) {
       //remove listeners
       if (aTab.mediaChangeController != null) {
         aTab.mediaChangeController.removeEventListener(
@@ -9152,48 +9338,82 @@
       aTab.mediaChangeHandler = null;
       aTab.mediaChangeController = null;
       //remove icon on tab
-      removeMediaPlaying(aTab);
-    }
+      this.removeMediaPlaying(aTab);
+    },
 
-    function attachTabMediaListeners() {
+    attachToTab: function(tab) {
+      this.insertButton(tab);
+      if (tab.linkedBrowser != null)
+        this.registerMediaChangeHandler(tab);
+    },
+
+    attachToExistingTabs: async function() {
+      // Don't let this block the execution
+      // if it fails/stuck in some tab
+      for (let tab of gBrowser.tabs) {
+        await this.attachToTab(tab);
+      }
+    },
+
+    releaseExistingTabs: async function() {
+      for (let tab of gBrowser.tabs) {
+        await this.unregisterMediaChangeHandler(tab);
+      }
+    },
+
+    handleEvent: function(aEvent) {
+
+      switch (aEvent.type) {
+        case "TabOpen": {
+          this.insertButton(aEvent.target);
+          break;
+        }
+        case "TabRemotenessChange": {
+          this.registerMediaChangeHandler(aEvent.target);
+          break;
+        }
+        case "TabBrowserDiscarded":
+        case "TabClose": {
+          this.unregisterMediaChangeHandler(aEvent.target);
+          break;
+        }
+        case "unload": {
+          gBrowser.tabs.forEach(this.unregisterMediaChangeHandler, this);
+          break;
+        }
+      }
+    },
+
+    attachTabMediaListeners: function() {
       //insert media control button on every tab that opens
       // it will stay hidden while no media is controlled
-      gBrowser.tabContainer.addEventListener("TabOpen", aEvent => {
-        insertButton(aEvent.target);
-      });
-
+      gBrowser.tabContainer.addEventListener("TabOpen", this);
       //also in any existing tabs
-      for (let tab of gBrowser.tabs) {
-        insertButton(tab);
-        if (tab.linkedBrowser != null)
-          registerMediaChangeHandler(tab);
-      }
+      this.attachToExistingTabs();
+
       //monitor for media playback on every document
-      gBrowser.tabContainer.addEventListener("TabBrowserInserted", aEvent => {
-        registerMediaChangeHandler(aEvent.target);
-      });
-
-      gBrowser.tabContainer.addEventListener("TabRemotenessChange", aEvent => {
-        registerMediaChangeHandler(aEvent.target);
-      });
-
-      gBrowser.tabContainer.addEventListener("TabClose", aEvent => {
-        unregisterMediaChangeHandler(aEvent.target);
-      });
-
-      gBrowser.tabContainer.addEventListener("TabBrowserDiscarded", aEvent => {
-        unregisterMediaChangeHandler(aEvent.target);
-      });
-
+      gBrowser.tabContainer.addEventListener("TabBrowserInserted", this);
+      gBrowser.tabContainer.addEventListener("TabRemotenessChange", this);
+      gBrowser.tabContainer.addEventListener("TabClose", this);
+      gBrowser.tabContainer.addEventListener("TabBrowserDiscarded", this);
       //window close => unregister to not interfere
-      gBrowser.documentGlobal.addEventListener("unload", () => {
-        gBrowser.tabs.forEach(unregisterMediaChangeHandler, this);
-      }, {
+      gBrowser.documentGlobal.addEventListener("unload", this, {
         once: true
       });
-    }
-    //run
-    attachTabMediaListeners();
+    },
+
+    unregisterTabMediaListeners: function() {
+      this.releaseExistingTabs();
+      gBrowser.tabContainer.removeEventListener("TabOpen", this);
+      this.attachToExistingTabs();
+      gBrowser.tabContainer.removeEventListener("TabBrowserInserted", this);
+      gBrowser.tabContainer.removeEventListener("TabRemotenessChange", this);
+      gBrowser.tabContainer.removeEventListener("TabClose", this);
+      gBrowser.tabContainer.removeEventListener("TabBrowserDiscarded", this);
+      gBrowser.documentGlobal.removeEventListener("unload", this, {
+        once: true
+      });
+    },
   }
 
 /************************************************************/
@@ -10031,6 +10251,19 @@
         if (name == "treeTabs.enabled") {
           this.checkIfEnabled();
         }
+        if (name == "treeTabs.loading") {
+          let state = this.observersSet.get(name);
+          if (state != null) {
+            let prefValue = getPref(name);
+            if (prefValue == true) {
+              state.disabled = true;
+            } else {
+              state.disabled = null;
+            }
+            this.checkIfEnabled();
+            return;
+          }
+        }
         let element = this.observersSet.get(name);
         if (element != null) {
           this.updateElement(element, name);
@@ -10625,7 +10858,9 @@
         return checkBox;
       }
 
-      createCheckBox("treeTabs.enabled", "Enabled", extra);
+      let stateCheckBox = createCheckBox("treeTabs.enabled", "Enabled", extra);
+      modifyCustomizePage.observeTopic("treeTabs.loading", stateCheckBox);
+
       createCheckBox("treeTabs.behavior.lockCtrlTabInPanel", "Lock tab switching in Panel", extra);
       createCheckBox("treeTabs.behavior.hopOverCollapsedTabs", "Hop over collapsed tabs", extra);
       let n2 = createCheckBox("treeTabs.behavior.hopOverUnloadedTabs", "Hop over unloaded tabs", extra);
@@ -10654,6 +10889,16 @@
         label: "Last child",
         value: false
     }], "boolean", extra);
+      createSelectBox("treeTabs.behavior.goBackBehavior", "Back button, with no history:", [{
+        label: "Do nothing",
+        value: 0
+      }, {
+        label: "Close tab",
+        value: 1
+      }, {
+        label: "Close and select last active",
+        value: 2
+      }], "number", extra);
       createMenuListBox("treeTabs.behavior.switchOnClose", "When active tab closes, switch to (priority):", [{
           label: "First child",
           value: 0
@@ -10856,402 +11101,402 @@
         Ci.nsIStyleSheetService
       );
       let customCSS = `
-  .sidebar-panel {
-    & .sidebar-panel-scrollable-content {
-    padding-inline-end:3px!important;
-    }
-  }
-    moz-fieldset[section-disabled] .ntt-checkbox:not([label="Enable automatic updates"]){
-      border-bottom:none!important;
-    }
-    moz-fieldset[section-disabled] .ntt-checkbox:not(:first-child,[label="Enable automatic updates"]){
-      display:none!important;
-    }
-    moz-fieldset[section-disabled] .ntt-input{
-      display:none!important;
-    }
-    sidebar-panel-header[data-l10n-id="sidebar-menu-customize-header"]{
-      padding-block: 0 !important;
-    }
-    .sidebar-panel-scrollable-content{
-      scrollbar-width: thin;
-      scrollbar-color: transparent transparent;
-    }
-    .sidebar-panel-scrollable-content:hover{
-      scrollbar-color: grey transparent;
-    }
-    fieldset a[support-page="${versionString}"]{
-      margin-left:4px;
-    }
-    fieldset a[support-page="${versionString}"]:not([modified]){
-      visibility: hidden;
-      font-size:0;
-      pointer-events:none;
-    }
-    fieldset a[support-page="${versionString}"]:not([modified]):after {
-      content: ${versionString};
-      visibility: visible;
-      font:menu;
-      color:LinkText
-      text-decoration: underline;
-    }
-    .ntt-select{
-      padding-block: 4px;
-      background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
-      --select-max-width:50%;
-      width:100px;
-      margin-left:auto!important;
-      margin-right: 0!important;
-      text-overflow: ellipsis;
-    }
-    .ntt-input{
-      position: relative;
-      display: flex;
-      padding-block: 0;
-      min-height: 34px;
-      align-items: center;
-      align-content: center;
-      flex-direction:row;
-      flex-wrap:nowrap;
-    }
-    .ntt-input::before {
-      content: '';
-      order: 1;
-    }
-    .ntt-input label{
-      order: 0;
-      text-align: left;
-      padding-inline:6px;
-    }
-    .ntt-input:has(input[type="number"]) label{
-      max-width:40%;
-      min-width:40%;
-    }
-    .ntt-input:has(input[type="text"]) label{
-      max-width:40%;
-      min-width:40%;
-    }
-    .ntt-input .input-container{
-      order: 1;
-      display:flex!important;
-      margin-left:auto;
-      margin-right:0;
-      padding: 0;
-      border:1px solid transparent;
-      background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent);
-      border-radius:2px;
-      appearance:none!important;
-    }
-    .ntt-input input{
-      background-color: transparent!important;
-      text-align: center!important;
-      text-overflow: ellipsis;
-      padding-inline-start: 0!important;
-      padding:0!important;
-      font-weight:500!important;
-      font-size: 12px!important;
-      border-radius:0!important;
-      border: none !important;
-    }
-    .ntt-input input[type="number"]{
-       max-width: 29px!important;
-       min-width: 29px!important;
-    }
-    .ntt-input input[type="text"]{
-      padding: 1px!important;
-      padding-left: 6px!important;
-      padding-right: 6px!important;
-      font-size:12px!important;
-    }
-    .ntt-input .input-container:has(input[type="text"]){
-      border-radius:5px!important;
-      border:2px solid transparent!important;
-      max-width: 100px!important;
-      min-width: 100px!important;
-    }
-    .ntt-input input[unset] {
-      opacity:0.7;
-      font-style: italic!important;
-    }
-    .ntt-input button{
-      background-color: rgba(0,0,0,0.2)!important;
-      appearance:none!important;
-      border:none!important;
-      font-size: 18px !important;
-      font-weight: 600 !important;
-      line-height: 0!important;
-      width: 24px!important;
-      height: 23px!important;
-      padding-block-end: 5px;
-      padding-inline-end: 4px;
-      text-align:center!important;
-    }
-    .ntt-input .extra-button{
-      order: 2;
-      margin-left:5px;
-      background-repeat: no-repeat;
-      background-size: 13px;
-       background-position: center;
-      -moz-context-properties: fill, stroke!important;
-      min-width: fit-content!important;
-      min-height: 20px!important;
-      fill:currentColor;
-      background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
-      opacity:0.7;
-    }
-    .ntt-input .restore-button{
-      background-image: url("chrome://global/skin/icons/undo.svg")!important;
-    }   
-    .ntt-input .delete-button{
-      background-image: url("chrome://global/skin/icons/delete.svg")!important;
-    }
-    .ntt-list{
-      --menuitem-padding:3px;
-      --menuitem-margin:1px;
-      --menuitem-max-width:unset;
-      --menuitem-icon-fill:var(--button-icon-fill);
-      flex-direction:column;
-      align-items: start;
-      border:1px solid var(--panel-separator-color);
-      border-radius: var(--border-radius-medium);
-      margin-block:10px;
-    }
-    .ntt-list > label{
-      align-self: center;
-      text-align:center!important;
-    }
-    .ntt-list menulist{
-      display: flex;
-      flex-flow: column;
-      position:relative;
-    }
-    .ntt-list > div{
-      width:100%;
-    }
-    .ntt-list div{
-      position:relative;
-    }
-    .ntt-list .collapse-button{
-      background-color:transparent!important;
-      background-image: url("chrome://global/skin/icons/arrow-up.svg");
-    }
-    .ntt-list .collapse-container{
-      width:100%;
-      position:relative;
-      background-color:inherit;
-      border-top: 2px solid;
-      border-top-color: currentcolor;
-      border-color: inherit;
-      display: flex;
-      justify-content: center;
-    }
-    .ntt-list[pressed]{
+        .sidebar-panel {
+          & .sidebar-panel-scrollable-content {
+          padding-inline-end:3px!important;
+          }
+        }
+          moz-fieldset[section-disabled] .ntt-checkbox:not([label="Enable automatic updates"]){
+            border-bottom:none!important;
+          }
+          moz-fieldset[section-disabled] .ntt-checkbox:not(:first-child,[label="Enable automatic updates"]){
+            display:none!important;
+          }
+          moz-fieldset[section-disabled] .ntt-input{
+            display:none!important;
+          }
+          sidebar-panel-header[data-l10n-id="sidebar-menu-customize-header"]{
+            padding-block: 0 !important;
+          }
+          .sidebar-panel-scrollable-content{
+            scrollbar-width: thin;
+            scrollbar-color: transparent transparent;
+          }
+          .sidebar-panel-scrollable-content:hover{
+            scrollbar-color: grey transparent;
+          }
+          fieldset a[support-page="${versionString}"]{
+            margin-left:4px;
+          }
+          fieldset a[support-page="${versionString}"]:not([modified]){
+            visibility: hidden;
+            font-size:0;
+            pointer-events:none;
+          }
+          fieldset a[support-page="${versionString}"]:not([modified]):after {
+            content: ${versionString};
+            visibility: visible;
+            font:menu;
+            color:LinkText
+            text-decoration: underline;
+          }
+          .ntt-select{
+            padding-block: 4px;
+            background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
+            --select-max-width:50%;
+            width:100px;
+            margin-left:auto!important;
+            margin-right: 0!important;
+            text-overflow: ellipsis;
+          }
+          .ntt-input{
+            position: relative;
+            display: flex;
+            padding-block: 0;
+            min-height: 34px;
+            align-items: center;
+            align-content: center;
+            flex-direction:row;
+            flex-wrap:nowrap;
+          }
+          .ntt-input::before {
+            content: '';
+            order: 1;
+          }
+          .ntt-input label{
+            order: 0;
+            text-align: left;
+            padding-inline:6px;
+          }
+          .ntt-input:has(input[type="number"]) label{
+            max-width:40%;
+            min-width:40%;
+          }
+          .ntt-input:has(input[type="text"]) label{
+            max-width:40%;
+            min-width:40%;
+          }
+          .ntt-input .input-container{
+            order: 1;
+            display:flex!important;
+            margin-left:auto;
+            margin-right:0;
+            padding: 0;
+            border:1px solid transparent;
+            background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent);
+            border-radius:2px;
+            appearance:none!important;
+          }
+          .ntt-input input{
+            background-color: transparent!important;
+            text-align: center!important;
+            text-overflow: ellipsis;
+            padding-inline-start: 0!important;
+            padding:0!important;
+            font-weight:500!important;
+            font-size: 12px!important;
+            border-radius:0!important;
+            border: none !important;
+          }
+          .ntt-input input[type="number"]{
+             max-width: 29px!important;
+             min-width: 29px!important;
+          }
+          .ntt-input input[type="text"]{
+            padding: 1px!important;
+            padding-left: 6px!important;
+            padding-right: 6px!important;
+            font-size:12px!important;
+          }
+          .ntt-input .input-container:has(input[type="text"]){
+            border-radius:5px!important;
+            border:2px solid transparent!important;
+            max-width: 100px!important;
+            min-width: 100px!important;
+          }
+          .ntt-input input[unset] {
+            opacity:0.7;
+            font-style: italic!important;
+          }
+          .ntt-input button{
+            background-color: rgba(0,0,0,0.2)!important;
+            appearance:none!important;
+            border:none!important;
+            font-size: 18px !important;
+            font-weight: 600 !important;
+            line-height: 0!important;
+            width: 24px!important;
+            height: 23px!important;
+            padding-block-end: 5px;
+            padding-inline-end: 4px;
+            text-align:center!important;
+          }
+          .ntt-input .extra-button{
+            order: 2;
+            margin-left:5px;
+            background-repeat: no-repeat;
+            background-size: 13px;
+             background-position: center;
+            -moz-context-properties: fill, stroke!important;
+            min-width: fit-content!important;
+            min-height: 20px!important;
+            fill:currentColor;
+            background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
+            opacity:0.7;
+          }
+          .ntt-input .restore-button{
+            background-image: url("chrome://global/skin/icons/undo.svg")!important;
+          }   
+          .ntt-input .delete-button{
+            background-image: url("chrome://global/skin/icons/delete.svg")!important;
+          }
+          .ntt-list{
+            --menuitem-padding:3px;
+            --menuitem-margin:1px;
+            --menuitem-max-width:unset;
+            --menuitem-icon-fill:var(--button-icon-fill);
+            flex-direction:column;
+            align-items: start;
+            border:1px solid var(--panel-separator-color);
+            border-radius: var(--border-radius-medium);
+            margin-block:10px;
+          }
+          .ntt-list > label{
+            align-self: center;
+            text-align:center!important;
+          }
+          .ntt-list menulist{
+            display: flex;
+            flex-flow: column;
+            position:relative;
+          }
+          .ntt-list > div{
+            width:100%;
+          }
+          .ntt-list div{
+            position:relative;
+          }
+          .ntt-list .collapse-button{
+            background-color:transparent!important;
+            background-image: url("chrome://global/skin/icons/arrow-up.svg");
+          }
+          .ntt-list .collapse-container{
+            width:100%;
+            position:relative;
+            background-color:inherit;
+            border-top: 2px solid;
+            border-top-color: currentcolor;
+            border-color: inherit;
+            display: flex;
+            justify-content: center;
+          }
+          .ntt-list[pressed]{
 
-   .collapse-container{
-        z-index: 3;
-        border-top: 3px solid;
-        border-color: inherit;
-    }
-    .collapse-button{
-      background-image: url("chrome://global/skin/icons/arrow-down.svg");
-    }
-    .ntt-list div{
-      position:relative;
-    }
-    menulist{
-      overflow: hidden;
-      max-height: 50px;
-      overflow: hidden;
-      position:relative;
-      z-index:-1;
-    }
-    .ntt-list-item{
-      padding:0!Important;
-      font-size:11px!important;
-      max-height:20px;
-    }
-    .ntt-list-item img,
-    .ntt-list-item button{
-      max-height:10px;
-      min-height: 10px !important;
-      min-width: 10px !important;
-      max-width: 10px !important;
-    }
-   .menulist-hider{
-      content:"";
-      top:0;
-      width:100%;
-      height:calc(100% + 2px);
-      max-height:unset;
-      display:block;
-      background:linear-gradient(180deg, color-mix(in srgb, transparent 90% ,var(--sidebar-background-color)),  color-mix(in srgb, transparent 10% ,var(--sidebar-background-color)) 100%);
-      overflow: visible;
-      position:absolute;
-      z-index:3;
-    }
-    @media (prefers-color-scheme: light) {
-      .menulist-hider{
-        background:linear-gradient(180deg, rgba(180,180,180,0.15),  rgba(175,175,175,0.4) 100%);
-      }
-    }
-  }
+         .collapse-container{
+              z-index: 3;
+              border-top: 3px solid;
+              border-color: inherit;
+          }
+          .collapse-button{
+            background-image: url("chrome://global/skin/icons/arrow-down.svg");
+          }
+          .ntt-list div{
+            position:relative;
+          }
+          menulist{
+            overflow: hidden;
+            max-height: 50px;
+            overflow: hidden;
+            position:relative;
+            z-index:-1;
+          }
+          .ntt-list-item{
+            padding:0!Important;
+            font-size:11px!important;
+            max-height:20px;
+          }
+          .ntt-list-item img,
+          .ntt-list-item button{
+            max-height:10px;
+            min-height: 10px !important;
+            min-width: 10px !important;
+            max-width: 10px !important;
+          }
+         .menulist-hider{
+            content:"";
+            top:0;
+            width:100%;
+            height:calc(100% + 2px);
+            max-height:unset;
+            display:block;
+            background:linear-gradient(180deg, color-mix(in srgb, transparent 90% ,var(--sidebar-background-color)),  color-mix(in srgb, transparent 10% ,var(--sidebar-background-color)) 100%);
+            overflow: visible;
+            position:absolute;
+            z-index:3;
+          }
+          @media (prefers-color-scheme: light) {
+            .menulist-hider{
+              background:linear-gradient(180deg, rgba(180,180,180,0.15),  rgba(175,175,175,0.4) 100%);
+            }
+          }
+        }
 
-    .ntt-list > label{ 
-      padding-block:7px;
-    }
-    .ntt-list-item{
-      width:100%;
-      overflow: hidden;
-      position:relative;
-      width:calc( 100% - 2*var(--menuitem-padding));
-      cursor:grab;
-      border-bottom:1px solid var(--panel-separator-color);
-      fill: var(--button-icon-fill);
-      padding: var(--menuitem-padding);
-      margin: var(--menuitem-margin);
-      align-items: center;
-      flex-shrink: 0;
-      list-style-image: none;
-      max-width: var(--menuitem-max-width);
-      --menuitem-icon: normal;
-      -moz-context-properties: fill;
-      fill: var(--menuitem-icon-fill);
-      display:flex;
-    }
-    .ntt-list-item img{
-      width:16px;
-      height:16px;
-      align-self:center;
-    }
-    .ntt-list .input-container {
-      background-color:transparent!important;
-    }
-    .ntt-list-item .extra-button{
-      background-repeat:no-repeat;
-      border:1px solid transparent!important;
-      border-radius:30px;
-    }
-    .ntt-list-item .moveup-button{
-      background-image: url("chrome://global/skin/icons/arrow-up.svg");
-    }
-    .ntt-list-item .movedown-button{
-      background-image: url("chrome://global/skin/icons/arrow-down.svg");
-    }
-    .ntt-list-item:first-child{
-      border-top:1px solid var(--panel-separator-color);
-    }
-    .ntt-list-item:last-child{
-      border-bottom:none;
-    }
-    .ntt-list .dragging{
-      cursor:grabbing;
-    }
+          .ntt-list > label{ 
+            padding-block:7px;
+          }
+          .ntt-list-item{
+            width:100%;
+            overflow: hidden;
+            position:relative;
+            width:calc( 100% - 2*var(--menuitem-padding));
+            cursor:grab;
+            border-bottom:1px solid var(--panel-separator-color);
+            fill: var(--button-icon-fill);
+            padding: var(--menuitem-padding);
+            margin: var(--menuitem-margin);
+            align-items: center;
+            flex-shrink: 0;
+            list-style-image: none;
+            max-width: var(--menuitem-max-width);
+            --menuitem-icon: normal;
+            -moz-context-properties: fill;
+            fill: var(--menuitem-icon-fill);
+            display:flex;
+          }
+          .ntt-list-item img{
+            width:16px;
+            height:16px;
+            align-self:center;
+          }
+          .ntt-list .input-container {
+            background-color:transparent!important;
+          }
+          .ntt-list-item .extra-button{
+            background-repeat:no-repeat;
+            border:1px solid transparent!important;
+            border-radius:30px;
+          }
+          .ntt-list-item .moveup-button{
+            background-image: url("chrome://global/skin/icons/arrow-up.svg");
+          }
+          .ntt-list-item .movedown-button{
+            background-image: url("chrome://global/skin/icons/arrow-down.svg");
+          }
+          .ntt-list-item:first-child{
+            border-top:1px solid var(--panel-separator-color);
+          }
+          .ntt-list-item:last-child{
+            border-bottom:none;
+          }
+          .ntt-list .dragging{
+            cursor:grabbing;
+          }
 
-    @media (max-width: 300px) {
-      .ntt-input:has(input[type="text"]){
-        flex-wrap:wrap;
-      } 
-      .ntt-input:has(input[type="text"])::before {
-        width: 100%;
-      }
-      .ntt-input:has(input[type="text"]) label{
-        max-width:100%!important;
-        min-width:100%!important;
-        text-align:center!important;
-        padding-bottom:5px;
-      }
-      .ntt-input .input-container:has(input[type="text"]){
-        max-width:46%!important;
-        min-width:46%!important;
-        font-size:14px;
-        margin-right:2%;
-        margin-left: 10%;
-      }
-      .ntt-input:has(input[type="text"]) .extra-button{
-        margin-left:4%;
-      }
-      .ntt-input:has(input[type="text"]) {
-        padding-block:5px;
-      }
-    }
-    @media (max-width: 200px) {
-    .ntt-input .input-container:has(input[type="text"]){
-      margin-left: 7%;
-    }
-  }
-    @media (prefers-color-scheme: light) {
-      .ntt-input .input-container button{
-        background-color: rgba(0,0,0,0.05)!important;
-      }
-      .ntt-input .input-containerX{
-        background-color: color-mix(in srgb, var(--button-background-color-checked) 30%, transparent)!important;
-      }
-    }
-    .ntt-input{
-      @media not -moz-pref("browser.nova.enabled") {
-          border-bottom: 0.5px solid var(--panel-separator-color);
-      }
-    }
-    .ntt-title {
-      @media not -moz-pref("browser.nova.enabled") {
-          border-top: 0.5px solid var(--panel-separator-color);
-          border-bottom: 0.5px solid color-mix(in srgb, var(--panel-separator-color) 80%, transparent);
-      }
-    }
-    .ntt-input input::-moz-number-spin-up,
-    .ntt-input input::-moz-number-spin-down {
-      display:none;
-      transform: rotate(90deg);
-      min-height:20px;
-      width:30px;
-      margin-top:20px;
-      position:absolute;
-      z-index:111!important;
-    }
-    .ntt-input input::-moz-number-spin-down{
-      margin-left:-80px;
-    }
-    .ntt-input input::-moz-number-spin-up{
-      right:-20px;
-    }
-    .ntt-title{
-      justify-content:center;
-      flex-direction:column;
-      padding-inline:0!important;
-      background-color: color-mix(in srgb, silver 5%, transparent)!important;
-    }
-    .ntt-title label{
-      margin-left:10px;
-      font-weight:600!important;
-      transform:scale(1.1);
-    }
-    .ntt-title .sublabel{
-      font-weight:400!important;
-    }
-    .ntt-update-status {
-      white-space: pre-wrap;
-      display: block;
-      margin: 5px 10px;
-      opacity: 0.89;
-      font-size: 0.95em;
-      text-align: center;
-    }
-    .ntt-update-button {
-      appearance: none !important;
-      border: var(--button-border);
-      font-weight: var(--button-font-weight)!important;
-      font-size: var(--button-font-size)!important;
-      border-radius: var(--button-border-radius);
-      background-color: var(--button-background-color);
-      padding: 7px 10px !important;
-      min-width: 150px;
-      max-width: 240px;
-      margin: 5px 10px;
-      align-self: center;
-    }
-    #inputs{
-        background-color: color-mix(in srgb ,var(--sidebar-box-background) 70%,transparent)!important;
-      }
+          @media (max-width: 300px) {
+            .ntt-input:has(input[type="text"]){
+              flex-wrap:wrap;
+            } 
+            .ntt-input:has(input[type="text"])::before {
+              width: 100%;
+            }
+            .ntt-input:has(input[type="text"]) label{
+              max-width:100%!important;
+              min-width:100%!important;
+              text-align:center!important;
+              padding-bottom:5px;
+            }
+            .ntt-input .input-container:has(input[type="text"]){
+              max-width:46%!important;
+              min-width:46%!important;
+              font-size:14px;
+              margin-right:2%;
+              margin-left: 10%;
+            }
+            .ntt-input:has(input[type="text"]) .extra-button{
+              margin-left:4%;
+            }
+            .ntt-input:has(input[type="text"]) {
+              padding-block:5px;
+            }
+          }
+          @media (max-width: 200px) {
+          .ntt-input .input-container:has(input[type="text"]){
+            margin-left: 7%;
+          }
+        }
+          @media (prefers-color-scheme: light) {
+            .ntt-input .input-container button{
+              background-color: rgba(0,0,0,0.05)!important;
+            }
+            .ntt-input .input-containerX{
+              background-color: color-mix(in srgb, var(--button-background-color-checked) 30%, transparent)!important;
+            }
+          }
+          .ntt-input{
+            @media not -moz-pref("browser.nova.enabled") {
+                border-bottom: 0.5px solid var(--panel-separator-color);
+            }
+          }
+          .ntt-title {
+            @media not -moz-pref("browser.nova.enabled") {
+                border-top: 0.5px solid var(--panel-separator-color);
+                border-bottom: 0.5px solid color-mix(in srgb, var(--panel-separator-color) 80%, transparent);
+            }
+          }
+          .ntt-input input::-moz-number-spin-up,
+          .ntt-input input::-moz-number-spin-down {
+            display:none;
+            transform: rotate(90deg);
+            min-height:20px;
+            width:30px;
+            margin-top:20px;
+            position:absolute;
+            z-index:111!important;
+          }
+          .ntt-input input::-moz-number-spin-down{
+            margin-left:-80px;
+          }
+          .ntt-input input::-moz-number-spin-up{
+            right:-20px;
+          }
+          .ntt-title{
+            justify-content:center;
+            flex-direction:column;
+            padding-inline:0!important;
+            background-color: color-mix(in srgb, silver 5%, transparent)!important;
+          }
+          .ntt-title label{
+            margin-left:10px;
+            font-weight:600!important;
+            transform:scale(1.1);
+          }
+          .ntt-title .sublabel{
+            font-weight:400!important;
+          }
+          .ntt-update-status {
+            white-space: pre-wrap;
+            display: block;
+            margin: 5px 10px;
+            opacity: 0.89;
+            font-size: 0.95em;
+            text-align: center;
+          }
+          .ntt-update-button {
+            appearance: none !important;
+            border: var(--button-border);
+            font-weight: var(--button-font-weight)!important;
+            font-size: var(--button-font-size)!important;
+            border-radius: var(--button-border-radius);
+            background-color: var(--button-background-color);
+            padding: 7px 10px !important;
+            min-width: 150px;
+            max-width: 240px;
+            margin: 5px 10px;
+            align-self: center;
+          }
+          #inputs{
+              background-color: color-mix(in srgb ,var(--sidebar-box-background) 70%,transparent)!important;
+            }
     `;
 
       let styleURI = makeURI(
@@ -11333,7 +11578,6 @@
       display: flex;
       padding-inline:4px;
       padding-top:2px;
-
     }
     #search-all-tabs-button image{
       display: inline-flex;
@@ -11569,7 +11813,6 @@
     let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
     let childCounterSize = nativeTreeTabs.checkOrSetPref("treeTabs.style.childCounterSize", 13);
 
-
     let closeButtonPadding;
     if (tabHeight > 20)
       closeButtonPadding = 4;
@@ -11582,8 +11825,7 @@
 
     //FF160 fix dragging
     const currentBrowserVersion = (AppConstants.MOZ_APP_NAME == "firefox") ? AppConstants.MOZ_APP_VERSION : Services.appinfo.version;
-    const headerHeight = (parseInt(currentBrowserVersion, 10) >= 160) ? document.getElementById("NTT-header")?.getBoundingClientRect().height || 34 : 0;
-
+    const headerHeight = (parseInt(currentBrowserVersion, 10) >= 160) ? 34 : 0;
 
     let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
       Ci.nsIStyleSheetService
