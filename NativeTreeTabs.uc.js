@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.2.1
+// @version        0.4.2.2
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -384,11 +384,15 @@
           break;
         }
         case "dragstart": {
-          this.tabDragStart(aEvent);
+          if (getClosest(aEvent.target, ".tab-close-button") == null) {
+            this.tabDragStart(aEvent);
+          }
           break;
         }
         case "dragend": {
-          this.tabDragEnd(aEvent);
+          if (getClosest(aEvent.target, ".tab-close-button") == null) {
+            this.tabDragEnd(aEvent);
+          }
           break;
         }
         case "click": {
@@ -401,9 +405,9 @@
         }
         case "mousedown": {
           if (aEvent.button == 0) {
-            let tabgroup = aEvent.target.closest(".tab-group-label-container");
+            let tabgroup = getClosest(aEvent.target, ".tab-group-label-container");
             if (tabgroup) {
-              this.tabGroupDrag(tabgroup.closest("tab-group"));
+              this.tabGroupDrag(getClosest(tabgroup, "tab-group"));
             } else {
               this.markTrueSelectedTab(aEvent);
             }
@@ -889,13 +893,13 @@
 
       if (previousTab) {
         let rectPrv = previousTab.getBoundingClientRect().top;
-        //Stop case where wrong previousTab is set
+        // Stop case where wrong previousTab is set
         // previous is actually under
         // Internal (drag-and-drop) bug?
         if (rectPrv > rect || previousTab.pinned) {
           previousTab = null;
         }
-        //make sure drag to pin area doesn't change tree depth too
+        // make sure drag to pin area doesn't change tree depth too
       }
 
       let previousPosition = parseInt(aTab.getAttribute("dragStartPos"), 10);
@@ -921,15 +925,20 @@
       let tabHeight = (Services.prefs.getPrefType("treeTabs.tabHeight") != 32) ? 30 :
         parseInt(Services.prefs.getStringPref("treeTabs.tabHeight"), 10);
 
+      // Window not maximized/titlebar enabled
+      let mainWindow = document.getElementById("main-window");
+      let mainWindowExtra = (mainWindow != null) ? mainWindow.screenY : 0;
+      if (mainWindowExtra == 0) {
+        mainWindowExtra = window.screenY;
+      }
+
       if (aTab.hasAttribute("dragStartY")) {
-        //Prevent small accidental drag events from changing the tree structure
+        // Prevent small accidental drag events from changing the tree structure
         let dragStartY = parseInt(aTab.getAttribute("dragStartY"), 10);
         aTab.removeAttribute("dragStartY");
-        const currentBrowserVersion = (AppConstants.MOZ_APP_NAME == "firefox") ? AppConstants.MOZ_APP_VERSION : Services.appinfo.version;
-        const v160 = (parseInt(currentBrowserVersion, 10) >= 160) ? true : false;
-        let dragDistance = aEvent.clientY - dragStartY;
+        let dragDistance = aEvent.clientY - dragStartY - mainWindowExtra;
         debugMsg("dragDistance: " + dragDistance);
-        if (!v160 && ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7))) {
+        if ((dragDistance < 0 && dragDistance > -7) || (dragDistance >= 0 && dragDistance < 7)) {
           if ((dragDistance > 0 && dragDistance < 7 + tabHeight / 3 - 10) || (dragDistance <= 0 && dragDistance > -7 - tabHeight / 3 + 10))
             return;
         }
@@ -944,13 +953,6 @@
         childrenCount = (childrenCount - 1) * (aTab.offsetHeight + childMargin) + shelfMargin;
       } else {
         childrenCount = 0;
-      }
-
-      //titlebar enabled case
-      let mainWindow = document.getElementById("main-window");
-      let mainWindowExtra = (mainWindow != null) ? mainWindow.screenY : 0;
-      if (mainWindowExtra == 0) {
-        mainWindowExtra = window.screenY;
       }
 
       let offsetY = aEvent.offsetY - mainWindowExtra - childrenCount;
@@ -1558,9 +1560,9 @@
       if (aEvent.button !== 0 || aEvent.ctrlKey || aEvent.shiftKey || aEvent.altKey || aEvent.metaKey) {
         return;
       }
-      let aTab = aEvent.target.closest(".tabbrowser-tab");
+      let aTab = getClosest(aEvent.target, ".tabbrowser-tab");
       if (!aTab) return;
-      if (aEvent.target.closest(".tab-icon-stack") && SidebarController._sidebarMain.expanded) {
+      if (getClosest(aEvent.target, ".tab-icon-stack") && SidebarController._sidebarMain.expanded) {
         //Makes favicon/twisty click to not select tab
         // (if not ancestor)
         let nextTab = getNextTab(aTab);
@@ -1651,7 +1653,7 @@
       }
       let tabContextMenu = document.getElementById("tabContextMenu");
       let previousOver;
-      let ogTab = aEvent.target.closest(".tabbrowser-tab");
+      let ogTab = getClosest(aEvent.target, ".tabbrowser-tab");
       if (!ogTab) return;
       let prevDelta = 0;
       let ogout = true;
@@ -1667,9 +1669,9 @@
         if (aEvent.ctrlKey || aEvent.shiftKey || aEvent.altKey || aEvent.metaKey) {
           return;
         }
-        let aTab = aEvent.target.closest(".tabbrowser-tab");
+        let aTab = getClosest(aEvent.target, ".tabbrowser-tab");
         if (!aTab || aTab.pinned) {
-          if (aEvent.target.closest("sidebar-main") == null) {
+          if (getClosest(aEvent.target, "sidebar-main") == null) {
             document.removeEventListener("mousemove", handleMouseMove);
           }
           return;
@@ -1708,7 +1710,7 @@
       }
 
       let clearOnClick = function(aEvent) {
-        if (aEvent.button == 0 && aEvent.target.closest("menupopup") == null && aEvent.target.closest("panel") == null) {
+        if (aEvent.button == 0 && getClosest(aEvent.target, "menupopup") == null && getClosest(aEvent.target, "panel") == null) {
           nativeTreeTabs.clearHoverTabs(null, true);
         }
         document.removeEventListener("click", clearOnClick);
@@ -1784,14 +1786,14 @@
       }
 
       //Ignore clicks on buttons
-      if (aEvent.target.closest('.tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-note-icon,.tab-media-button, [role="button"]')) {
+      if (getClosest(aEvent.target, '.tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-note-icon,.tab-media-button, [role="button"]')) {
         return;
       }
 
-      let aTab = aEvent.target.closest(".tabbrowser-tab");
+      let aTab = getClosest(aEvent.target, ".tabbrowser-tab");
 
       if (SidebarController._sidebarMain.expanded) {
-        if (aEvent.target.closest(".tab-icon-stack") && !aTab.pinned) {
+        if (getClosest(aEvent.target, ".tab-icon-stack") && !aTab.pinned) {
           return;
         }
       }
@@ -1933,7 +1935,7 @@
     // or when the tab is a twisted tree
     closeTree: function(aEvent) {
       let button = aEvent.button;
-      let aTab = aEvent.target.closest('tab');
+      let aTab = getClosest(aEvent.target, 'tab');
       if (button == 1 || (button == 0 && aTab.hasAttribute("twisted-root"))) {
         this.removeTree(aTab);
         aEvent.preventDefault();
@@ -2063,11 +2065,11 @@
 
     nestClick: function(aEvent) {
       //Ignore clicks on buttons
-      if (aEvent.target.closest('.tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-note-icon,.tab-media-button, [role="button"]')) {
+      if (getClosest(aEvent.target, '.tab-audio-button, .tab-close-button, .tab-icon-overlay, .tab-note-icon,.tab-media-button, [role="button"]')) {
         return;
       }
 
-      let aTab = aEvent.target.closest('tab');
+      let aTab = getClosest(aEvent.target, 'tab');
 
       if (aEvent.button == 0) {
         if (aEvent.ctrlKey || aEvent.shiftKey) {
@@ -2090,7 +2092,7 @@
       if (!SidebarController._sidebarMain.expanded) {
         return;
       }
-      let aTab = aEvent.target.closest('tab');
+      let aTab = getClosest(aEvent.target, 'tab');
       if (!aTab.hasAttribute("nestTab") && !aTab.splitview) {
         this.toggleTwist(aTab);
       } else if (aTab.splitview && aTab.splitview.firstChild == aTab) {
@@ -2880,7 +2882,7 @@
           if (params.openerBrowser != null) {
             //Make every tab opened from the always displayed tab to 
             // open in the foreground (browser switch to it)
-            let browserContainer = params.openerBrowser.closest(".browserSidebarContainer");
+            let browserContainer = getClosest(params.openerBrowser, ".browserSidebarContainer");
             if (browserContainer && browserContainer.hasAttribute("pinned")) {
               // Force foreground – create a shallow copy so we don't mutate the caller's object
               params = Object.assign({}, params, {
@@ -4028,9 +4030,9 @@
 
                 function mousoverElement(aEvent) {
                   let t = aEvent.target;
-                  let popupTarget = t.closest("panel");
-                  let tab = t.closest("tab");
-                  let splitter = t.closest("splitter");
+                  let popupTarget = getClosest(t, "panel");
+                  let tab = getClosest(t, "tab");
+                  let splitter = getClosest(t, "splitter");
                   if (popupTarget != popup && tab != tabOrGroup && splitter == null) {
                     hidePreviewPopup();
                   }
@@ -5826,7 +5828,7 @@
     if (aTab.hasAttribute("alwaysOn")) {
       let t_BrowserContainer;
       if (aTab.linkedBrowser)
-        t_BrowserContainer = aTab.linkedBrowser.closest(".browserSidebarContainer")
+        t_BrowserContainer = getClosest(aTab.linkedBrowser, ".browserSidebarContainer")
       if (t_BrowserContainer == null) return;
       t_BrowserContainer.removeAttribute("pinned");
       t_BrowserContainer.removeAttribute("pinned-left");
@@ -6401,7 +6403,7 @@
         // (if its in wrong position)
         // (Edge case of giving priority to pinned tabs 
         // only if the Panel index agrees with them
-        // Must have  for panels with only pinned tabs 
+        // Must have for panels with only pinned tabs 
         // ,or else their new tabs will always open in bottom,
         // with no respect for the Panel index)
         // Should also move the pinned tabs if they are in 
@@ -6585,6 +6587,14 @@
     }
   }
 
+  function getClosest(element, searchFor) {
+    if (element.nodeType !== 1) {
+      //text element 
+      element = element.parentNode;
+    }
+    return (element.closest == null) ? null : element.closest(searchFor);
+  }
+
   function parseShortcut(str) {
     //input string (example: "Ctrl + Shift + A")
     // returns object, with modifiers values plus keycode 
@@ -6653,7 +6663,6 @@
       });
     }, 5);
   }
-
 
   function createInput(target, values) {
 
@@ -6746,7 +6755,7 @@
 
 
   function menuItemRightClick(target, panel) {
-    // let id = target.closest("menuitem").getAttribute("panel-id").toString();
+    // let id = getClosest(target,"menuitem").getAttribute("panel-id").toString();
     // let panel = nativeTreeTabs.tabPanels.find(x => x.id.toString() == id);
     let popupView = document.getElementById('tab-panels-menupopup-view');
     //Disallow two renames at the same time
@@ -7288,7 +7297,6 @@
       console.error(error);
     }
 
-
     //Set Color option for normal Tabs
     let setColorTabContext = document.createXULElement("menuitem");
     setColorTabContext.setAttribute("id", "setColor-tab-contextmenu");
@@ -7306,7 +7314,6 @@
     } catch (error) {
       console.error(error);
     }
-
 
     //Set Icon option
     let setIconNestContext = document.createXULElement("menuitem");
@@ -7574,8 +7581,9 @@
     mainDiv.setAttribute("id", "NTT-header");
     elementsCreated.push(mainDiv);
     //Insert on top of sidebar
-    let sidebarMain = document.querySelector(["sidebar-main"]);
-    sidebarMain.parentNode.insertBefore(mainDiv, sidebarMain);
+    setPref("sidebar.verticalTabs", true);
+    let verticalTabs = document.querySelector(["#tabbrowser-tabs"]);
+    verticalTabs.prepend(mainDiv);
     let [elements, style] = addTabPanelButton(mainDiv);
     elementsCreated.push(...elements);
 
@@ -7798,7 +7806,7 @@
         return;
       }
       aEvent.preventDefault();
-      let item = aEvent.target.closest("#tab-panels-menupopup-view > menuitem");
+      let item = getClosest(aEvent.target, "#tab-panels-menupopup-view > menuitem");
       if (item) {
         helddown = 0;
         isDragging = true;
@@ -8599,7 +8607,7 @@
   }
 
   function setBrowserAlwaysOn(linkedBrowser, aTab = null) {
-    let browserContainer = linkedBrowser.closest(".browserSidebarContainer")
+    let browserContainer = getClosest(linkedBrowser, ".browserSidebarContainer");
     browserContainer.setAttribute("pinned", "");
     let pref = getPref("alwayOnTab.location");
     if (pref == 1)
@@ -10650,7 +10658,7 @@
         }
 
         function moveItem(aEvent, dir) {
-          let item = aEvent.target.closest(".ntt-list-item");
+          let item = getClosest(aEvent.target, ".ntt-list-item");
           if (item) {
             let sibling;
             if (dir == 1) {
@@ -10724,11 +10732,11 @@
             return;
           }
           aEvent.preventDefault();
-          let targetButton = aEvent.target.closest(".ntt-list-item button");
+          let targetButton = getClosest(aEvent.target, ".ntt-list-item button");
           if (targetButton) {
             return;
           }
-          let item = aEvent.target.closest(".ntt-list-item");
+          let item = getClosest(aEvent.target, ".ntt-list-item");
           if (item) {
             helddown = 0;
             isDragging = true;
@@ -11031,7 +11039,7 @@
       createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
       let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
       createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
-      createCheckBox("treeTabs.style.addColorTabContext", "Change Tab Color Context option", extra);
+      createCheckBox("treeTabs.style.addColorTabContext", "Context menu option to change tab color", extra);
 
       createSelectBox("treeTabs.style.customGroups", "Tab Groups style", [{
         label: "Default",
@@ -11614,13 +11622,6 @@
       Ci.nsIStyleSheetService
     );
     let customCSS = `
-    sidebar-main {
-       flex: 1;
-       max-height: calc( 100% - 30px ); 
-    }
-    box:has(>sidebar-main) {
-        flex-flow: column!important;
-    }
     #NTT-header{
       max-width:100%;
       min-width: 0;
@@ -11872,10 +11873,6 @@
     else
       closeButtonPadding = 0;
 
-    //FF160 fix dragging
-    const currentBrowserVersion = (AppConstants.MOZ_APP_NAME == "firefox") ? AppConstants.MOZ_APP_VERSION : Services.appinfo.version;
-    const headerHeight = (parseInt(currentBrowserVersion, 10) >= 160) ? 34 : 0;
-
     let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
       Ci.nsIStyleSheetService
     );
@@ -12068,11 +12065,10 @@
     }
 
     /* FF 160+ fix */
-    #vertical-tabs {
-      .tabbrowser-tab[dragtarget],tab-split-view-wrapper[dragtarget]{
-        margin-top:${headerHeight}px!important;
-      }
+    #pinned-tabs-container[orient="vertical"] .tabbrowser-tab[dragtarget]{
+      margin-top:34px!important;
     }
+
     /* Audio playing icon enlarge */
     .tab-audio-button {
         transform: scale(1.132);
