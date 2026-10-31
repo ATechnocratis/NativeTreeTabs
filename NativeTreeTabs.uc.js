@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.3.0
+// @version        0.4.3.1
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -6804,6 +6804,8 @@
 
   function switchPanelOnScroll(enable) {
     function onScroll(aEvent) {
+      aEvent.preventDefault();
+      aEvent.stopImmediatePropagation();
       //change selected Panel on scroll
       let aDir = (aEvent.deltaY > 0) ? 1 : -1;
       let nextPanelId
@@ -6816,9 +6818,9 @@
       return;
     }
     if (enable) {
-      tabPanelGroup.addEventListener("wheel", onScroll);
+      tabPanelGroup.addEventListener("wheel", onScroll, true);
     } else {
-      tabPanelGroup.removeEventListener("wheel", onScroll);
+      tabPanelGroup.removeEventListener("wheel", onScroll, true);
     }
   }
 
