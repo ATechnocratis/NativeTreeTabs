@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.2.2
+// @version        0.4.3.0
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -53,6 +53,7 @@
     originalPreviewPanelActivate: null,
     originalPreviewPanelDeactivate: null,
     originalGoBack: null,
+    originalTabBoxEnsureElementIsVisible: null,
     shortcuts: new Array(),
     customStyle: new Array(),
     domElements: new Array(),
@@ -61,6 +62,7 @@
     previousSelectedPanel: null,
     tabPanels: [],
     hoverTabs: new Array(),
+    allowHoverTabsClear: true,
     previousSelectedTab: new Array(),
     selectedTab: null,
     clickedActiveTab: null,
@@ -175,10 +177,6 @@
 
       this.initPreferences();
 
-      let defPanel;
-      if (this.tabPanels.length == 0)
-        defPanel = this.addDefaultPanel();
-
       //initialize Tab Panels 
       let [tabpanelsElements, NTTstyle] = addNTTSidebarHeader();
       this.domElements.push(...tabpanelsElements);
@@ -190,15 +188,6 @@
       //Check if tabs existed before initialization
       gBrowser.tabs.forEach(this.attachTabListeners, this);
       gBrowser.tabs.forEach(this.initTab, this);
-
-      if (this.tabPanels.length > 1) {
-        if (defPanel && defPanel.count == 0) {
-          //If default Panel still exists, with zero tabs => remove it
-          //(Window created from previously open tabs)
-          this.tabPanels.splice(this.tabPanels.indexOf(defPanel), 1);
-          removePanelFromMenu(defPanel.id);
-        }
-      }
 
       //Add listeners
       //Tab events
@@ -286,6 +275,11 @@
       gBrowser.tabContainer.previewPanel.deactivate = this.originalPreviewPanelDeactivate;
       gBrowser.goBack = this.originalGoBack;
 
+      const box = document.getElementById("tabbrowser-arrowscrollbox");
+      if (box) {
+        box.ensureElementIsVisible = this.originalTabBoxEnsureElementIsVisible;
+      }
+
       nativeTreeTabs.hoverTabs.forEach((aTab) => {
         aTab.removeAttribute("multiselected");
       });
@@ -306,6 +300,7 @@
       });
 
       this.tabPanels = new Array();
+      this.selectedPanel = null;
 
       clearAlwaysOn();
 
@@ -1627,11 +1622,13 @@
     },
 
     clearHoverTabs: function() {
-      if (this.hoverTabs.length > 0) {
-        this.hoverTabs.forEach((aTab) => {
-          aTab.removeAttribute("multiselected");
-        });
-        nativeTreeTabs.hoverTabs = new Array();
+      if (nativeTreeTabs.allowHoverTabsClear) {
+        if (this.hoverTabs.length > 0) {
+          this.hoverTabs.forEach((aTab) => {
+            aTab.removeAttribute("multiselected");
+          });
+          nativeTreeTabs.hoverTabs = new Array();
+        }
       }
     },
 
@@ -1710,24 +1707,48 @@
       }
 
       let clearOnClick = function(aEvent) {
-        if (aEvent.button == 0 && getClosest(aEvent.target, "menupopup") == null && getClosest(aEvent.target, "panel") == null) {
+        if (aEvent.button == 0 &&
+          getClosest(aEvent.target, "menupopup") == null && getClosest(aEvent.target, "panel") == null &&
+          (getClosest(aEvent.target, "tab") == null || !getClosest(aEvent.target, "tab").hasAttribute("multiselected"))) {
+          nativeTreeTabs.allowHoverTabsClear = true;
           nativeTreeTabs.clearHoverTabs(null, true);
         }
-        document.removeEventListener("click", clearOnClick);
+        document.removeEventListener("mousedown", clearOnClick);
+      }
+
+      let forceClear = function(aEvent) {
+        nativeTreeTabs.allowHoverTabsClear = true;
+        if (aEvent.button == 0 &&
+          getClosest(aEvent.target, "menupopup") == null && getClosest(aEvent.target, "panel") == null &&
+          (getClosest(aEvent.target, "tab") == null || !getClosest(aEvent.target, "tab").hasAttribute("multiselected"))) {
+          nativeTreeTabs.clearHoverTabs(null, true);
+        } else {
+          setTimeout(() => {
+            nativeTreeTabs.clearHoverTabs(null, true);
+          }, 100);
+        }
+        document.removeEventListener("mouseup", forceClear, true);
+        document.removeEventListener("dragend", forceClear, true);
+
       }
 
       let handleMouseUp = function(aEvent) {
         document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp, true);
+        document.removeEventListener("mouseup", handleMouseUp);
         if (nativeTreeTabs.hoverTabs.length < 2) {
           nativeTreeTabs.clearHoverTabs();
           return;
         }
-        document.addEventListener("click", clearOnClick);
+        nativeTreeTabs.allowHoverTabsClear = false;
+        document.addEventListener("mousedown", clearOnClick);
+        document.addEventListener("mouseup", forceClear, true);
+        document.addEventListener("dragend", forceClear, true);
+
         previousOver = null;
       };
+
       document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp, true);
+      document.addEventListener("mouseup", handleMouseUp);
     },
 
     flipActive: function(aTab = null) {
@@ -2262,7 +2283,11 @@
       }
       let color = getCustomTabValue(aTab, "customColor");
       if (color) {
-        this.setTabCustomColor(aTab, color);
+        this.setTabCustomColor(aTab, color, "background");
+      }
+      let textColor = getCustomTabValue(aTab, "customTextColor");
+      if (textColor) {
+        this.setTabCustomColor(aTab, textColor, "text");
       }
 
       let twistedRoot = getCustomTabValue(aTab, "twisted-root");
@@ -2426,7 +2451,11 @@
       }
       let color = getCustomTabValue(aTab, "customColor");
       if (color) {
-        this.setTabCustomColor(aTab, color);
+        this.setTabCustomColor(aTab, color, "background");
+      }
+      let textColor = getCustomTabValue(aTab, "customTextColor");
+      if (textColor) {
+        this.setTabCustomColor(aTab, textColor, "text");
       }
 
       let previousTab = getPreviousTab(aTab);
@@ -2524,8 +2553,23 @@
       }
 
       if (foundPanel === false) {
+        if (this.tabPanels.length == 0 || this.selectedPanel == null) {
+          //no Tab Panel open => Open default one
+          let label = getPref("treeTabs.defaultPanelName");
+          if (label == null) {
+            label = "Default Panel";
+          }
+          let defPanel = this.tabPanelOpen([aTab], label);
+          if (aTab.selected) {
+            this.tabPanelShow(defPanel, false);
+          }
+          this.changeSelectedPanel(defPanel);
+        }
         setPanel(aTab, this.selectedPanel, window);
         unHideTab(aTab);
+        if (aTab.selected) {
+          this.tabPanelShow(this.selectedPanel, false);
+        }
       }
       let aTabPanelId = aTab.getAttribute("panel-id");
       let movedBefore = false;
@@ -2555,7 +2599,6 @@
         // if they are in the right position according to their Panel Index
         fixTabOrPanelPosition(aTab, aTabPanelId);
       }
-
     },
 
     initTreeDepth: function(aTab) {
@@ -3222,7 +3265,7 @@
       const originalClearMultiSelectedTabs = gBrowser.clearMultiSelectedTabs;
       gBrowser.clearMultiSelectedTabs = function() {
         nativeTreeTabs.clearHoverTabs();
-        originalClearMultiSelectedTabs.apply(this, arguments)
+        return originalClearMultiSelectedTabs.apply(this, arguments)
       };
       const proto = Object.getPrototypeOf(gBrowser);
       const originalDesc = Object.getOwnPropertyDescriptor(proto, "selectedTabs");
@@ -3739,8 +3782,10 @@
           let excludeTabs = new Set(aExcludeTabs);
           // If this tab has a successor, it should be selectable, since
           // hiding or closing a tab removes that tab as a successor.
-          if (aTab.successor && !excludeTabs.has(aTab.successor)) {
-            return aTab.successor;
+          // FF 159+ fix
+          let successor = (typeof gBrowser.getSuccessor == "function") ? gBrowser.getSuccessor(aTab) : aTab.successor;
+          if (successor && !excludeTabs.has(successor)) {
+            return successor;
           }
 
           if (aTab && aTab.owner != null && tabVisibleNoNest(aTab.owner) &&
@@ -4105,6 +4150,32 @@
           return nativeTreeTabs.originalGoBack.apply(this, arguments);
         }
       };
+
+      const box = document.getElementById("tabbrowser-arrowscrollbox");
+      if (box) {
+        // Ensure tabs are always visible with extra space from the bottom
+        this.originalTabBoxEnsureElementIsVisible = box.ensureElementIsVisible.bind(box);
+        box.ensureElementIsVisible = function(element, aInstant) {
+          nativeTreeTabs.originalTabBoxEnsureElementIsVisible(element, aInstant);
+          // Firefox schedules scrollIntoView on the next rAF, run after that
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (!element || element.pinned || element.hasAttribute?.("tabPanel-hidden")) {
+                return;
+              }
+              const scroller = this.scrollbox || this;
+              if (!scroller || scroller.scrollHeight <= scroller.clientHeight) {
+                return;
+              }
+              const tabRect = element.getBoundingClientRect();
+              const boxRect = scroller.getBoundingClientRect();
+              if (tabRect.bottom > boxRect.bottom - 150) {
+                scroller.scrollTop += tabRect.bottom - boxRect.bottom + 150;
+              }
+            });
+          });
+        };
+      }
     },
 
     addTabGroupCreateListeners: function() {
@@ -4396,24 +4467,70 @@
       return panel0;
     },
 
-    setTabCustomColor: function(aTab, color) {
+    setTabCustomColorTemporary: function(aTab, color, target = "background") {
       try {
-        aTab.setAttribute("customColor", "");
-        setCustomTabValue(aTab, "customColor", color);
-        let tabBackground = aTab.querySelector(".tab-background");
-        if (!tabBackground) return;
-        tabBackground.style.setProperty("background-color", color);
+        aTab.setAttribute("customColorPreview", "");
+        if (target === "text") {
+          aTab.setAttribute("customTextColor", "");
+          aTab.style.setProperty("--custom-text-color", color);
+        } else {
+          aTab.setAttribute("customColor", "");
+          aTab.style.setProperty("--custom-background-color", color);
+        }
       } catch (error) {
         console.error(error);
       }
     },
 
-    removeTabCustomColor: function(aTab) {
-      deleteCustomTabValue(aTab, "customColor");
-      aTab.removeAttribute("customColor");
-      let tabBackground = aTab.querySelector(".tab-background");
-      if (!tabBackground) return;
-      tabBackground.style.removeProperty("background-color");
+    setTabCustomColor: function(aTab, color, target = "background", close = true) {
+      try {
+        if (close) {
+          aTab.removeAttribute("customColorPreview");
+        }
+        if (target === "text") {
+          aTab.setAttribute("customTextColor", "");
+          setCustomTabValue(aTab, "customTextColor", color);
+          aTab.style.setProperty("--custom-text-color", color);
+        } else {
+          aTab.setAttribute("customColor", "");
+          setCustomTabValue(aTab, "customColor", color);
+          aTab.style.setProperty("--custom-background-color", color);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    },
+
+    removeTabCustomColorPreview: function(aTab) {
+      aTab.removeAttribute("customColorPreview");
+      const hasBg = !!getCustomTabValue(aTab, "customColor");
+      const hasText = !!getCustomTabValue(aTab, "customTextColor");
+      if (!hasBg) {
+        aTab.style.removeProperty("--custom-background-color");
+      } else {
+        aTab.style.setProperty("--custom-background-color", getCustomTabValue(aTab, "customColor"));
+      }
+      if (!hasText) {
+        aTab.style.removeProperty("--custom-text-color");
+      } else {
+        aTab.style.setProperty("--custom-text-color", getCustomTabValue(aTab, "customTextColor"));
+      }
+      if (!hasBg && !hasText) {
+        aTab.removeAttribute("customColor");
+      }
+    },
+
+    removeTabCustomColor: function(aTab, target = "both") {
+      if (target === "background" || target === "both") {
+        aTab.removeAttribute("customColor");
+        deleteCustomTabValue(aTab, "customColor");
+        aTab.style.removeProperty("--custom-background-color");
+      }
+      if (target === "text" || target === "both") {
+        aTab.removeAttribute("customTextColor");
+        deleteCustomTabValue(aTab, "customTextColor");
+        aTab.style.removeProperty("--custom-text-color");
+      }
     },
 
     setTabCustomIcon: function(aTab, icon) {
@@ -4425,10 +4542,10 @@
           iconColor = iconParts[1];
         } else return;
         setCustomTabValue(aTab, "customIcon", icon);
-        if (iconContent == "folder") {
-          aTab.removeAttribute("customIcon");
-          return;
-        }
+        // if (iconContent == "folder") {
+        //   aTab.removeAttribute("customIcon");
+        //   return;
+        // }
         aTab.setAttribute("customIcon", "");
         let tabIconImage = aTab.querySelector(".tab-icon-image");
         if (!tabIconImage) return;
@@ -4492,8 +4609,6 @@
         panelsButtonImg.style = "";
       }
     },
-
-
 
     movePanelObject: function(index1, swapIndex, id1, id2, first, where) {
       // Moves Panel with id1 before/after the panel with id2
@@ -4613,10 +4728,9 @@
         this.movePanelObjectAfterAnother(this.tabPanels.length - 1, previousPanelIndex, newPanelId, index, first)
       }
 
-
       if (show && id == null) {
         this.changeSelectedPanel(newPanel);
-      } else {
+      } else if (window.nativeTreeTabs.selectedPanel != null) {
         checkPanelInMenu(window.nativeTreeTabs.selectedPanel);
       }
 
@@ -5155,9 +5269,6 @@
             }
             this.tabPanelShow(this.previousSelectedPanel);
           }
-        } else if (this.tabPanels.length === 0) {
-          //No Tab Panels left? when  does this happen?
-          this.addDefaultPanel();
         }
       } else {
         panel.count--;
@@ -5179,7 +5290,7 @@
 
     changeSelectedPanel: function(panel) {
       let panelId = panel.id.toString();
-      if (this.selectedPanel.id.toString() === panelId) {
+      if (this.selectedPanel != null && this.selectedPanel.id.toString() === panelId) {
         this.selectedPanel.selectedTab = gBrowser.selectedTab;
         checkPanelInMenu(panel);
         this.updatePanelHeaderIcon(panel);
@@ -6553,7 +6664,6 @@
 
   function getPref(prefName) {
     var prefBranch = getPrefBranch();
-
     switch (prefBranch.getPrefType(prefName)) {
       case prefBranch.PREF_STRING:
         // if (gIsUTF8) {
@@ -7587,7 +7697,7 @@
     let [elements, style] = addTabPanelButton(mainDiv);
     elementsCreated.push(...elements);
 
-    let elements2 = addTabPanelIconSetter();
+    let elements2 = addTabPanelIconSetterAndTabColorPicker();
     elementsCreated.push(...elements2);
 
     // let searchButton = document.createElement("div");
@@ -7932,8 +8042,9 @@
     return [elementsCreated, style];
   }
 
-  function addTabPanelIconSetter() {
+  function addTabPanelIconSetterAndTabColorPicker() {
     //create the popup to select icon for a Tab Panel
+    // or custom colors for a tab
     let elementsCreated = new Array();
     const ICONS = [
          "barbell", "bike", "book", "briefcase", "canvas", "craft", "default-favicon", "diamond", "flower", "folder", "hammer", "heart", "heart-rate", "history", "leaf", "lightbulb", "makeup", "message", "musical-note", "palette", "paw-print", "plane", "present", "shopping", "soccer", "sparkle-single", "star", "video-game-controller"
@@ -7949,9 +8060,121 @@
     elementsCreated.push(iconSetPopup);
 
     let title = document.createXULElement("label");
-    title.setAttribute("value", "Select Icon");
     title.setAttribute("class", "iconSetPopup-title");
     iconSetPopup.appendChild(title);
+
+    let targetToggle = document.createElement("div");
+    targetToggle.setAttribute("class", "color-target-toggle");
+
+    function highlightTargetButtons() {
+      const isBg = iconSetPopup.colorTarget === "background";
+      btnBg.toggleAttribute("checked", isBg);
+      btnText.toggleAttribute("checked", !isBg);
+    }
+
+    function updateColorPopupTitle() {
+      if (iconSetPopup.mode !== "NestTabColor") {
+        title.setAttribute("value", "Select Icon");
+        return;
+      }
+      title.setAttribute(
+        "value",
+        iconSetPopup.colorTarget === "text" ?
+        "Custom Text Color" :
+        "Custom Background Color"
+      );
+    }
+
+    function getTabsForColorEdit() {
+      return TabContextMenu.contextTabs != null ?
+        TabContextMenu.contextTabs :
+        (gBrowser.selectedTabs.length > 1) ? (gBrowser.selectedTabs) : (iconSetPopup.element) ? [iconSetPopup.element] : [];
+    }
+
+    function switchColorTarget(newTarget) {
+      // Revert temporary edits on the previous target
+      // load stored color for the new target
+      if (iconSetPopup.mode !== "NestTabColor") return;
+      if (iconSetPopup.colorTarget === newTarget) return;
+
+      const tabs = getTabsForColorEdit();
+      const previousTarget = iconSetPopup.colorTarget;
+
+      // Undo temporary changes for the target we are leaving
+      tabs.forEach((tab) => {
+        if (previousTarget === "background") {
+          // Drop temporary bg preview, restore saved bg or clear
+          const saved = getCustomTabValue(tab, "customColor");
+          if (saved) {
+            tab.style.setProperty("--custom-background-color", saved);
+          } else {
+            tab.style.removeProperty("--custom-background-color");
+          }
+        } else {
+          // Leaving text, restore saved text or clear
+          const saved = getCustomTabValue(tab, "customTextColor");
+          if (saved) {
+            tab.style.setProperty("--custom-text-color", saved);
+          } else {
+            tab.style.removeProperty("--custom-text-color");
+          }
+        }
+        // Keep customColor attr only if something permanent exists
+        if (
+          !getCustomTabValue(tab, "customColor") &&
+          !getCustomTabValue(tab, "customTextColor")
+        ) {
+          tab.removeAttribute("customColor");
+          tab.removeAttribute("customColorPreview");
+        } else {
+          tab.removeAttribute("customColorPreview");
+          tab.setAttribute("customColor", "");
+        }
+      });
+      rebuildPresets(newTarget);
+      temporary = false;
+      iconSetPopup.colorTarget = newTarget;
+      highlightTargetButtons();
+      updateColorPopupTitle();
+      updateRemoveButtonVisibility();
+
+      // Load the new target's stored color into the picker (or a sensible default)
+      const el = iconSetPopup.element;
+      let stored =
+        newTarget === "text" ?
+        getCustomTabValue(el, "customTextColor") :
+        getCustomTabValue(el, "customColor");
+
+      if (!stored) {
+        // Defaults when nothing saved yet
+        stored =
+          newTarget === "text" ?
+          isDarkTheme() ?
+          "#f2f2f7ff" :
+          "#1a1a1aff" :
+          isDarkTheme() ?
+          "#0a84ffb3" :
+          "#0a84ffeb";
+      }
+      setColor(stored, true, true);
+    }
+
+    let btnBg = document.createXULElement("button");
+    btnBg.setAttribute("label", "Background");
+    btnBg.setAttribute("data-target", "background");
+
+    let btnText = document.createXULElement("button");
+    btnText.setAttribute("label", "Text");
+    btnText.setAttribute("data-target", "text");
+
+    btnBg.addEventListener("command", () => switchColorTarget("background"));
+    btnText.addEventListener("command", () => switchColorTarget("text"));
+
+    targetToggle.appendChild(btnBg);
+    targetToggle.appendChild(btnText);
+    iconSetPopup.appendChild(targetToggle);
+    iconSetPopup.colorTarget = "background";
+    highlightTargetButtons();
 
     let grid = document.createElement("div");
     grid.setAttribute("class", "icon-grid");
@@ -7968,6 +8191,7 @@
       button.addEventListener("command", () => {
         iconSetPopup.selected = button;
         changeSelected(iconName);
+        handleApply();
       });
       grid.appendChild(button);
     });
@@ -7984,65 +8208,88 @@
       });
     }
     // ---------- Color picker section ----------
-
     // ---------- helpers ----------
     function parseColor(color, context = document.documentElement) {
       const hex = resolveToHex(color, context);
-      const hsl = hexToHsl(hex);
+      const hsl = hexToHsl(hex.slice(0, 7));
       return {
         hex,
-        ...hsl
+        h: hsl.h,
+        s: hsl.s,
+        l: hsl.l,
       };
     }
 
-    function hslToHex(h, s, l) {
+    function hslToHex(h, s, l, a = 1) {
       s /= 100;
       l /= 100;
       const k = n => (n + h / 30) % 12;
-      const a = s * Math.min(l, 1 - l);
+      const sat = s * Math.min(l, 1 - l);
       const f = n =>
-        l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        l - sat * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
       const toHex = x =>
         Math.round(x * 255)
         .toString(16)
         .padStart(2, "0");
-      return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+      const aa = Math.round(Math.max(0, Math.min(1, a)) * 255)
+        .toString(16)
+        .padStart(2, "0");
+      return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}${aa}`;
     }
 
     function resolveToHex(color, context = document.documentElement) {
-      if (!color || typeof color !== "string") return "#0a84ff";
-
+      if (!color || typeof color !== "string") return "#0a84ffcc";
       color = color.trim();
+
       // Already hex?
-      if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) {
-        // normalize short hex → full
-        if (color.length === 4) {
-          color =
-            "#" +
-            color[1] + color[1] +
-            color[2] + color[2] +
-            color[3] + color[3];
-        }
+      // #RGB
+      if (/^#[0-9a-f]{3}$/i.test(color)) {
+        color =
+          "#" +
+          color[1] + color[1] +
+          color[2] + color[2] +
+          color[3] + color[3] +
+          "ff";
         return color.toLowerCase();
       }
+      // #RRGGBB
+      if (/^#[0-9a-f]{6}$/i.test(color)) {
+        return (color + "ff").toLowerCase();
+      }
+      // #RRGGBBAA
+      if (/^#[0-9a-f]{8}$/i.test(color)) {
+        return color.toLowerCase();
+      }
+
       // Let the engine resolve named colors, rgb(), hsl(), var(--...), etc.
+      // named / rgb / rgba / hsl / var(...)
       let el = document.createElement("div");
       el.style.color = color;
       context.appendChild(el);
-      const computed = getComputedStyle(el).color; // "rgb(r, g, b)" or "rgba(...)"
+      const computed = getComputedStyle(el).color;
       el.remove();
 
-      const match = computed.match(/rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
-      if (!match) return "#0a84ff";
+      const match = computed.match(
+        /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+%?))?\s*\)/i
+      );
+      if (!match) return "#0a84ffcc";
 
-      const toHex = n =>
-        Number(n).toString(16).padStart(2, "0");
-
-      return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+      const toHex = n => Number(n).toString(16).padStart(2, "0");
+      let a = 1;
+      if (match[4] != null) {
+        a = match[4].endsWith("%") ?
+          parseFloat(match[4]) / 100 :
+          parseFloat(match[4]);
+        if (Number.isNaN(a)) a = 1;
+      }
+      const aa = Math.round(Math.max(0, Math.min(1, a)) * 255)
+        .toString(16)
+        .padStart(2, "0");
+      return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}${aa}`;
     }
 
     function hexToHsl(hex) {
-      hex = resolveToHex(hex).replace("#", "");
+      hex = resolveToHex(hex).slice(1, 7);
 
       const r = parseInt(hex.substring(0, 2), 16) / 255;
       const g = parseInt(hex.substring(2, 4), 16) / 255;
@@ -8051,7 +8298,6 @@
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
       let h, s, l = (max + min) / 2;
-
       if (max === min) {
         h = s = 0;
       } else {
@@ -8077,40 +8323,130 @@
       };
     }
 
+    function isDarkTheme() {
+      const t = getPref("browser.theme.toolbar-theme");
+      if (t === 0) return true;
+      if (t === 1) return false;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+
+    function alphaFromHex(hex) {
+      hex = resolveToHex(hex);
+      return parseInt(hex.slice(7, 9), 16) / 255;
+    }
     let currentHue = 210;
     let currentSat = 90;
     let currentLight = 55;
-    let currentColor = hslToHex(currentHue, currentSat, currentLight);
+    let currentOpacity = 80;
+    let currentColor = hslToHex(currentHue, currentSat, currentLight, currentOpacity / 100);
 
     let colorSection = document.createElement("div");
     colorSection.setAttribute("class", "color-section");
 
     // Preset colors
-    const PRESETS = [
-      "#0a84ff", "#30d158", "#ff9f0a", "#ff453a", "#bf5af2",
-      "#64d2ff", "#ff375f", "#ffd60a", "#ac8e68", "#0cc00c",
-      "#c0c0c0", "#f5d461", "#808080", "#b0b0b0", "#e0e0e0", "#ffffff", "#1c1c1e",
+    /* ***** preserve:start */
+    const PRESET_BASES_BACKGROUND = [
+      { h: 221, s: 90, l: 55 }, // blue
+      { h: 140, s: 70,  l: 42 }, // green
+      { h: 35,  s: 100, l: 52 }, // orange
+      { h: 4,   s: 90,  l: 55 }, // red
+      { h: 280, s: 75,  l: 55 }, // purple
+      { h: 197, s: 100, l: 60}, // cyan
+      { h: 328, s: 100, l: 58 }, // pink/red
+      { h: 308, s: 90,  l: 58 }, // pink/blue
+      { h: 55,  s: 100, l: 60 }, // yellow
+      { h: 30,  s: 35,  l: 45 }, // brown/tan
+      { h: 0,   s: 0,   l: 70 }, // gray
+      { h: 45,  s: 85,  l: 58 }, // gold
+      { h: 0,   s: 0,   l: 50 }, // mid gray
+      { h: 0,   s: 0,   l: 62 }, // light gray
+      { h: 0,   s: 0,   l: 78 }, // very light / silver
+      { h: 0,   s: 0,   l: 100 }, // white
+      { h: 240, s: 6,   l: 18 }, // near-black
     ];
+    const PRESET_BASES_TEXT = [
+      { h: 0, s: 0, l: 100 },   // white
+      { h: 0, s: 0, l: 92 },
+      { h: 0, s: 0, l: 75 },
+      { h: 0, s: 0, l: 55 },
+      { h: 0, s: 0, l: 30 },
+      { h: 0, s: 0, l: 10 },    // near black
+      { h: 221, s: 90, l: 77 }, // blue
+      { h: 140, s: 100, l: 77 }, // green
+      { h: 4, s: 100, l: 70 },   // red
+      { h: 35, s: 100, l: 77 }, // orange
+      { h: 280, s: 75, l: 77 }, // purple
+      { h: 197, s: 100, l: 66 },// cyan
+      { h: 328, s: 90, l: 77 }, // pink
+      { h: 55, s: 100, l: 88 }, // gold 
+      { h: 30, s: 40, l: 40 },  // brown
+      { h: 210, s: 15, l: 70 }, // cool gray
+      { h: 210, s: 15, l: 35 },
+    ];
+    /* ***** preserve:end */
 
     let presetsRow = document.createElement("div");
     presetsRow.setAttribute("class", "presets-row");
-    PRESETS.forEach(color => {
-      let swatch = document.createElement("div");
-      swatch.setAttribute("class", "color-swatch");
-      swatch.style.setProperty("background", `${color}`);
 
-      swatch.addEventListener("click", () => {
-        setColor(color, true);
+    function getPresetsForTheme(target = null) {
+      // Light/Dark theme aware
+      const darkTheme = isDarkTheme();
+      const bases =
+        target === "text" ? PRESET_BASES_TEXT : PRESET_BASES_BACKGROUND;
+      return bases.map(p => {
+        let l = p.l;
+        if (target === "text") {
+          if (darkTheme) {
+            // prefer lighter text on dark UI
+            if (p.s === 0) l = Math.min(100, Math.max(l, 70));
+            else l = Math.min(100, Math.max(48, l));
+          } else {
+            // prefer darker text on light UI
+            if (p.s === 0) l = Math.max(0, Math.min(l, 35));
+            else l = Math.max(0, Math.min(42, l));
+          }
+        } else {
+          l = (target != null) ?
+            darkTheme ? Math.max(0, p.l - 20) : Math.min(100, p.l + 17) :
+            darkTheme ? Math.min(100, p.l + 10) : Math.max(0, p.l - 18);
+        }
+        return hslToHex(p.h, p.s, l, 1).slice(0, 7);
       });
-      swatch.dataset.color = color;
-      presetsRow.appendChild(swatch);
-    });
+    }
+
+    function rebuildPresets(target = null) {
+      const darkTheme = isDarkTheme();
+      let defaultOpacity = (darkTheme) ? "b3" : "eb"; // b3 ≈ 70%
+      while (presetsRow.firstChild) presetsRow.firstChild.remove();
+      getPresetsForTheme(target).forEach(color => {
+        let swatch = document.createElement("div");
+        swatch.setAttribute("class", "color-swatch");
+        swatch.style.setProperty("background", color);
+        swatch.addEventListener("click", () => {
+          if (iconSetPopup.mode === "NestTabColor") {
+            // Text presets: full opacity (readable)
+            if (iconSetPopup.colorTarget === "text") {
+              setColor(color + "ff", true);
+            } else {
+              // Preset click for tab color, keep hue/sat/light, force 70% opacity
+              setColor(color + defaultOpacity, true);
+            }
+          } else {
+            setColor(color, true); // icons: full opacity
+          }
+        });
+        swatch.dataset.color = color.toLowerCase();
+        presetsRow.appendChild(swatch);
+      });
+    }
+    rebuildPresets();
     colorSection.appendChild(presetsRow);
 
     function highlightPreset(color) {
+      const solid = resolveToHex(color).slice(0, 7);
       presetsRow.querySelectorAll("div").forEach(s => {
         s.style.borderColor =
-          s.dataset.color.toLowerCase() === color.toLowerCase() ?
+          s.dataset.color.toLowerCase() === solid.toLowerCase() ?
           "var(--focus-outline-color, #0a84ff)" :
           "transparent";
       });
@@ -8128,9 +8464,10 @@
     hueSlider.min = 0;
     hueSlider.max = 360;
     hueSlider.value = currentHue;
-    hueSlider.style.setProperty("background", `linear-gradient(to right,
-        #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000
-      )`);
+    hueSlider.style.setProperty(
+      "background",
+      `linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)`
+    );
     colorSection.appendChild(hueSlider);
 
     // Saturation slider
@@ -8145,7 +8482,10 @@
     satSlider.min = 0;
     satSlider.max = 100;
     satSlider.value = currentSat;
-    satSlider.style.setProperty("background", `linear-gradient(to right, #888, ${hslToHex(currentHue, 100, currentLight)})`);
+    satSlider.style.setProperty(
+      "background",
+      `linear-gradient(to right, #888, ${hslToHex(currentHue, 100, currentLight, 1).slice(0, 7)})`
+    );
     colorSection.appendChild(satSlider);
 
     // Lightness slider
@@ -8160,8 +8500,31 @@
     lightSlider.min = 0;
     lightSlider.max = 100;
     lightSlider.value = currentLight;
-    lightSlider.style.setProperty("background", `linear-gradient(to right, #000, #888, #fff)`);
+    lightSlider.style.setProperty(
+      "background",
+      `linear-gradient(to right, #000, #888, #fff)`
+    );
     colorSection.appendChild(lightSlider);
+
+    // Opacity slider (tab color only)
+    let opacityLabel = document.createXULElement("label");
+    opacityLabel.setAttribute("value", "Opacity");
+    opacityLabel.setAttribute("class", "hsl-label");
+    opacityLabel.setAttribute("id", "opacity-label");
+    colorSection.appendChild(opacityLabel);
+
+    let opacitySlider = document.createElement("input");
+    opacitySlider.setAttribute("class", "hsl-slider");
+    opacitySlider.setAttribute("id", "opacity-slider");
+    opacitySlider.type = "range";
+    opacitySlider.min = 0;
+    opacitySlider.max = 100;
+    opacitySlider.value = currentOpacity;
+    opacitySlider.style.setProperty(
+      "background",
+      `linear-gradient(to right, transparent, ${hslToHex(currentHue, currentSat, currentLight, 1).slice(0, 7)})`
+    );
+    colorSection.appendChild(opacitySlider);
 
     // Current color preview
     let previewRow = document.createElement("div");
@@ -8175,25 +8538,44 @@
     hexLabel.setAttribute("value", currentColor);
     hexLabel.style.cssText = "margin: 0; font-family: monospace; font-size: 1.05em;";
 
+    let temporary = false;
+
     previewRow.appendChild(previewSwatch);
     previewRow.appendChild(hexLabel);
     colorSection.appendChild(previewRow);
     iconSetPopup.appendChild(colorSection);
 
     // ---------- live update ----------
-    function updateIconsColor(color) {
-      currentColor = color;
-      previewSwatch.style.background = color;
-      hexLabel.setAttribute("value", color);
-      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
-        button.style.stroke = color;
-      });
-      // Keep saturation slider gradient in sync with current hue/lightness
-      satSlider.style.background = `linear-gradient(to right, #888, ${hslToHex(currentHue, 100, currentLight)})`;
+    function getDisplayColor() {
+      // "NestTabColor" => #RRGGBBAA with slider opacity
+      // Icons / panels => #RRGGBBFF (100%)
+      const a =
+        iconSetPopup.mode === "NestTabColor" ? currentOpacity / 100 : 1;
+      return hslToHex(currentHue, currentSat, currentLight, a);
     }
 
-    function setColor(color, syncSliders = false) {
-      // Resolve var(--...), "red", "rgb(...)", etc. → hex
+    function updateIconsColor() {
+      currentColor = getDisplayColor();
+      previewSwatch.style.background = currentColor;
+      temporaryPreview();
+      hexLabel.setAttribute("value", currentColor);
+      // Icons always use opaque #RRGGBB
+      const solid = currentColor.slice(0, 7);
+      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
+        button.style.stroke = solid;
+      });
+      // Keep saturation slider gradient in sync with current hue/lightness
+      satSlider.style.background = `linear-gradient(to right, #888, ${hslToHex(
+          currentHue,
+          100,
+          currentLight,
+          1
+        ).slice(0, 7)})`;
+      opacitySlider.style.background = `linear-gradient(to right, transparent, ${solid})`;
+    }
+
+    function setColor(color, syncSliders = false, init = false) {
+      // Resolve var(--...), "red", "rgb(...)", etc. to hex
       const {
         hex,
         h,
@@ -8208,8 +8590,23 @@
         hueSlider.value = currentHue;
         satSlider.value = currentSat;
         lightSlider.value = currentLight;
+
+        if (iconSetPopup.mode === "NestTabColor") {
+          currentOpacity = Math.round(alphaFromHex(hex) * 100);
+          // New colors with no alpha in source still get 80% if fully opaque
+          // and caller just picked a preset, presets are opaque; leave slider
+          // as-is unless stored color had alpha < 1 or we explicitly set default.
+          opacitySlider.value = currentOpacity;
+        } else {
+          currentOpacity = 100;
+          opacitySlider.value = 100;
+        }
+
       }
-      updateIconsColor(hex);
+      if (!init) {
+        handleApply();
+      }
+      updateIconsColor();
       highlightPreset(hex);
     }
 
@@ -8217,49 +8614,118 @@
       currentHue = Number(hueSlider.value);
       currentSat = Number(satSlider.value);
       currentLight = Number(lightSlider.value);
-      const color = hslToHex(currentHue, currentSat, currentLight);
-      updateIconsColor(color);
+      currentOpacity = Number(opacitySlider.value);
+      updateIconsColor();
+      handleApply();
       highlightPreset(""); // clear preset highlight
     }
 
     hueSlider.addEventListener("input", updateFromSliders);
     satSlider.addEventListener("input", updateFromSliders);
     lightSlider.addEventListener("input", updateFromSliders);
+    opacitySlider.addEventListener("input", updateFromSliders);
 
-    let buttonBox = document.createXULElement("hbox");
-    buttonBox.setAttribute("pack", "center");
-    buttonBox.style.padding = "8px 0 12px";
-    buttonBox.style.marginTop = "8px";
+    let buttonBox = document.createXULElement("vbox");
+    buttonBox.setAttribute("class", "icon-selector-buttons");
 
     let doneButton = document.createXULElement("button");
+    doneButton.setAttribute("class", "icon-selector-action-btn");
     doneButton.setAttribute("label", "Done");
-    doneButton.style.minWidth = "90px";
-    doneButton.style.minHeight = "30px";
-
-    let cancelButton = document.createXULElement("button");
-    cancelButton.setAttribute("label", "Cancel");
-    cancelButton.style.minWidth = "90px";
-    doneButton.style.minHeight = "30px";
-
 
     let removeButton = document.createXULElement("button");
+    removeButton.setAttribute("class", "icon-selector-action-btn");
     removeButton.setAttribute("label", "Remove icon");
 
-    function handleDone() {
+    function hasSavedColorForTarget(tab, target) {
+      if (!tab) return false;
+      if (target === "text") {
+        return !!getCustomTabValue(tab, "customTextColor");
+      }
+      return !!getCustomTabValue(tab, "customColor");
+    }
+
+    function anyTabHasSavedColor(tabs, target) {
+      return tabs.some((t) => hasSavedColorForTarget(t, target));
+    }
+
+    function updateRemoveButtonVisibility() {
+      if (iconSetPopup.mode !== "NestTabColor") {
+        // icon modes keep their own logic
+        return;
+      }
+      const tabs = getTabsForColorEdit();
+      const target = iconSetPopup.colorTarget || "background";
+      const hasColor = anyTabHasSavedColor(tabs, target);
+
+      if (hasColor) {
+        removeButton.removeAttribute("hidden");
+        removeButton.setAttribute(
+          "label",
+          target === "text" ? "Default" : "Default"
+        );
+      } else {
+        removeButton.setAttribute("hidden", "true");
+      }
+    }
+
+    function temporaryPreview() {
+      if (iconSetPopup.mode != "NestTabColor") return;
+      getTabsForColorEdit().forEach((tab) => {
+        nativeTreeTabs.setTabCustomColorTemporary(
+          tab,
+          currentColor.toString(),
+          iconSetPopup.colorTarget || "background"
+        );
+        temporary = true;
+      });
+    }
+
+    function applyCurrentSelection({
+      close = false
+    } = {}) {
       if (iconSetPopup.mode == "NestTabColor") {
-        nativeTreeTabs.setTabCustomColor(iconSetPopup.element, currentColor.toString());
-      } else if (iconSetPopup.selected != null) {
+        const target = iconSetPopup.colorTarget || "background";
+        getTabsForColorEdit().forEach((tab) => {
+          nativeTreeTabs.setTabCustomColor(
+            tab,
+            getDisplayColor().toString(),
+            target,
+            close
+          );
+        });
+        updateRemoveButtonVisibility();
+        if (close) {
+          iconSetPopup.hidePopup();
+          temporary = false;
+        }
+        return;
+      }
+      // Existing icon / panel path
+      if (iconSetPopup.selected != null) {
         let iconName = iconSetPopup.selected.getAttribute("iconName");
-        let string = iconName.toString() + "," + currentColor.toString();
+        let solid = getDisplayColor().slice(0, 7);
+        let string = iconName.toString() + "," + solid.toString();
         if (iconSetPopup.mode == "TabPanel") {
           nativeTreeTabs.setPanelIcon(iconSetPopup.element, string);
-          let updateIcon;
-          updateCountInMenu(iconSetPopup.element, null, updateIcon = true);
+          updateCountInMenu(iconSetPopup.element, null, true);
         } else if (iconSetPopup.mode == "NestTab") {
           nativeTreeTabs.setTabCustomIcon(iconSetPopup.element, string);
         }
       }
-      iconSetPopup.hidePopup();
+      temporary = false;
+      if (close) iconSetPopup.hidePopup();
+    }
+
+    function handleApply() {
+      applyCurrentSelection({
+        close: false
+      });
+    }
+
+    function handleDone() {
+      applyCurrentSelection({
+        close: true
+      });
     }
 
     function handleRemove() {
@@ -8270,21 +8736,26 @@
       } else if (iconSetPopup.mode == "NestTab") {
         nativeTreeTabs.removeTabCustomIcon(iconSetPopup.element);
       } else if (iconSetPopup.mode == "NestTabColor") {
-        nativeTreeTabs.removeTabCustomColor(iconSetPopup.element);
+        const target = iconSetPopup.colorTarget || "background";
+        getTabsForColorEdit().forEach((tab) => {
+          nativeTreeTabs.removeTabCustomColor(tab, target);
+        });
+        temporary = false;
+        // hides Remove when nothing left for this target
+        updateRemoveButtonVisibility();
+        // stay open so user can still edit the other target if they want
+        return;
       }
       iconSetPopup.hidePopup();
     }
 
-    doneButton.addEventListener("command", handleDone);
-    cancelButton.addEventListener("command", () => {
+    doneButton.addEventListener("command", () => {
       iconSetPopup.hidePopup();
     });
 
     removeButton.addEventListener("command", handleRemove);
-
     buttonBox.appendChild(doneButton);
     buttonBox.appendChild(removeButton);
-    buttonBox.appendChild(cancelButton);
     iconSetPopup.appendChild(buttonBox);
     document.getElementById("mainPopupSet").appendChild(iconSetPopup);
 
@@ -8353,13 +8824,12 @@
 
     // Script wide accessible functions
     nativeTreeTabs.setIconAndColorPopup.setRandomIcon = function(element, type) {
-      let lightMode = getPref("browser.theme.toolbar-theme");
       const {
         hex,
         h,
         s,
         l
-      } = (lightMode == 0) ?
+      } = (isDarkTheme()) ?
       randomColorHSL(65, 60, 35, 15, true):
         randomColorHSL(40, 80, 10, 15, true);
 
@@ -8381,6 +8851,10 @@
       let currentSelected;
       let color;
       let foundStored = false;
+      rebuildPresets(type);
+      let darkTheme = isDarkTheme();
+      iconSetPopup.selected = null;
+      iconSetPopup.element = element;
 
       if (type == "TabPanel") {
         if (element.icon == null) {
@@ -8411,13 +8885,11 @@
               foundStored = true;
               removeButton.removeAttribute("hidden");
               removeButton.setAttribute("label", "Default icon");
-
             }
           }
         }
         if (foundStored == false) {
-          let lightMode = getPref("browser.theme.toolbar-theme");
-          if (lightMode == 0)
+          if (darkTheme)
             color = randomColorHSL(65, 50, 35, 20);
           else
             color = randomColorHSL(40, 80, 10, 15);
@@ -8437,38 +8909,49 @@
           }
         }
         if (foundStored == false) {
-          let lightMode = getPref("browser.theme.toolbar-theme");
-          if (lightMode == 0)
-            color = randomColorHSL(45, 50, 35, 0);
+          if (darkTheme)
+            color = randomColorHSL(30, 65, 35, 0);
           else
-            color = randomColorHSL(80, 80, 15, 15);
+            color = randomColorHSL(70, 80, 15, 15);
+          color = resolveToHex(color).slice(0, 7) + "b3"; // b3 ≈ 70%
           removeButton.setAttribute("hidden", "true");
         }
-        grid.setAttribute("hidden", "true");
         title.setAttribute("value", "Select Color");
+        targetToggle.removeAttribute("hidden");
+        iconSetPopup.colorTarget = "background";
+        rebuildPresets("background");
+        highlightTargetButtons();
+        updateColorPopupTitle();
+        grid.setAttribute("hidden", "true");
         previewRow.removeAttribute("hidden");
+        opacityLabel.removeAttribute("hidden");
+        opacitySlider.removeAttribute("hidden");
+        // Show/hide Remove for current target (background on open)
+        updateRemoveButtonVisibility();
       } else {
         title.setAttribute("value", "Select Icon");
+        targetToggle.style.display = "none";
         grid.removeAttribute("hidden");
         previewRow.setAttribute("hidden", "true");
+        currentOpacity = 100;
+        opacitySlider.value = 100;
+        opacityLabel.setAttribute("hidden", "true");
+        opacitySlider.setAttribute("hidden", "true");
+
+        iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
+          const isSelected = button.getAttribute("iconName") === currentSelected;
+          button.toggleAttribute("checked", isSelected);
+          if (isSelected)
+            iconSetPopup.selected = button;
+          button.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
+          button.style.outlineOffset = isSelected ? "2px" : "";
+          button.style.backgroundColor = isSelected ?
+            "var(--arrowpanel-dimmed, rgba(0,0,0,.08))" :
+            "";
+        });
       }
-
-      iconSetPopup.selected = null;
-      iconSetPopup.element = element;
-
-      iconSetPopup.querySelectorAll(".profile-icon-option").forEach(button => {
-        const isSelected = button.getAttribute("iconName") === currentSelected;
-        button.toggleAttribute("checked", isSelected);
-        if (isSelected)
-          iconSetPopup.selected = button;
-        button.style.outline = isSelected ? "2px solid var(--focus-outline-color, #0a84ff)" : "";
-        button.style.outlineOffset = isSelected ? "2px" : "";
-        button.style.backgroundColor = isSelected ?
-          "var(--arrowpanel-dimmed, rgba(0,0,0,.08))" :
-          "";
-      });
       // Initialize color + sliders from argument
-      setColor(color || "#0a84ff", true);
+      setColor(color || "#0a84ffb3", true);
       if (side || type != "TabPanel")
         iconSetPopup.openPopup(anchor, "topright topleft", 0, 0, false, false);
       else
@@ -8476,6 +8959,14 @@
 
       window.addEventListener("keypress", doneOnEnter);
       iconSetPopup.addEventListener("popuphiding", (aEvent) => {
+        if (iconSetPopup.mode == "NestTabColor") {
+          getTabsForColorEdit().forEach((tab) => {
+            tab.removeAttribute("customColorPreview");
+            if (temporary) {
+              nativeTreeTabs.removeTabCustomColorPreview(tab);
+            }
+          });
+        }
         window.removeEventListener("keypress", doneOnEnter);
       });
     };
@@ -9855,7 +10346,7 @@
     const mDot = s.match(/^v\.(\d+(?:\.\d+)*)/i);
     if (mDot) {
       const rest = mDot[1];
-      // v.N1.N2.N3 → 0.N1.N2.N3
+      // v.N1.N2.N3 => 0.N1.N2.N3
       return "0." + rest;
     }
     // script / normal: "v0.3.6.6" or "0.3.6.6"
@@ -9957,7 +10448,7 @@
       const notNewerThanRemote = !versionGreater(ver, toN);
       if (!notNewerThanRemote) continue;
 
-      if (!versionGte(toN, ver)) continue; // ver > toVer → skip
+      if (!versionGte(toN, ver)) continue; // ver > toVer => skip
       if (!versionGreater(ver, fromN) && ver !== fromN) {
         // ver <= fromVer: only keep if strictly greater than from
         if (!versionGreater(ver, fromN)) continue;
@@ -12351,13 +12842,6 @@
     {
       transform:scale(1.5);
     }
-    tab[customColor] .tab-label
-    {
-      font-size: var(--label-font-size)!important;
-    }
-    tab[customColor] .tab-text{
-      color: light-dark(var(--tab-group-color-pale, var(--tab-group-gray-text-invert)), var(--tab-group-color-pale, var(--tab-group-gray-text-invert))) !important;
-    }
     tab[nestTab][twisted-root]:not(:hover) .tab-background{
       filter:brightness(0.9);
     }
@@ -12751,69 +13235,90 @@
       }
     }
 
+    /*Custom tab color set by context menu*/
+    #vertical-tabs{
+      tab[customColorPreview]:not([hidden-child],[tabPanel-hidden]) .tab-background,
+      tab[customColor]:not([selected],[hidden-child],[tabPanel-hidden]) .tab-background {
+        background-color:var(--custom-background-color)!important;
+      }
+      tab[customTextColor]:not([selected]) ,  tab[customTextColor][customColorPreview]{ 
+        .tab-label,.tab-text {
+          color: var(--custom-text-color, inherit) !important;
+        }
+      }
+    }
+    // tab[customColor] .tab-label
+    // {
+    //   font-size: var(--label-font-size)!important;
+    // }
+    tab[customColor]:not([customTextColor]) .tab-text{
+      color: light-dark(var(--tab-group-color-pale, var(--tab-group-gray-text-invert)), var(--tab-group-color-pale, var(--tab-group-gray-text-invert))) !important;
+    }
     @media -moz-pref("treeTabs.style.customBackground") {
-
-    @media (prefers-color-scheme: dark) {
-      #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab],[customColor]) .tab-background {
+      @media (prefers-color-scheme: dark) {
+        #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab],[customColor]) .tab-background {
           background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
           border: 1px solid rgba(55, 55, 55, 0.3);
           border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent))!important;
           backdrop-filter: blur(5px);
-      }
-      @media -moz-pref("treeTabs.style.contextLineStyle",0){
-        #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden]) .tab-background {
-          backdrop-filter: blur(5px);
         }
-      }
-      #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
+        @media -moz-pref("treeTabs.style.contextLineStyle",0){
+          #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden]) .tab-background {
+            backdrop-filter: blur(5px);
+          }
+        }
+        #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
           opacity: 0.8;
-      }
-
-      @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
-        #vertical-tabs tab[selected]:not([multiselected],[customColor]) .tab-background {
-          outline: none!important;
-          border: 2px solid transparent!important;
-          background: linear-gradient( color-mix( in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, rgba(130, 120, 140)) 40%, rgb(20, 20, 20))) 33%, rgba(2, 2, 2, 0.95))) padding-box, linear-gradient(96deg, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent))) border-box!important;
         }
-      }
-      #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) .tab-background:not([selected]) {
+        #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
+          opacity: 0.8;
+        }
+        @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
+          #vertical-tabs tab[selected]:not([multiselected],[customColorPreview]) .tab-background {
+            outline: none!important;
+            border: 2px solid transparent!important;
+            background: linear-gradient( color-mix( in srgb, var(--custom-background-color, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, rgba(130, 120, 140)) 40%, rgb(20, 20, 20)))) 33%, rgba(2, 2, 2, 0.95))) padding-box, linear-gradient(96deg, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent))) border-box!important;
+          }
+        }
+        #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) .tab-background:not([selected]) {
           background: transparent!important;
           border: none!important;
+        }
       }
-    }
 
-    @media (prefers-color-scheme: light) {
-      #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab],[customColor]) .tab-background {
+      @media (prefers-color-scheme: light) {
+        #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab],[customColor]) .tab-background {
           background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, white)) 8%, rgba(250, 250, 250, 0.005))!important;
           backdrop-filter: blur(5px);
           border: 1px solid rgba(55, 55, 55, 0.3);
           border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(20, 20, 20)))) 15%, rgba(200, 200, 200, 0)) 20%, color-mix(in srgb, silver 45%, transparent))!important;
           opacity: 1;
           filter: saturate(1) brightness(1);
-      }
-      #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
+        }
+        #vertical-tabs tab[selected]:not([multiselected]) .tab-background {
           backdrop-filter: blur(5px);
           opacity: 0.8;
-      }
-      @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
-        #vertical-tabs tab[selected]:not([multiselected],[customColor]) .tab-background {
-          outline: none!important;
-          border: 2px solid transparent!important;
         }
-      }
-
-      #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) {
+        @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
+          #vertical-tabs tab[selected]:not([multiselected],[customColor]) .tab-background {
+            outline: none!important;
+            border: 2px solid transparent!important;
+          }
+        }
+        #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) {
           outline: 1px solid;
           outline-color: rgba(120, 50, 50, 0.7);
           background: color-mix( in srgb, rgba(255, 255, 255) 50%, transparent);
+        }
       }
     }
-    }
+
     .tab-icon-image {
       #tabbrowser-tabs[orient="vertical"][expanded] tab:not([twisted-root],[nestTab]) &:not([pinned]) {
-            margin-inline-start: var(--tab-icon-start);
+        margin-inline-start: var(--tab-icon-start);
       }
     }
+
     /*Container line style*/
     #vertical-tabs{
       @media (not -moz-pref("treeTabs.style.contextLineStyle",0)) and
@@ -12943,6 +13448,13 @@
       filter: grayscale(0.3) brightness(0.8)!important;
     }
 
+    /* Adds margin when tab-scrollbox is overflow */
+    #tabbrowser-arrowscrollbox[orient="vertical"] {
+      & > #tabbrowser-arrowscrollbox-periphery {
+        margin-bottom: 70px!important;
+      }
+    }
+
     /*Set icon popup*/
     #icon-selector-popup{
       padding:15px;
@@ -12951,87 +13463,138 @@
       max-height:unset;
     }
     #icon-selector-popup{
-    label[class="iconSetPopup-title"]{
-      font-weight: 600;
-      font-size: 1.4em;
-      display: block;
-      align-self: center;
-    }
-    .icon-grid{
-      display: flex;
-      overflow-y: auto;
-      padding-block: 10px;
-      flex-direction: row;
-      flex-wrap: wrap;
-      gap: 9px;
-      width: 100%;
-      justify-content: center;
-    }
-    .icon-selector{
-      max-width: 30px;
-      max-height: 30px;
-      padding: 2px;
-      justify-content:center;
-      border-radius: 8px;
-      -moz-context-properties: fill, stroke;
-      fill: transparent;
-      stroke: currentColor;
-      appearance: unset!important;
-      background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
-    }
-    .icon-selector image{
-      max-width: 26px;
-      max-height: 26px;
-    }
-    .color-section{
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--panel-separator-color, rgba(128,128,128,0.3));
-      width: 100%;
-    }
-    .presets-row{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      justify-content: center;
-    }
-    .color-swatch{
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      cursor: pointer;
-      box-sizing: border-box;
-    }
-    .hsl-label{
-      line-height: 8px;
-      margin: 0 0 0 5px!important;
-      font-size: 1.2em;
-    }
-    input[class="hsl-slider"]{
-      width: 100%;
-      height: 16px;
-      appearance: none;
-      border-radius: 8px;
-      outline: none;
-      cursor: pointer;
-    }
-    .preview-row{
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      margin-top: 4px;
-    }
-    .preview-swatch{
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
-      border: 1px solid var(--border-color, #888);
-    }
+      label[class="iconSetPopup-title"]{
+        font-weight: 600;
+        font-size: 1.4em;
+        display: block;
+        align-self: center;
+      }
+      .color-target-toggle {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin: 10px 0 6px;
+        width: 100%;
+      }
+      .color-target-toggle[hidden] {
+        display: none !important;
+      }
+      .color-target-toggle button{
+         appearance: none !important;
+         min-width: 100px;
+         min-height: 28px;
+         border-radius: 6px;
+         border: 1px solid transparent;
+         background-color: color-mix(
+           in srgb,
+           var(--button-background-color-active) 25%,
+           transparent
+         ) !important;
+         cursor: pointer;
+       }
+       .color-target-toggle button:hover {
+         background-color: color-mix(
+           in srgb,
+           var(--button-background-color-active) 40%,
+           transparent
+         ) !important;
+       }
+       .color-target-toggle button[checked] {
+         outline: 2px solid var(--focus-outline-color, #0a84ff);
+         outline-offset: 2px;
+         background-color: var(--arrowpanel-dimmed, rgba(0, 0, 0, 0.08)) !important;
+         border-color: transparent!important;
+       }
+       .icon-grid{
+         display: flex;
+         overflow-y: auto;
+         padding-block: 10px;
+         flex-direction: row;
+         flex-wrap: wrap;
+         gap: 9px;
+         width: 100%;
+         justify-content: center;
+       }
+       .icon-selector{
+         max-width: 30px;
+         max-height: 30px;
+         padding: 2px;
+         justify-content:center;
+         border-radius: 8px;
+         -moz-context-properties: fill, stroke;
+         fill: transparent;
+         stroke: currentColor;
+         appearance: unset!important;
+         background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
+       }
+       .icon-selector image{
+         max-width: 26px;
+         max-height: 26px;
+       }
+       .color-section{
+         display: flex;
+         flex-direction: column;
+         gap: 10px;
+         margin-top: 12px;
+         padding-top: 12px;
+         border-top: 1px solid var(--panel-separator-color, rgba(128,128,128,0.3));
+         width: 100%;
+       }
+       .presets-row{
+         display: flex;
+         flex-wrap: wrap;
+         gap: 6px;
+         justify-content: center;
+       }
+       .color-swatch{
+         width: 22px;
+         height: 22px;
+         border-radius: 50%;
+         border: 2px solid transparent;
+         cursor: pointer;
+         box-sizing: border-box;
+       }
+       .hsl-label{
+         line-height: 8px;
+         margin: 0 0 0 5px!important;
+         font-size: 1.2em;
+       }
+       input[class="hsl-slider"]{
+         width: 100%;
+         height: 16px;
+         appearance: none;
+         border-radius: 8px;
+         outline: none;
+         cursor: pointer;
+       }
+       .preview-row{
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         gap: 10px;
+         margin-top: 4px;
+       }
+       .preview-swatch{
+         width: 28px;
+         height: 28px;
+         border-radius: 6px;
+         border: 1px solid var(--border-color, #888);
+       }
+       .icon-selector-buttons {
+         display: flex;
+         flex-direction: row;
+         gap: 8px;
+         margin-top: 10px;
+         padding: 8px 0 12px;
+         width: 100%;
+         justify-content:center;
+       }
+       .icon-selector-action-btn {
+         min-width: 90px!important;
+         min-height: 30px;
+         flex: 1 1 0;
+         max-width: 80%!important;
+       }
     }
 
     /* Add custom tab colors based on domain, uncomment and add your sites and color */
