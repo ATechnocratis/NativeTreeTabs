@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.3.1
+// @version        0.4.3.2
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -118,8 +118,8 @@
     },
     changePanelOnScroll: {
       value: true,
-      onEnable: switchPanelOnScroll,
-      onDisable: switchPanelOnScroll,
+      onEnable: switchPanelOnScrollToggle,
+      onDisable: switchPanelOnScrollToggle,
     },
     autohideSidebar: {
       value: false,
@@ -2555,9 +2555,12 @@
       if (foundPanel === false) {
         if (this.tabPanels.length == 0 || this.selectedPanel == null) {
           //no Tab Panel open => Open default one
-          let label = getPref("treeTabs.defaultPanelName");
-          if (label == null) {
-            label = "Default Panel";
+          let label;
+          if (this.tabPanels.length == 0) {
+            label = this.defaultPanelName.value;
+            if (label == null) {
+              label = "Default Panel";
+            }
           }
           let defPanel = this.tabPanelOpen([aTab], label);
           if (aTab.selected) {
@@ -2886,9 +2889,9 @@
       this.observeTopic("treeTabs.defaultPanelName", this.defaultPanelName, this.defaultPanelName.value, isString, "Default Panel");
       this.observeTopic("browser.tabs.insertRelatedAfterCurrent", this.moveNewTabsDirectlyUnderParent);
       this.observeTopic("treeTabs.update.autoUpdate", this.autoUpdate, this.autoUpdate.value, isBoolean, true);
-      Services.prefs.setBoolPref("browser.tabs.dragDrop.createGroup.enabled", false, isBoolean, false);
-      Services.prefs.setBoolPref("browser.tabs.groups.smart.enabled", false);
-      Services.prefs.setBoolPref("svg.context-properties.content.enabled", true);
+      setPref("browser.tabs.dragDrop.createGroup.enabled", false);
+      setPref("browser.tabs.groups.smart.enabled", false);
+      setPref("svg.context-properties.content.enabled", true);
 
     },
 
@@ -4156,24 +4159,30 @@
         // Ensure tabs are always visible with extra space from the bottom
         this.originalTabBoxEnsureElementIsVisible = box.ensureElementIsVisible.bind(box);
         box.ensureElementIsVisible = function(element, aInstant) {
-          nativeTreeTabs.originalTabBoxEnsureElementIsVisible(element, aInstant);
-          // Firefox schedules scrollIntoView on the next rAF, run after that
-          requestAnimationFrame(() => {
+          let toReturn = nativeTreeTabs.originalTabBoxEnsureElementIsVisible(element, aInstant);
+          try {
+            // Firefox schedules scrollIntoView on the next rAF, run after that
             requestAnimationFrame(() => {
-              if (!element || element.pinned || element.hasAttribute?.("tabPanel-hidden")) {
-                return;
-              }
-              const scroller = this.scrollbox || this;
-              if (!scroller || scroller.scrollHeight <= scroller.clientHeight) {
-                return;
-              }
-              const tabRect = element.getBoundingClientRect();
-              const boxRect = scroller.getBoundingClientRect();
-              if (tabRect.bottom > boxRect.bottom - 150) {
-                scroller.scrollTop += tabRect.bottom - boxRect.bottom + 150;
-              }
+              requestAnimationFrame(() => {
+                if (!element || element.pinned || element.hasAttribute?.("tabPanel-hidden")) {
+                  return toReturn;
+                }
+                const scroller = this.scrollbox || this;
+                if (!scroller || scroller.scrollHeight <= scroller.clientHeight) {
+                  return toReturn;
+                }
+                const tabRect = element.getBoundingClientRect();
+                const boxRect = scroller.getBoundingClientRect();
+                if (tabRect.bottom > boxRect.bottom - 150) {
+                  scroller.scrollTop += tabRect.bottom - boxRect.bottom + 150;
+                }
+              });
             });
-          });
+            return toReturn;
+          } catch (error) {
+            console.error(error);
+            return toReturn;
+          }
         };
       }
     },
@@ -4449,6 +4458,17 @@
         }, this);
       }
       return newArray;
+    },
+
+    switchPanelOnScrollToggle: function(aEvent) {
+      aEvent.preventDefault();
+      aEvent.stopImmediatePropagation();
+      //change selected Panel on scroll
+      let aDir = (aEvent.deltaY > 0) ? 1 : -1;
+      let nextPanelId
+      let nextPanelIndex;
+      let startTabPanelIndex = nativeTreeTabs.tabPanels.indexOf(nativeTreeTabs.selectedPanel);
+      nativeTreeTabs.cycleTabPanels(aDir);
     },
 
     addDefaultPanel: function() {
@@ -5284,7 +5304,7 @@
         setCustomTabValue(aTab, "panel-label", panel.label);
       }, this);
       if (panelId === "0") {
-        Services.prefs.setStringPref("treeTabs.defaultPanelName", label);
+        setPref("treeTabs.defaultPanelName", label);
       }
     },
 
@@ -6802,25 +6822,15 @@
     return input;
   }
 
-  function switchPanelOnScroll(enable) {
-    function onScroll(aEvent) {
-      aEvent.preventDefault();
-      aEvent.stopImmediatePropagation();
-      //change selected Panel on scroll
-      let aDir = (aEvent.deltaY > 0) ? 1 : -1;
-      let nextPanelId
-      let nextPanelIndex;
-      let startTabPanelIndex = nativeTreeTabs.tabPanels.indexOf(nativeTreeTabs.selectedPanel);
-      nativeTreeTabs.cycleTabPanels(aDir);
-    }
+  function switchPanelOnScrollToggle(enable) {
     let tabPanelGroup = document.getElementById("tab-panels-group");
     if (tabPanelGroup == null) {
       return;
     }
     if (enable) {
-      tabPanelGroup.addEventListener("wheel", onScroll, true);
+      tabPanelGroup.addEventListener("wheel", nativeTreeTabs.switchPanelOnScrollToggle, true);
     } else {
-      tabPanelGroup.removeEventListener("wheel", onScroll, true);
+      tabPanelGroup.removeEventListener("wheel", nativeTreeTabs.switchPanelOnScrollToggle, true);
     }
   }
 
@@ -7693,7 +7703,13 @@
     mainDiv.setAttribute("id", "NTT-header");
     elementsCreated.push(mainDiv);
     //Insert on top of sidebar
-    setPref("sidebar.verticalTabs", true);
+    if (getPref("sidebar.verticalTabs") !== true) {
+      setPref("sidebar.verticalTabs", true);
+      setTimeout(() => {
+        sidebarExpandToggle(true);
+      }, 1000);
+    }
+
     let verticalTabs = document.querySelector(["#tabbrowser-tabs"]);
     verticalTabs.prepend(mainDiv);
     let [elements, style] = addTabPanelButton(mainDiv);
@@ -8998,27 +9014,34 @@
       });
       toggleSidebars();
     } else {
-      SidebarController._state.updateVisibility(false, true);
-      Services.prefs.setStringPref("sidebar.visibility", "always-show");
+      sidebarExpandToggle(true);
+      setPref("sidebar.visibility", "always-show");
       window.removeEventListener('sizemodechange', toggleSidebars, {
         capture: true
       });
     }
   }
 
+  function sidebarExpandToggle(toggle) {
+    if (typeof SidebarController._state.updateVisibility == "function") {
+      SidebarController._state.updateVisibility(false, toggle);
+    } else {
+      SidebarController._state.launcherExpanded = toggle;
+    }
+  }
+
   function toggleSidebars() {
     if (nativeTreeTabs.autohideSidebar.value) {
       if (window.windowState === 1) {
-        SidebarController._state.updateVisibility(false, true);
+        sidebarExpandToggle(true);
         if (nativeTreeTabs.autohideSidebarNormalModeAutoExpand.value)
-          Services.prefs.setStringPref("sidebar.visibility", "always-show");
-
+          setPref("sidebar.visibility", "always-show");
       } else if (window.windowState === 3) {
         if (nativeTreeTabs.autohideSidebarNormalModeAutoExpand.value)
-          Services.prefs.setStringPref("sidebar.visibility", "expand-on-hover");
+          setPref("sidebar.visibility", "expand-on-hover");
         else
-          Services.prefs.setStringPref("sidebar.visibility", "always-show");
-        SidebarController._state.updateVisibility(false, false);
+          setPref("sidebar.visibility", "always-show");
+        sidebarExpandToggle(false);
       }
     }
   }
@@ -12515,7 +12538,7 @@
       min-width:10px!important;
     }
     /*remove Nova unnecessary sidebar padding*/
-    #tabbrowser-tabs[orient="vertical"] {
+   #tabbrowser-tabs[orient="vertical"]:not([overflow]){
        grid-gap:2px!important;
     }
     @media -moz-pref("browser.nova.enabled") {
