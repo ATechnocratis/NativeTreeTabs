@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.3.2
+// @version        0.4.3.3
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -2126,10 +2126,6 @@
       if (this.tabsIds.get(tabId) != null) {
         this.tabsIds.delete(tabId);
       }
-      if (aTab.hasAttribute("panel-id")) {
-        let panelId = aTab.getAttribute("panel-id");
-        window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
-      }
       if (aTab.splitview) {
         if (aTab.splitview.tabs.length > 1 && aTab.splitview.tabs[0] == aTab && aTab.hasAttribute("twisted-root")) {
           this.toggleTwist(aTab);
@@ -2140,6 +2136,10 @@
           this.tabLeaveStrip(aTab, forceMultiselected = true);
         }
       }
+      if (aTab.hasAttribute("panel-id")) {
+        let panelId = aTab.getAttribute("panel-id");
+        window.nativeTreeTabs.panelDecreaseCount(panelId, aTab);
+      }
     },
 
     tabLeaveStrip: function(aTab, forceMultiselected = false) {
@@ -2149,24 +2149,35 @@
       }
       let nextTab = getNextTab(aTab);
       let treeDepth = getTreeDepth(aTab);
-      //Case when a tab is getting replaced.
-      //Browser opens a new tab and closes the old one.
+      // Case when a tab is getting replaced.
+      // Browser opens a new tab and closes the old one.
       // Usually happens when a tab opens
       // a link in a different container.
-      //Don't update children depth then, just replace the opener.
+      // Don't update children depth then, just replace the opener.
+
+      // Semi-initialize  new tab by transferring values from closing tab
+      //  Update values for all children of closing tab too with new tab id
+
       if (nextTab && !nextTab.openerTab &&
         getNextTab(nextTab) &&
         aTab.hasAttribute("tree-id") &&
         getNextTab(nextTab).getAttribute("opener-id") === aTab.getAttribute("tree-id")) {
-        let twistedRootClosed = false;
+
         let newRoot = nextTab;
+
+        let twistedRootClosed = false;
         if (aTab.hasAttribute("twisted-root")) {
           twistedRootClosed = true;
           newRoot.setAttribute("twisted-root", true);
           setCustomTabValue(newRoot, "twisted-root", 'true');
         }
+
         setTreeDepth(newRoot, treeDepth);
+        copyOpener(newRoot, aTab);
+        setDomainAttr(newRoot);
+
         let rootId = newRoot.getAttribute("tree-id");
+
         if (!rootId) {
           //Generate new unique id 
           rootId = (performance.now() + performance.timeOrigin).toFixed(3) * 1000;
@@ -2176,13 +2187,37 @@
           setTabTreeID(newRoot, rootId.toString());
         }
         rootId = rootId.toString();
+
+        // Set Tab Panel if needed
+        if (!newRoot.hasAttribute("panel-id") || newRoot.getAttribute("panel-id") != aTab.getAttribute("panel-id")) {
+          let panelId = aTab.getAttribute("panel-id");
+          let panelExist = this.tabPanels.find(x => x.id.toString() === panelId);
+          if (panelExist != null) {
+            setPanel(newRoot, panelExist, window);
+          } else {
+            this.tabPanelOpen([newRoot], null);
+          }
+        }
+
+        let color = getCustomTabValue(aTab, "customColor");
+        if (color) {
+          this.setTabCustomColor(newRoot, color, "background");
+        }
+        let textColor = getCustomTabValue(aTab, "customTextColor");
+        if (textColor) {
+          this.setTabCustomColor(newRoot, textColor, "text");
+        }
+
+        // Update children of closing tab
         nextTab = getNextTab(newRoot);
         while (nextTab) {
           let nextTabTreeDepth = getTreeDepth(nextTab);
           if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
             break;
           }
-          setOpener(nextTab, newRoot);
+          if (nextTabTreeDepth == treeDepth + 1) {
+            setOpener(nextTab, newRoot);
+          }
           //if replacing a twisted tab -> twisted
           if (twistedRootClosed) {
             nextTab.setAttribute("hidden-child-rootID", rootId);
@@ -2190,13 +2225,14 @@
           }
           nextTab = getNextTab(nextTab);
         }
+
         return;
 
       } else if (aTab.hasAttribute("twisted-root")) {
-        //unravel if twisted
+        // unravel if twisted
         this.toggleTwist(aTab);
       }
-      //Update children depth level
+      // Update children depth level
       while (nextTab) {
         let nextTabTreeDepth = getTreeDepth(nextTab);
         if (nextTabTreeDepth == null || nextTabTreeDepth <= treeDepth) {
@@ -2344,88 +2380,101 @@
 
     initTab: function(aTab) {
 
-      let dragged = getCustomTabValue(aTab, "draggedFromWindow");
-
-      if ((aTab.hasAttribute("tree-id") && dragged == "") || aTab.closing) {
+      if (aTab._nttInitialized) {
         //already initialized
         return;
       }
 
-      //Solo tab in window
-      let soloTab = (window.gBrowser.tabs.length == 1) ? true : false;
-      let restoredId = getCustomTabValue(aTab, "tree-id");
+      let dragged = getCustomTabValue(aTab, "draggedFromWindow");
 
-      if (!restoredId) {
-        //Generate new unique id 
-        let timeNow = (performance.now() + performance.timeOrigin).toFixed(3) * 1000;
-        while (timeNow === this.lastId) timeNow = timeNow + 1;
-        this.lastId = timeNow;
-        setTabTreeID(aTab, timeNow.toString());
+      if ((aTab.hasAttribute("tree-id") && dragged == "") || aTab.closing) {
+        //already initialized
+        // return;
       } else {
-        aTab.setAttribute("tree-id", restoredId);
-        window.nativeTreeTabs.tabsIds.set(restoredId, aTab);
-      }
+        //Solo tab in window
+        let soloTab = (window.gBrowser.tabs.length == 1) ? true : false;
+        let restoredId = getCustomTabValue(aTab, "tree-id");
 
-      let treeDepth = getCustomTabValue(aTab, "tree-depth");
-      if (treeDepth && !soloTab) {
-        treeDepth = setTreeDepth(aTab, treeDepth);
-      } else {
-        treeDepth = aTab.getAttribute("tree-depth");
-        //Tab didn't depth initialized for some reason
-        if (treeDepth == null) {
-          treeDepth = this.initTreeDepth(aTab);
+        if (!restoredId) {
+          //Generate new unique id 
+          let timeNow = (performance.now() + performance.timeOrigin).toFixed(3) * 1000;
+          while (timeNow === this.lastId) timeNow = timeNow + 1;
+          this.lastId = timeNow;
+          setTabTreeID(aTab, timeNow.toString());
+        } else {
+          aTab.setAttribute("tree-id", restoredId);
+          window.nativeTreeTabs.tabsIds.set(restoredId, aTab);
         }
-        setCustomTabValue(aTab, "tree-depth", treeDepth.toString());
-      }
 
-      let openerId = getCustomTabValue(aTab, "opener-id");
-      let openerFound = false;
-      if (openerId) {
-        aTab.setAttribute("opener-id", openerId);
-        //Check if tab parent was restored
-        // before tab opened => restore depth
-        treeDepth = getTreeDepth(aTab);
-        let possibleParent = getPreviousTab(aTab);
-        let checked = 0;
-        while (isTab(possibleParent)) {
-          let possibleParentDepth = getTreeDepth(possibleParent);
-          if (checked > 0) {
-            if (possibleParentDepth && possibleParentDepth == 0) {
+        let treeDepth = getCustomTabValue(aTab, "tree-depth");
+        if (treeDepth && !soloTab) {
+          treeDepth = setTreeDepth(aTab, treeDepth);
+        } else {
+          treeDepth = aTab.getAttribute("tree-depth");
+          //Tab didn't depth initialized for some reason
+          if (treeDepth == null) {
+            treeDepth = this.initTreeDepth(aTab);
+          }
+          setCustomTabValue(aTab, "tree-depth", treeDepth.toString());
+        }
+
+        let openerId = getCustomTabValue(aTab, "opener-id");
+        let openerFound = false;
+        if (openerId) {
+          aTab.setAttribute("opener-id", openerId);
+          //Check if tab parent was restored
+          // before tab opened => restore depth
+          treeDepth = getTreeDepth(aTab);
+          let possibleParent = getPreviousTab(aTab);
+          let checked = 0;
+          while (isTab(possibleParent)) {
+            let possibleParentDepth = getTreeDepth(possibleParent);
+            if (checked > 0) {
+              if (possibleParentDepth && possibleParentDepth == 0) {
+                break;
+              }
+            } else {
+              if (possibleParentDepth == null) {
+                break;
+              }
+            }
+            checked++;
+            if (possibleParent.getAttribute("tree-id") == openerId) {
+              setTreeDepth(aTab, possibleParentDepth + 1);
+              setOpener(aTab, possibleParent);
+              openerFound = true;
               break;
             }
-          } else {
-            if (possibleParentDepth == null) {
-              break;
-            }
+            possibleParent = getPreviousTab(possibleParent);
           }
-          checked++;
-          if (possibleParent.getAttribute("tree-id") == openerId) {
-            setTreeDepth(aTab, possibleParentDepth + 1);
-            setOpener(aTab, possibleParent);
-            openerFound = true;
-            break;
+        } else {
+          if (aTab.openerTab != null && parseInt(treeDepth, 10) != 0) {
+            setOpener(aTab, aTab.openerTab);
           }
-          possibleParent = getPreviousTab(possibleParent);
         }
-      } else {
-        if (aTab.openerTab != null && parseInt(treeDepth, 10) != 0) {
-          setOpener(aTab, aTab.openerTab);
+        //if children were opened before their root => reRootThem 
+        this.rerootPossibleChildren(aTab, getTreeDepth(aTab));
+
+        let twistedRoot = getCustomTabValue(aTab, "twisted-root");
+
+        if (twistedRoot) {
+          aTab.setAttribute("twisted-root", true);
+          restoreCount(aTab);
         }
+        let hiddenChild = getCustomTabValue(aTab, "hidden-child");
+        let hiddenChildRoot = getCustomTabValue(aTab, "hidden-child-rootID");
+        if (hiddenChild && hiddenChildRoot) {
+          aTab.setAttribute("hidden-child", true);
+          aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
+          increaseChildCount(aTab);
+        }
+
       }
-      //if children were opened before their root => reRootThem 
-      this.rerootPossibleChildren(aTab, getTreeDepth(aTab));
 
       setDomainAttr(aTab);
 
-      let twistedRoot = getCustomTabValue(aTab, "twisted-root");
-
-      if (twistedRoot) {
-        aTab.setAttribute("twisted-root", true);
-        restoreCount(aTab);
-      }
-
       let nestTab = getCustomTabValue(aTab, "nestTab");
-      if (nestTab) {
+      if (nestTab && !aTab.hasAttribute("nestTab")) {
         aTab.setAttribute("nestTab", "");
         aTab.label = nestTab;
         aTab.setAttribute("label", nestTab);
@@ -2459,15 +2508,6 @@
       }
 
       let previousTab = getPreviousTab(aTab);
-
-      let hiddenChild = getCustomTabValue(aTab, "hidden-child");
-      let hiddenChildRoot = getCustomTabValue(aTab, "hidden-child-rootID");
-      if (hiddenChild && hiddenChildRoot) {
-        aTab.setAttribute("hidden-child", true);
-        aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
-        increaseChildCount(aTab);
-      }
-
       //out of window dragging, remove old values
       if (dragged) {
         deleteCustomTabValue(aTab, "draggedFromWindow");
@@ -2482,96 +2522,98 @@
         }
       }
 
-      let restorePaneldId = getCustomTabValue(aTab, "panel-id");
-      let foundPanel = false;
+      if (!aTab.hasAttribute("panel-id")) {
+        let restorePaneldId = getCustomTabValue(aTab, "panel-id");
+        let foundPanel = false;
 
-      if (restorePaneldId) {
-        let panelId = restorePaneldId.toString();
-        let panel = this.tabPanels.find(x => x.id.toString() === panelId);
+        if (restorePaneldId) {
+          let panelId = restorePaneldId.toString();
+          let panel = this.tabPanels.find(x => x.id.toString() === panelId);
 
-        if (!panel) {
-          //Panel no longer exists => restore it
-          let relabel = "restored " + panelId;
-          let restorePanelLabel = getCustomTabValue(aTab, "panel-label");
-          if (!restorePanelLabel) {
-            restorePanelLabel = "Restored Panel";
-          }
+          if (!panel) {
+            //Panel no longer exists => restore it
+            let relabel = "restored " + panelId;
+            let restorePanelLabel = getCustomTabValue(aTab, "panel-label");
+            if (!restorePanelLabel) {
+              restorePanelLabel = "Restored Panel";
+            }
 
-          let forceShow;
-          panel = this.tabPanelOpen(null, restorePanelLabel, panelId, forceShow = false, -1);
+            let forceShow;
+            panel = this.tabPanelOpen(null, restorePanelLabel, panelId, forceShow = false, -1);
 
-          let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
-          if (restorePanelIcon) {
-            this.setPanelIcon(panel, restorePanelIcon);
-          }
-        } else {
-          //Panel exists
-          if (restorePaneldId === '0' && panel.icon == null) {
             let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
             if (restorePanelIcon) {
               this.setPanelIcon(panel, restorePanelIcon);
             }
-          }
-          if (!findPanelInMenu(panel)) {
-            //usually for the first Tab Panel
-            let checkIt;
-            addNewPanelInMenu(panel, checkIt = false);
-          }
-        }
-        setPanel(aTab, panel, window);
-        foundPanel = true;
-
-        if (aTab.selected) {
-          if (this.selectedPanel != panel) {
-            let changeSelectedTab;
-            this.tabPanelShow(panel, changeSelectedTab = false);
-          }
-        }
-        if (this.selectedPanel === panel) {
-          unHideTab(aTab);
-        } else if (!aTab.selected) {
-          hideTab(aTab);
-        }
-      } else {
-        let prvPanel = aTab.getAttribute("panel-id");
-        if (prvPanel) {
-          let panelExist = this.tabPanels.find(x => x.id.toString() === prvPanel);
-          if (panelExist != null) {
-            foundPanel = true;
-            if (!findPanelInMenu(panelExist)) {
+          } else {
+            //Panel exists
+            if (restorePaneldId === '0' && panel.icon == null) {
+              let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
+              if (restorePanelIcon) {
+                this.setPanelIcon(panel, restorePanelIcon);
+              }
+            }
+            if (!findPanelInMenu(panel)) {
+              //usually for the first Tab Panel
               let checkIt;
-              addNewPanelInMenu(panelExist, checkIt = false);
-            }
-            setPanel(aTab, panelExist, window);
-            if (this.selectedPanel === panelExist) {
-              unHideTab(aTab);
-            } else if (!aTab.selected) {
-              hideTab(aTab);
+              addNewPanelInMenu(panel, checkIt = false);
             }
           }
-        }
-      }
+          setPanel(aTab, panel, window);
+          foundPanel = true;
 
-      if (foundPanel === false) {
-        if (this.tabPanels.length == 0 || this.selectedPanel == null) {
-          //no Tab Panel open => Open default one
-          let label;
-          if (this.tabPanels.length == 0) {
-            label = this.defaultPanelName.value;
-            if (label == null) {
-              label = "Default Panel";
+          if (aTab.selected) {
+            if (this.selectedPanel != panel) {
+              let changeSelectedTab;
+              this.tabPanelShow(panel, changeSelectedTab = false);
             }
           }
-          let defPanel = this.tabPanelOpen([aTab], label);
-          if (aTab.selected) {
-            this.tabPanelShow(defPanel, false);
+          if (this.selectedPanel === panel) {
+            unHideTab(aTab);
+          } else if (!aTab.selected) {
+            hideTab(aTab);
           }
-          this.changeSelectedPanel(defPanel);
+        } else {
+          let prvPanel = aTab.getAttribute("panel-id");
+          if (prvPanel) {
+            let panelExist = this.tabPanels.find(x => x.id.toString() === prvPanel);
+            if (panelExist != null) {
+              foundPanel = true;
+              if (!findPanelInMenu(panelExist)) {
+                let checkIt;
+                addNewPanelInMenu(panelExist, checkIt = false);
+              }
+              setPanel(aTab, panelExist, window);
+              if (this.selectedPanel === panelExist) {
+                unHideTab(aTab);
+              } else if (!aTab.selected) {
+                hideTab(aTab);
+              }
+            }
+          }
         }
-        setPanel(aTab, this.selectedPanel, window);
-        unHideTab(aTab);
-        if (aTab.selected) {
-          this.tabPanelShow(this.selectedPanel, false);
+
+        if (foundPanel === false) {
+          if (this.tabPanels.length == 0 || this.selectedPanel == null) {
+            // No Tab Panel is open => Open default one
+            let label;
+            if (this.tabPanels.length == 0) {
+              label = this.defaultPanelName.value;
+              if (label == null) {
+                label = "Default Panel";
+              }
+            }
+            let defPanel = this.tabPanelOpen([aTab], label);
+            if (aTab.selected) {
+              this.tabPanelShow(defPanel, false);
+            }
+            this.changeSelectedPanel(defPanel);
+          }
+          setPanel(aTab, this.selectedPanel, window);
+          unHideTab(aTab);
+          if (aTab.selected) {
+            this.tabPanelShow(this.selectedPanel, false);
+          }
         }
       }
       let aTabPanelId = aTab.getAttribute("panel-id");
@@ -2582,11 +2624,34 @@
       // if the tab is not sticked to them
       // move it there, (pinned status is taken in account)
       if (isTab(previousTab)) {
+        if (previousTab._nttInitialized == null) {
+          // previous tab not yet initialized?
+          // (probably on closed tabs reopen)
+          // make sure it is
+          this.initTab(previousTab);
+        }
         if (previousTab.getAttribute("panel-id") != aTabPanelId) {
-          checkPosition = true;
-          // Opened after another Panels tabs while tabs of the same Panels exist before them?
-          // move backwards
-          movedBefore = correctTabLocationAccordingToPanelId(aTab, aTabPanelId, -1);
+          let groupFixed = false;
+          if (!aTab.pinned && aTab.group) {
+            // Force tabs inside Tab Groups to have the same Tab Panel 
+            // as the first tab of the Group
+            let groupPanelID = aTab.group.tabs[0].getAttribute("panel-id");
+            if (groupPanelID && groupPanelID != aTabPanelId) {
+              let groupPanel = this.tabPanels.find(x => x.id.toString() === groupPanelID);
+              if (groupPanel) {
+                groupFixed = true;
+                setPanel(aTab, groupPanel, window);
+              } else {
+                throw new Error("Group Tab Panel not found")
+              }
+            }
+          }
+          if (!groupFixed) {
+            checkPosition = true;
+            // Opened after another Panels tabs while tabs of the same Panels exist before them?
+            // move backwards
+            movedBefore = correctTabLocationAccordingToPanelId(aTab, aTabPanelId, -1);
+          }
         }
       } else {
         let nextTab = getNextTab(aTab);
@@ -2602,6 +2667,7 @@
         // if they are in the right position according to their Panel Index
         fixTabOrPanelPosition(aTab, aTabPanelId);
       }
+      aTab._nttInitialized = true;
     },
 
     initTreeDepth: function(aTab) {
@@ -7193,7 +7259,6 @@
       nestTab.label = label;
     }, 20);
 
-    nestTab.setAttribute("nestTab", label.toString());
     setCustomTabValue(nestTab, "nestTab", label.toString());
     let tabsToMove = new Array();
 
@@ -9251,7 +9316,7 @@
     //Add link menus
     let openInSide = function(aEvent, url) {
 
-      tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
+      let tabs = gBrowser.tabs.filter(t => t.hasAttribute("alwaysOn") && !t.hasAttribute("tabPanel-hidden"));
       let activeTab = (tabs.length > 0) ? tabs[0] : gBrowser.selectedTab;
       if (!activeTab.hasAttribute("alwaysOn")) {
         toggleTabAlwaysOn(activeTab);
