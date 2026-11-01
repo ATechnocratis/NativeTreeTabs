@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.3.3
+// @version        0.4.3.4
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -328,6 +328,7 @@
               nestLabel.remove();
             aTab.removeAttribute("nestTab");
           }
+          aTab._nttInitialized = null;
         }
 
         for (let tab of gBrowser.tabs) {
@@ -2468,7 +2469,6 @@
           aTab.setAttribute("hidden-child-rootID", hiddenChildRoot);
           increaseChildCount(aTab);
         }
-
       }
 
       setDomainAttr(aTab);
@@ -2671,10 +2671,13 @@
     },
 
     initTreeDepth: function(aTab) {
+
       this.attachTabListeners(aTab);
+
       let rootTab = aTab.openerTab;
-      let uriString = aTab._fullLabel;
-      //Find possible opener, if domain matches current tab
+
+      // Find possible opener, if domain matches current tab
+      let uriString = aTab._fullLabel || gBrowser.getTabTooltip(aTab);
       if (rootTab == null && uriString) {
         let currentTab = window.gBrowser.selectedTab;
         let currentUrl = currentTab.linkedBrowser.currentURI.spec;
