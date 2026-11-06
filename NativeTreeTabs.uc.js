@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.4.0
+// @version        0.4.4.1
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -4243,7 +4243,6 @@
 
           if (nativeTreeTabs.goBackBehavior.value != 0 &&
             nativeTreeTabs.goBackBehavior.timer == 1 &&
-            !gBrowser.selectedTab.pinned &&
             this.selectedBrowser?.webNavigation?.canGoBack === false &&
             gBrowser.tabs.length > 1) {
             // Tab doesn't have a previous location to go back to
@@ -4257,8 +4256,10 @@
               nativeTreeTabs.flipActive();
             }
             // Close the tab
-            let animate, suppressWarnAboutClosingWindow;
-            gBrowser.removeTab(tabToClose, animate = false, suppressWarnAboutClosingWindow = false);
+            if (!tabToClose.pinned) {
+              let animate, suppressWarnAboutClosingWindow;
+              gBrowser.removeTab(tabToClose, animate = false, suppressWarnAboutClosingWindow = false);
+            }
             return;
           }
           nativeTreeTabs.goBackBehavior.timer = 0;
@@ -12541,7 +12542,7 @@
     let labelFontSize = nativeTreeTabs.checkOrSetPref("treeTabs.labelFontSize", "13.4");
     let tabBorderRadius = nativeTreeTabs.checkOrSetPref("treeTabs.tabBorderRadius", tryToGetComputedStyle(document.querySelector(["tab"]), '--tab-border-radius', 8));
     let tabHeight = nativeTreeTabs.checkOrSetPref("treeTabs.tabHeight", "30");
-    let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", "2");
+    let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", 0);
     let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
     let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
     let childCounterSize = nativeTreeTabs.checkOrSetPref("treeTabs.style.childCounterSize", 13);
@@ -12605,6 +12606,15 @@
         padding-inline-start: calc( ( ( 3.7 * var(--tab-indent) * var(--tab-indent) * var(--tab-indent) + ( 30 * var(--tab-indent) * var(--tab-indent))) / ( 11 * var(--tab-indent) * var(--tab-indent) + ( 10 * var(--tab-indent)) + 100)) * 1%) !important;
     }
 
+    #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-group  > tab[dragtarget]:not([pinned]),
+        #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab[dragtarget]:not([pinned]) {
+            padding-inline-start: calc(var(--tab-indent) * 1px)!important;
+        }
+      #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper[dragtarget]{
+            padding-inline: calc(var(--tab-indent) * 1px + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)))!important;
+      }
+    }
+    
     #vertical-tabs{
       tab-split-view-wrapper:has(tab[tree-depth="0"]){ --tab-indent: 0; }
       tab-split-view-wrapper:has(tab[tree-depth="1"]){ --tab-indent: 11; }
@@ -13852,7 +13862,7 @@
               margin-top: calc( 62px + var(--extra-margin)) !important;
             }
             #browser > *:not(#sidebar-container,#sidebar-launcher-splitter){
-              margin-top: calc( 10px + var(--urlbar-height-plus)!important;
+              margin-top: calc( 10px + var(--urlbar-height-plus))!important;
             }
           }
           body:has(#sidebar-container[sidebar-positionend])  
