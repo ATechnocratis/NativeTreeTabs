@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.3.4
+// @version        0.4.4.0
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -88,6 +88,7 @@
     },
     goBackBehavior: {
       value: 0,
+      timer: 1,
     },
     moveNewTabsDirectlyUnderParent: {
       value: true
@@ -207,7 +208,19 @@
       gBrowser.tabContainer.addEventListener("mousedown", this, true);
 
       this.addTabGroupCreateListeners();
-      this.customStyle.push(loadNTTstyle());
+      let mainStyleLoaded = false;
+
+      if (getPref("treeTabs.style.bookmarksToolbarReposition") === true) {
+        let toolbarShow = getPref("browser.toolbars.bookmarks.visibility");
+        if (toolbarShow != "never") {
+          mainStyleLoaded = true;
+          loadNTTstyleInitial(toolbarShow);
+        }
+      }
+
+      if (!mainStyleLoaded) {
+        this.customStyle.push(loadNTTstyle());
+      }
 
       //add keyboard shortcuts
       this.addKeyboardShortcuts();
@@ -226,6 +239,9 @@
 
       //add media play/pause button on every tab
       mediaControl.attachTabMediaListeners();
+
+      //Move bookmarks toolbar on the side of the sidebar
+      personalToolbarAdjuster();
 
       //-------------------
       console.log("Native Tree Tabs loaded.");
@@ -2778,9 +2794,9 @@
         nativeTreeTabs.customStyle.forEach(function(style) {
           styleSvc.unregisterSheet(style[0], style[1]);
         });
+        nativeTreeTabs.customStyle = new Array();
         nativeTreeTabs.customStyle.push(loadTabPanelsstyle());
         nativeTreeTabs.customStyle.push(loadNTTstyle());
-
       }
     },
 
@@ -2937,6 +2953,26 @@
       this.observeTopic("treeTabs.style.customText", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customBackground", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true, isBoolean, true);
+      this.observeTopic("treeTabs.style.bookmarksToolbarReposition", null, true, isBoolean, true);
+
+      // Trick to update styles when window uidensity changes
+      // (used for Personal toolbar repositioning)
+      // also possible with observing "browser.uidensity" 
+      // but it would lead to wrong computed style calculations,
+      // cause the CSS styling won't have finished applying  
+      this.observedPrefs.set("uidensitychanged", null);
+      window.addEventListener("uidensitychanged", () => {
+        // Attribute + styles have been applied at this point,
+        // but layout may still be pending
+        // requestAnimationFrame(() => {
+        //   requestAnimationFrame(() => {
+        nativeTreeTabs.observe(null, "nsPref:changed", "uidensitychanged");
+        //   });
+        // });
+      });
+      // this.observeTopic("browser.uidensity");
+
+
       this.observeTopic("treeTabs.style.addColorTabContext", this.addColorTabContext, this.addColorTabContext.value, isBoolean, true);
 
       this.observeTopic("treeTabs.style.customGroups", null, 1, isIntegerValueCheck, {
@@ -4204,8 +4240,17 @@
       this.originalGoBack = gBrowser.goBack;
       gBrowser.goBack = function(requireUserInteraction) {
         try {
-          if (nativeTreeTabs.goBackBehavior.value != 0 && !gBrowser.selectedTab.pinned && this.selectedBrowser?.webNavigation?.canGoBack === false && gBrowser.tabs.length > 1) {
+
+          if (nativeTreeTabs.goBackBehavior.value != 0 &&
+            nativeTreeTabs.goBackBehavior.timer == 1 &&
+            !gBrowser.selectedTab.pinned &&
+            this.selectedBrowser?.webNavigation?.canGoBack === false &&
+            gBrowser.tabs.length > 1) {
             // Tab doesn't have a previous location to go back to
+            nativeTreeTabs.goBackBehavior.timer = 0;
+            setTimeout(() => {
+              nativeTreeTabs.goBackBehavior.timer = 1;
+            }, 400);
             let tabToClose = this.selectedTab;
             if (nativeTreeTabs.goBackBehavior.value === 2) {
               //select previous active tab
@@ -4216,6 +4261,10 @@
             gBrowser.removeTab(tabToClose, animate = false, suppressWarnAboutClosingWindow = false);
             return;
           }
+          nativeTreeTabs.goBackBehavior.timer = 0;
+          setTimeout(() => {
+            nativeTreeTabs.goBackBehavior.timer = 1;
+          }, 400);
           return nativeTreeTabs.originalGoBack.apply(this, arguments)
         } catch (error) {
           console.error(error);
@@ -5335,7 +5384,7 @@
     },
 
     panelIncreaseCount: function(panel) {
-      if (!panel) {
+      if (panel == null) {
         return;
       }
       panel.count++;
@@ -5344,7 +5393,7 @@
     panelDecreaseCount: function(panelId, aTab = null) {
       panelId = panelId.toString();
       let panel = this.tabPanels.find(x => x.id.toString() === panelId);
-      if (!panel) {
+      if (panel == null) {
         return;
       }
       if (panel.count === 1) {
@@ -5365,6 +5414,9 @@
     },
 
     replaceTabsPanelLabel: function(panel) {
+      if (panel == null) {
+        return;
+      }
       let panelId = panel.id.toString();
       let label = panel.label.toString();
       //Replace tabs saved Panel label
@@ -5378,6 +5430,9 @@
     },
 
     changeSelectedPanel: function(panel) {
+      if (panel == null) {
+        return;
+      }
       let panelId = panel.id.toString();
       if (this.selectedPanel != null && this.selectedPanel.id.toString() === panelId) {
         this.selectedPanel.selectedTab = gBrowser.selectedTab;
@@ -7076,6 +7131,9 @@
   }
 
   function addNewPanelInMenu(panel, checkIt = false) {
+    if (panel == null) {
+      return;
+    }
     let menuitem = document.createXULElement('menuitem');
     menuitem.setAttribute('panel-id', panel.id);
     menuitem.setAttribute('label', panel.label);
@@ -7108,6 +7166,9 @@
   }
 
   function updateCountInMenu(panel, menupopup = null, updateIcon = false) {
+    if (panel == null) {
+      return;
+    }
     if (menupopup == null)
       menupopup = document.getElementById('tab-panels-menupopup-view');
     if (menupopup != null) {
@@ -7166,6 +7227,9 @@
   }
 
   function checkPanelInMenu(panel) {
+    if (panel == null) {
+      return;
+    }
     let menupopup = document.getElementById('tab-panels-menupopup-view');
     if (menupopup != null) {
       let menuitem = menupopup.querySelector('[panel-id="' + panel.id.toString() + '"]');
@@ -8747,7 +8811,7 @@
         removeButton.removeAttribute("hidden");
         removeButton.setAttribute(
           "label",
-          target === "text" ? "Default" : "Default"
+          target === "text" ? "Default" : "Restore"
         );
       } else {
         removeButton.setAttribute("hidden", "true");
@@ -10057,6 +10121,19 @@
     },
   }
 
+  function personalToolbarAdjuster() {
+    // updates the CSS varible to move the Personaltoolbar next
+    // to the sidebar
+    const sidebarContainer = document.getElementById("sidebar-container");
+    let w = tryToGetComputedStyle(sidebarContainer, "width", 0);
+    document.documentElement.style.setProperty("--sidebar-width", w + "px");
+    const observer = new ResizeObserver(entries => {
+      const w = entries[0].contentRect.width;
+      document.documentElement.style.setProperty("--sidebar-width", w + "px");
+    });
+    observer.observe(sidebarContainer);
+  }
+
 /************************************************************/
 /*************        Auto-update segment       *************/
 /************************************************************/
@@ -10868,7 +10945,7 @@
         } else {
           element.removeAttribute("checked");
         }
-      } else if (element.tagName == "MOZ-SELECT") {
+      } else if (element.tagName == "MOZ-SELECT" || element.tagName == "INPUT") {
         element.value = prefValue;
       }
     },
@@ -11154,6 +11231,8 @@
         input.addEventListener("blur", (aEvent) => {
           input.value = getPref(pref)
         });
+
+        modifyCustomizePage.observeTopic(pref, input);
 
         let b1 = doc.createElement("button");
         b1.addEventListener("click", (aEvent) => changeVal(aEvent, -1));
@@ -11488,7 +11567,6 @@
             aEvent.stopPropagation();
           });
           modifyCustomizePage.observeTopic(pref, checkBox);
-
         }
         if (nest != null) {
           checkBox.slot = "nested";
@@ -11513,6 +11591,7 @@
       createCheckBox("treeTabs.behavior.collapseGroupsAutomatically", "Automatically Collapse Tab Groups", extra);
       let n3 = createCheckBox("treeTabs.behavior.smartResizeSidebar", "Smart expand/collapse sidebar on window size mode change", extra);
       createCheckBox("treeTabs.behavior.smartResizeSidebarNormalModeAutoExpand", "Auto expand on normal mode", extra, n3);
+      createCheckBox("treeTabs.style.bookmarksToolbarReposition", "Bookmarks Toolbar adjust", extra);
       createSelectBox("treeTabs.behavior.openNewTabsLocation", "New tabs open at:", [{
         label: "Bottom",
         value: 0
@@ -11624,7 +11703,6 @@
       let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
       createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
       createCheckBox("treeTabs.style.addColorTabContext", "Context menu option to change tab color", extra);
-
       createSelectBox("treeTabs.style.customGroups", "Tab Groups style", [{
         label: "Default",
         value: 0
@@ -12206,6 +12284,9 @@
       Ci.nsIStyleSheetService
     );
     let customCSS = `
+    #tabbrowser-tabs{
+      max-width:100%;
+    }
     #NTT-header{
       max-width:100%;
       min-width: 0;
@@ -12261,10 +12342,6 @@
       #NTT-header{
         flex-flow:column;
       }
-    }
-
-    :root:not([customizing])[uidensity="touch"] box:has(>sidebar-main):not([sidebar-launcher-expanded]) #NTT-header .button-background {
-        margin-inline-start: 12px;
     }
     #NTT-header #tab-panels-group:hover {
         background-color: color-mix( var(--toolbarbutton-background-color-hover, var(--button-background-color)), transparent 35%)!important; 
@@ -12435,7 +12512,29 @@
 
   }
 
-  function loadNTTstyle() {
+  function loadNTTstyleInitial(toolbarShow) {
+    // Tries to calculate personal toolbar height
+    // force show if hidden
+    setPref("browser.toolbars.bookmarks.visibility", "always");
+    let perToolbarHeight;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const perToolbar = document.getElementById("PersonalToolbar");
+        perToolbarHeight = tryToGetComputedStyle(perToolbar, "height", 26);
+        if (isNaN(perToolbarHeight)) {
+          perToolbarHeight = 26;
+        }
+        perToolbarHeight = Math.min(100, Math.max(26, perToolbarHeight));
+        setPref("browser.toolbars.bookmarks.visibility", toolbarShow);
+        let uidensity = parseInt(getPref("browser.uidensity"), 10);
+        let perToolbarHeightAlt = (uidensity == 1) ? 24 : (uidensity == 0) ? 26 : 32;
+        perToolbarHeight = Math.max(perToolbarHeight, perToolbarHeightAlt);
+        nativeTreeTabs.customStyle.push(loadNTTstyle(perToolbarHeight));
+      });
+    });
+  }
+
+  function loadNTTstyle(perToolbarHeight = null) {
 
     let rootTabTopMargin = nativeTreeTabs.checkOrSetPref("treeTabs.rootTabTopMargin", "10");
     let branchTabTopMargin = nativeTreeTabs.checkOrSetPref("treeTabs.branchTabTopMargin", "4");
@@ -12446,6 +12545,12 @@
     let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
     let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
     let childCounterSize = nativeTreeTabs.checkOrSetPref("treeTabs.style.childCounterSize", 13);
+
+    if (perToolbarHeight == null || isNaN(perToolbarHeight)) {
+      const perToolbar = document.getElementById("PersonalToolbar");
+      perToolbarHeight = tryToGetComputedStyle(perToolbar, "height", 26);
+      perToolbarHeight = Math.min(100, Math.max(26, perToolbarHeight));
+    }
 
     let closeButtonPadding;
     if (tabHeight > 20)
@@ -12469,7 +12574,6 @@
         --tab-close-button-padding: ${closeButtonPadding}px!important;
         --tab-border-radius-forced: ${tabBorderRadius}px;
         --tab-inner-inline-margin: ${tabLeftRightPadding}px!important;
-        --tab-margin-inline-inner: ${tabLeftRightPadding}px!important;
         --group-first-tab-top-margin:  ${(1 + rootTabTopMargin * 0.7)}px;
         --tree-tab-default-color: rgb(130, 120, 140);
         --tab-icon-start: ${tabIconStart}px;
@@ -12477,7 +12581,10 @@
         --tab-background-width-pinned-expanded: ${pinnedTabWidth}px!important;
         --tab-child-counter-size:${childCounterSize}px!important;
     }
-    #tabbrowser-tabs tab-split-view-wrapper {
+    #tabbrowser-tabs[expanded]{
+      --tab-margin-inline-inner: ${tabLeftRightPadding}px!important;
+    }
+    #tabbrowser-tabs[expanded] tab-split-view-wrapper {
         --tab-margin-inline-inner:  ${tabLeftRightPadding}px!important;
     }
     #vertical-tabs {
@@ -12522,7 +12629,6 @@
         margin-inline-end: 0 !important;
     }
     #tabbrowser-tabs:not([expanded]) #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper{
-          margin-inline: 0 !important;
           justify-items: center!important;
     }
 
@@ -12547,8 +12653,11 @@
         padding-block-start: 0!important;
         padding-block-end: 0!important;
     }
-    #vertical-tabs tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]) {
+    #vertical-tabs #tabbrowser-tabs[expanded] tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]) {
         padding-top: var(--branch-tab-top-margin)!important;
+    }
+    #vertical-tabs #tabbrowser-tabs:not([expanded]) tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]) {
+        padding-top: var(--tab-margin-block)!important;
     }
     #vertical-tabs tab:not([pinned])
       .tab-background {
@@ -12559,13 +12668,16 @@
         padding-top: var(--root-tab-top-margin) !important;
         margin-bottom: 0!important;
     }
+    #tabbrowser-tabs[expanded] 
     #tabbrowser-tabs tab-split-view-wrapper{
       padding:0!important;
     }
+    #tabbrowser-tabs[expanded] 
     #tabbrowser-arrowscrollbox[orient="vertical"]  tab-split-view-wrapper tab{
       padding:0!important;
       margin-inline: 0!important;
     }
+    #tabbrowser-tabs[expanded] 
     #tabbrowser-arrowscrollbox[orient="vertical"]  tab-split-view-wrapper tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]){
       margin-top: var(--branch-tab-top-margin)!important;
     }
@@ -12594,23 +12706,26 @@
           padding-top: var(--root-tab-top-margin) !important;
         }
     }
+    #vertical-tabs tab:not([pinned])
     .tab-close-button{
       max-height:var(--tab-height)!important;
       max-width:var(--tab-height)!important;
     }
-    .tab-throbber, .tab-icon-pending, .tab-icon-image, .tab-sharing-icon-overlay, .tab-icon-overlay
-    {
-      max-height:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
-      max-width:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
-      min-height:10px!important;
-      min-width:10px!important;
+    #vertical-tabs tab:not([pinned]){
+      .tab-throbber, .tab-icon-pending, .tab-icon-image, .tab-sharing-icon-overlay, .tab-icon-overlay
+      {
+        max-height:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
+        max-width:calc( var(--tab-height) - var(--tab-close-button-padding) )!important;
+        min-height:10px!important;
+        min-width:10px!important;
+      }
     }
     /*remove Nova unnecessary sidebar padding*/
    #tabbrowser-tabs[orient="vertical"]:not([overflow]){
        grid-gap:2px!important;
     }
     @media -moz-pref("browser.nova.enabled") {
-    #tabbrowser-tabs[orient="vertical"] {
+    #tabbrowser-tabs[orient="vertical"] #tabbrowser-arrowscrollbox {
       --tab-height-with-margin-padding: 38px!important;
       --tab-group-label-padding:4px!important;
       --tab-content-button-size:24px!important;
@@ -12627,7 +12742,7 @@
     }
     }
     /*Tab style */
-    #vertical-tabs tab {
+    #vertical-tabs tab:not([pinned]) {
         --tab-min-height: var(--tab-height) !important;
     }
     #vertical-tabs tab .tab-label {
@@ -13530,7 +13645,11 @@
             margin-right: 0px;
         }
     }
-
+    #tabbrowser-tabs[orient="vertical"]:not([expanded]){
+      .tab-media-button {
+        display:none!important;
+      }
+    }
     /*Styles unloaded tab from previous Session */  
     tab[pending]:not([nestTab],[pinned]) {
       opacity: 0.8!important;
@@ -13688,6 +13807,64 @@
          flex: 1 1 0;
          max-width: 80%!important;
        }
+    }
+    @media not -moz-pref("browser.toolbars.bookmarks.visibility","never"){
+      @media -moz-pref("treeTabs.style.bookmarksToolbarReposition") {
+        :root{
+          --extra-margin: 4px;
+          --urlbar-height-plus: ${perToolbarHeight}px;
+        }
+        :root[uidensity="compact"] {
+          --extra-margin: 0px;
+        }
+        :root[uidensity="touch"] {
+          --extra-margin: 8px;
+        }
+        :root:root:not(:has(#notifications-toolbar notification-message)){
+          body:has(#PersonalToolbar:not([collapsed])){
+            #navigator-toolbox{
+              z-index: 3!important;
+            }
+            #PersonalToolbar {
+              transition:all 0s;
+              position:absolute!important;
+              max-width:calc( 100% - var(--sidebar-width))!important;
+              margin-top:calc( 36px + var(--extra-margin)   )!important;
+            }
+            #PlacesChevron{
+              margin-block:0!important;
+            }
+            #browser > *:not(#sidebar-container,#sidebar-launcher-splitter){
+              margin-top:  var(--urlbar-height-plus) !important;
+            }
+          }
+
+          body:has(#toolbar-menubar[autohide]:not([inactive="true"])):has(#PersonalToolbar:not([collapsed])){
+            #PersonalToolbar {
+              margin-top: calc( 74px + var(--extra-margin)/2 + 4px ) !important;
+            }
+            #browser > *:not(#sidebar-container,#sidebar-launcher-splitter){
+              margin-top: calc( 23px + var(--extra-margin)/2 + 4px )!important;
+            }
+          }
+          body:has(#toolbar-menubar:not([inactive="true"],[autohide])):has(#PersonalToolbar:not([collapsed])){
+            #PersonalToolbar {
+              margin-top: calc( 62px + var(--extra-margin)) !important;
+            }
+            #browser > *:not(#sidebar-container,#sidebar-launcher-splitter){
+              margin-top: calc( 10px + var(--urlbar-height-plus)!important;
+            }
+          }
+          body:has(#sidebar-container[sidebar-positionend])  
+          #PersonalToolbar {
+            margin-right: var(--sidebar-width, 0px) !important;
+          }
+          body:has(#sidebar-container:not([sidebar-positionend]))  
+          #PersonalToolbar {
+            margin-left: var(--sidebar-width, 0px) !important;
+          }
+        }
+      }
     }
 
     /* Add custom tab colors based on domain, uncomment and add your sites and color */
