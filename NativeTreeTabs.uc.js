@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.4.1
+// @version        0.4.4.2
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -2953,6 +2953,7 @@
       this.observeTopic("treeTabs.style.customText", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customBackground", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true, isBoolean, true);
+      this.observeTopic("treeTabs.style.panelHeaderTabCounter", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.bookmarksToolbarReposition", null, true, isBoolean, true);
 
       // Trick to update styles when window uidensity changes
@@ -5384,11 +5385,20 @@
       gBrowser.clearMultiSelectedTabs();
     },
 
+    panelHeaderCountUpdate: function() {
+      counter = document.getElementById('tab-panels-counter');
+      if (counter == null) return;
+      counter.innerText = "(" + this.selectedPanel.count + ")";
+    },
+
     panelIncreaseCount: function(panel) {
       if (panel == null) {
         return;
       }
       panel.count++;
+      if (this.selectedPanel === panel) {
+        this.panelHeaderCountUpdate();
+      }
     },
 
     panelDecreaseCount: function(panelId, aTab = null) {
@@ -5411,6 +5421,9 @@
         }
       } else {
         panel.count--;
+        if (this.selectedPanel === panel) {
+          this.panelHeaderCountUpdate();
+        }
       }
     },
 
@@ -5439,6 +5452,7 @@
         this.selectedPanel.selectedTab = gBrowser.selectedTab;
         checkPanelInMenu(panel);
         this.updatePanelHeaderIcon(panel);
+        this.panelHeaderCountUpdate();
         return;
       }
       if (this.tabPanels.includes(this.selectedPanel)) {
@@ -5451,6 +5465,7 @@
       }
       this.selectedPanel = panel;
       checkPanelInMenu(panel);
+      this.panelHeaderCountUpdate();
       this.updatePanelHeaderIcon(panel);
     },
 
@@ -7869,19 +7884,24 @@
   }
 
   function addTabPanelButton(mainDiv) {
-    //Add new tab context menu option
     let elementsCreated = new Array();
+    //Add new tab context menu option
     let contextElements = addMoveToPanelMenuInTabContextMenu();
     elementsCreated.push(...contextElements);
-    //Create Button
+    //Create Button on Sidebar top
     let tabPanelGroup = document.createElement("div");
     elementsCreated.push(tabPanelGroup);
     tabPanelGroup.setAttribute("id", "tab-panels-group");
 
     let tabPanelName = document.createElement("h1");
     tabPanelName.setAttribute("id", "tab-panels-name");
-    // tabPanelName.setAttribute("class", "tab-panel tools-overflow");
+    tabPanelName.setAttribute("class", "tab-panels-text");
     tabPanelName.innerText = nativeTreeTabs.defaultPanelName.value;
+
+    let tabPanelCount = document.createElement("h1");
+    tabPanelCount.setAttribute("class", "tab-panels-text");
+    tabPanelCount.setAttribute("id", "tab-panels-counter");
+    tabPanelCount.innerText = "";
 
     let dropDownImg = document.createElement("div");
     dropDownImg.setAttribute("class", "dropdown-arrow");
@@ -7903,6 +7923,7 @@
     buttonBackground.appendChild(buttonImage);
     tabPanelGroup.appendChild(tabPanelButton);
     tabPanelGroup.appendChild(tabPanelName);
+    tabPanelGroup.appendChild(tabPanelCount);
     tabPanelGroup.appendChild(dropDownImg);
     mainDiv.appendChild(tabPanelGroup);
 
@@ -11704,6 +11725,7 @@
       let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
       createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
       createCheckBox("treeTabs.style.addColorTabContext", "Context menu option to change tab color", extra);
+      createCheckBox("treeTabs.style.panelHeaderTabCounter", "Tab Panel Header tab counter", extra);
       createSelectBox("treeTabs.style.customGroups", "Tab Groups style", [{
         label: "Default",
         value: 0
@@ -12337,7 +12359,7 @@
     }
     box:has(>sidebar-main):not([sidebar-launcher-expanded])  {
       #tab-panels-group .dropdown-arrow,
-      #tab-panels-name{
+      .tab-panels-text{
         display: none;
       }
       #NTT-header{
@@ -12359,17 +12381,24 @@
         position: relative;
         padding: var(--button-padding-icon);
     }
+    .tab-panels-text{
+      flex-shrink: 1;
+      font-size: 13px!important;
+      margin-left: 2px;
+      margin-top: 0;
+      margin-bottom: 0;
+      max-height: 20px;
+      text-wrap: nowrap;
+    }
     #tab-panels-name {
-        flex-shrink: 1;
-        font-size: 13px!important;
-        margin-left: 2px;
-        margin-top: 0;
-        margin-bottom: 0;
-        max-width:80%;
-        max-height: 20px;
+        max-width:calc( 100% - 68px);
         overflow: clip;
         text-overflow: "...";
-        text-wrap: nowrap;
+    }
+    @media not -moz-pref("treeTabs.style.panelHeaderTabCounter") {
+      #tab-panels-counter {
+        display:none;
+      }
     }
     #tab-panels-group input:focus-visible {
         border: none!important;
@@ -12574,6 +12603,7 @@
         --label-font-size: ${labelFontSize}px;
         --tab-close-button-padding: ${closeButtonPadding}px!important;
         --tab-border-radius-forced: ${tabBorderRadius}px;
+        --tab-margin-inline-inner: ${tabLeftRightPadding}px!important;
         --tab-inner-inline-margin: ${tabLeftRightPadding}px!important;
         --group-first-tab-top-margin:  ${(1 + rootTabTopMargin * 0.7)}px;
         --tree-tab-default-color: rgb(130, 120, 140);
@@ -12582,7 +12612,7 @@
         --tab-background-width-pinned-expanded: ${pinnedTabWidth}px!important;
         --tab-child-counter-size:${childCounterSize}px!important;
     }
-    #tabbrowser-tabs[expanded]{
+     #tabbrowser-tabs[expanded]{
       --tab-margin-inline-inner: ${tabLeftRightPadding}px!important;
     }
     #tabbrowser-tabs[expanded] tab-split-view-wrapper {
@@ -12607,14 +12637,13 @@
     }
 
     #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-group  > tab[dragtarget]:not([pinned]),
-        #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab[dragtarget]:not([pinned]) {
-            padding-inline-start: calc(var(--tab-indent) * 1px)!important;
-        }
-      #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper[dragtarget]{
-            padding-inline: calc(var(--tab-indent) * 1px + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)))!important;
-      }
+    #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] > tab[dragtarget]:not([pinned]) {
+      padding-inline-start: calc(var(--tab-indent) * 1px)!important;
     }
-    
+    #tabbrowser-tabs[expanded] #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper[dragtarget]{
+      padding-inline: calc(var(--tab-indent) * 1px + var(--tab-margin-inline-inner, var(--tab-inner-inline-margin)))!important;
+    }
+        
     #vertical-tabs{
       tab-split-view-wrapper:has(tab[tree-depth="0"]){ --tab-indent: 0; }
       tab-split-view-wrapper:has(tab[tree-depth="1"]){ --tab-indent: 11; }
@@ -13146,7 +13175,7 @@
     }
 
     @media -moz-pref("treeTabs.style.customGroups",1),
-          -moz-pref("treeTabs.style.customGroups",2),
+          -moz-pref("treeTabs.style.customGroups",2)
      {
     .tab-group-label {
       #tabbrowser-tabs[expanded] & {
@@ -13465,10 +13494,6 @@
         }
       }
     }
-    // tab[customColor] .tab-label
-    // {
-    //   font-size: var(--label-font-size)!important;
-    // }
     tab[customColor]:not([customTextColor]) .tab-text{
       color: light-dark(var(--tab-group-color-pale, var(--tab-group-gray-text-invert)), var(--tab-group-color-pale, var(--tab-group-gray-text-invert))) !important;
     }
@@ -13879,14 +13904,16 @@
 
     /* Add custom tab colors based on domain, uncomment and add your sites and color */
     /*
-    #vertical-tabs tab[domain^="example.com"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
-    #vertical-tabs tab[domain^="youtube.com"] { --tree-domain-color: rgba(240,0,0,0.8);  --tree-domain-border-color: rgb(250,10,30);}
-    #vertical-tabs tab[domain^="reddit.com"] { --tree-domain-color: rgba(80,120,150,0.8); }
-    #vertical-tabs tab[domain$="github.com"] { --tree-domain-color: rgba(0,0,20,0.8); --tree-domain-border-color: darkblue;}
-    #vertical-tabs tab[domain$="ycombinator.com"] { --tree-domain-color: rgba(120,120,70,0.8); --tree-domain-border-color: yellow;}
-    #vertical-tabs tab[domain^="about"] { --tree-domain-color: rgba(120,10,120,0.8); }
-    #vertical-tabs tab[domain^="chrome"] { --tree-domain-color: rgba(120,170,170,0.9); }
-    #vertical-tabs tab[domain^="moz-extension"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
+    #vertical-tabs{
+      tab[domain^="example.com"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
+      tab[domain^="youtube.com"] { --tree-domain-color: rgba(240,0,0,0.8);  --tree-domain-border-color: rgb(250,10,30);}
+      tab[domain^="reddit.com"] { --tree-domain-color: rgba(80,120,150,0.8); }
+      tab[domain$="github.com"] { --tree-domain-color: rgba(0,0,20,0.8); --tree-domain-border-color: darkblue;}
+      tab[domain$="ycombinator.com"] { --tree-domain-color: rgba(120,120,70,0.8); --tree-domain-border-color: yellow;}
+      tab[domain^="about"] { --tree-domain-color: rgba(120,10,120,0.8); }
+      tab[domain^="chrome"] { --tree-domain-color: rgba(120,170,170,0.9); }
+      tab[domain^="moz-extension"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
+    }
      */
 
     `;
