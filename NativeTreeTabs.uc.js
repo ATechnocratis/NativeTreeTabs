@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.4.2
+// @version        0.4.5.0
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -29,7 +29,7 @@
   const REPO = "ATechnocratis/NativeTreeTabs";
 
   window.nativeTreeTabs = {
-    _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned", "TabGroupUngroup", "TabGroupCreateByUser"],
+    _tabEvents: ["SSTabRestoring", "TabClose", "TabOpen", "TabMove", "TabSelect", "TabUnpinned", "TabGroupUngroup", "TabGroupCreateByUser", "TabGrouped", "TabUngrouped"],
     _initialized: false,
     _debuggingMsg: false,
     _updatingPref: null,
@@ -58,6 +58,7 @@
     customStyle: new Array(),
     domElements: new Array(),
     observedPrefs: new Map(),
+    observersList: new Array(),
     selectedPanel: null,
     previousSelectedPanel: null,
     tabPanels: [],
@@ -315,6 +316,18 @@
         }
       });
 
+      this.observersList.forEach(
+        (observer) => {
+          observer.disconnect();
+        }
+      );
+      this.observersList = new Array();
+      document.querySelectorAll(".group-tab-counter").forEach(
+        (element) => {
+          element.remove();
+        }
+      );
+
       this.tabPanels = new Array();
       this.selectedPanel = null;
 
@@ -367,52 +380,8 @@
     handleEvent: function(aEvent) {
 
       switch (aEvent.type) {
-        case "TabOpen": {
-          this.tabOpen(aEvent.target);
-          break;
-        }
-        case "SSTabRestoring": {
-          this.tabRestore(aEvent.target);
-          break;
-        }
-        case "TabClose": {
-          this.tabClose(aEvent.target);
-          break;
-        }
-        case "TabMove": {
-          this.tabMove(aEvent.target, aEvent);
-          break;
-        }
-        case "TabSelect": {
-          this.tabSelected(aEvent.target);
-          break;
-        }
-        case "TabUnpinned": {
-          this.tabUnpinned(aEvent.target, aEvent);
-          break;
-        }
-        case "TabGroupUngroup": {
-          this.tabGroupUngroup(aEvent);
-          break;
-        }
-        case "dragstart": {
-          if (getClosest(aEvent.target, ".tab-close-button") == null) {
-            this.tabDragStart(aEvent);
-          }
-          break;
-        }
-        case "dragend": {
-          if (getClosest(aEvent.target, ".tab-close-button") == null) {
-            this.tabDragEnd(aEvent);
-          }
-          break;
-        }
-        case "click": {
-          if (aEvent.button == 0 && aEvent.currentTarget.className === "tab-icon-stack") {
-            this.twistyClick(aEvent);
-          } else {
-            this.closeTree(aEvent);
-          }
+        case "keydown": {
+          this.keyboardListener(aEvent);
           break;
         }
         case "mousedown": {
@@ -428,8 +397,58 @@
           }
           break;
         }
-        case "keydown": {
-          this.keyboardListener(aEvent);
+        case "click": {
+          if (aEvent.button == 0 && aEvent.currentTarget.className === "tab-icon-stack") {
+            this.twistyClick(aEvent);
+          } else {
+            this.closeTree(aEvent);
+          }
+          break;
+        }
+        case "dragstart": {
+          if (getClosest(aEvent.target, ".tab-close-button") == null) {
+            this.tabDragStart(aEvent);
+          }
+          break;
+        }
+        case "dragend": {
+          if (getClosest(aEvent.target, ".tab-close-button") == null) {
+            this.tabDragEnd(aEvent);
+          }
+          break;
+        }
+        case "TabOpen": {
+          this.tabOpen(aEvent.target);
+          break;
+        }
+        case "TabSelect": {
+          this.tabSelected(aEvent.target);
+          break;
+        }
+        case "SSTabRestoring": {
+          this.tabRestore(aEvent.target);
+          break;
+        }
+        case "TabClose": {
+          this.tabClose(aEvent.target);
+          break;
+        }
+        case "TabMove": {
+          this.tabMove(aEvent.target, aEvent);
+          break;
+        }
+        case "TabUnpinned": {
+          this.tabUnpinned(aEvent.target, aEvent);
+          break;
+        }
+        case "TabGroupUngroup": {
+          this.tabGroupUngroup(aEvent);
+          break;
+        }
+        case "TabGroupCreateByUser":
+        case "TabUngrouped":
+        case "TabGrouped": {
+          this.groupCountUpdate(aEvent.target);
           break;
         }
       }
@@ -438,110 +457,105 @@
     addKeyboardShortcuts: function() {
       // Add keyboard shortcut for selected tab(s) moving/indention change
       // Tab Panel creation, Tab Panel cycle
+
+      nativeTreeTabs.shortcutsMap = new Map();
+      let shortcutId = 0;
+
       let createPanel = {
         action: nativeTreeTabs.tabPanelOpen,
         arguments: null,
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.createPanel", createPanel, "Ctrl + Alt + ,");
-      this.shortcuts.push(createPanel);
 
       let switchPanel = {
         action: nativeTreeTabs.cycleTabPanels,
         arguments: 1,
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.cycleTabPanels", switchPanel, "Ctrl + ,");
-      this.shortcuts.push(switchPanel);
 
       let switchPanelReverse = {
         action: nativeTreeTabs.cycleTabPanels,
         arguments: -1,
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.cycleTabPanelsReverse", switchPanelReverse, "Ctrl + Shift + ,");
-      this.shortcuts.push(switchPanelReverse);
 
       let indentTab = {
         action: nativeTreeTabs.indentTab,
         arguments: "in",
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.indentTab", indentTab, "Ctrl + Alt + ArrowRight");
-      this.shortcuts.push(indentTab);
 
       let indentTabOut = {
         action: nativeTreeTabs.indentTab,
         arguments: "out",
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.indentTabOut", indentTabOut, "Ctrl + Alt +ArrowLeft");
-      this.shortcuts.push(indentTabOut);
 
       let moveTabUp = {
         action: nativeTreeTabs.moveTab,
         arguments: "up",
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.moveTabUp", moveTabUp, "Ctrl + Alt + ArrowUp");
-      this.shortcuts.push(moveTabUp);
 
       let moveTabDown = {
         action: nativeTreeTabs.moveTab,
         arguments: "down",
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.moveTabDown", moveTabDown, "Ctrl + Alt + ArrowDown");
-      this.shortcuts.push(moveTabDown);
 
       let flipActive = {
         action: nativeTreeTabs.flipActive,
         arguments: null,
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.flipActive", flipActive, "Ctrl + Shift + F");
-      this.shortcuts.push(flipActive);
 
       let togglAlwaysOnTab = {
         action: panelAlwaysOnTabToggle,
         arguments: null,
         value: null,
-        keys: null
+        keys: null,
+        id: shortcutId++
       };
       this.observeTopic("treeTabs.shortcuts.toggleAlwaysOnTab", togglAlwaysOnTab, "Ctrl + Shift + A");
-      this.shortcuts.push(togglAlwaysOnTab);
     },
 
     keyboardListener: function(aEvent) {
+      const modsAndKey = (aEvent.ctrlKey ? 1 : 0) |
+        (aEvent.altKey ? 2 : 0) |
+        (aEvent.shiftKey ? 4 : 0) |
+        (aEvent.metaKey ? 8 : 0) |
+        (aEvent.keyCode << 4);
 
-      const modsAndKey = {
-        ctrl: aEvent.ctrlKey,
-        alt: aEvent.altKey,
-        shift: aEvent.shiftKey,
-        meta: aEvent.metaKey,
-        key: aEvent.keyCode
-      };
-
-      for (const shortcut of this.shortcuts) {
-        if (modsAndKey.key != null && shortcut.keys.key != null &&
-          shortcut.keys.key === modsAndKey.key &&
-          shortcut.keys.ctrl === modsAndKey.ctrl &&
-          shortcut.keys.alt === modsAndKey.alt &&
-          shortcut.keys.shift === modsAndKey.shift &&
-          shortcut.keys.meta === modsAndKey.meta) {
-          aEvent.preventDefault();
-          aEvent.stopImmediatePropagation();
-          shortcut.action.call(this, shortcut.arguments);
-          break;
-        }
+      let found = nativeTreeTabs.shortcutsMap.get(modsAndKey);
+      if (found != null) {
+        aEvent.preventDefault();
+        aEvent.stopImmediatePropagation();
+        let shortcut = nativeTreeTabs.shortcuts[found];
+        shortcut.action.call(this, shortcut.arguments);
       }
     },
 
@@ -2143,6 +2157,9 @@
       if (this.tabsIds.get(tabId) != null) {
         this.tabsIds.delete(tabId);
       }
+      if (aTab.group) {
+        this.groupCountUpdate(aTab.group);
+      }
       if (aTab.splitview) {
         if (aTab.splitview.tabs.length > 1 && aTab.splitview.tabs[0] == aTab && aTab.hasAttribute("twisted-root")) {
           this.toggleTwist(aTab);
@@ -2403,6 +2420,7 @@
       }
 
       let dragged = getCustomTabValue(aTab, "draggedFromWindow");
+      let openerFound = false;
 
       if ((aTab.hasAttribute("tree-id") && dragged == "") || aTab.closing) {
         //already initialized
@@ -2436,7 +2454,6 @@
         }
 
         let openerId = getCustomTabValue(aTab, "opener-id");
-        let openerFound = false;
         if (openerId) {
           aTab.setAttribute("opener-id", openerId);
           //Check if tab parent was restored
@@ -2521,6 +2538,10 @@
       let textColor = getCustomTabValue(aTab, "customTextColor");
       if (textColor) {
         this.setTabCustomColor(aTab, textColor, "text");
+      }
+
+      if (aTab.group) {
+        this.groupCountUpdate(aTab.group);
       }
 
       let previousTab = getPreviousTab(aTab);
@@ -2766,10 +2787,10 @@
                 //reset button
                 //restore default value
                 setPref(name, included.value);
-                included.keys = parseShortcut(included.value);
+                nativeTreeTabs.updateShortCut(included, included.value);
               } else
                 //New keys set
-                included.keys = parseShortcut(value);
+                nativeTreeTabs.updateShortCut(included, value);
             } else {
               included.value = value;
             }
@@ -2819,6 +2840,31 @@
       });
     },
 
+    updateShortCut: function(customVar, keyVal) {
+      customVar.keys = parseShortcut(keyVal);
+      let found = this.shortcuts.find(s => s.id == customVar.id);
+      if (found == null) {
+        //first time updated => save it
+        this.shortcuts.push(customVar);
+      }
+      let foundInMap = null;
+      for (let [key, value] of nativeTreeTabs.shortcutsMap.entries()) {
+        if (value === customVar.id)
+          foundInMap = key;
+      }
+      if (foundInMap != null) {
+        nativeTreeTabs.shortcutsMap.delete(foundInMap);
+      }
+      if (keyVal != "") {
+        const key = (customVar.keys.ctrl ? 1 : 0) |
+          (customVar.keys.alt ? 2 : 0) |
+          (customVar.keys.shift ? 4 : 0) |
+          (customVar.keys.meta ? 8 : 0) |
+          (customVar.keys.key << 4);
+        nativeTreeTabs.shortcutsMap.set(key, customVar.id);
+      }
+    },
+
     observeTopic: function(topic, customVar = null, setValue = null, valueCheck = null, valueCheckArgs = null) {
       let topicValue = getPref(topic);
       if (customVar != null) {
@@ -2827,8 +2873,8 @@
             topicValue = valueCheck(topic, topicValue, valueCheckArgs);
           customVar.value = topicValue;
           if (customVar.hasOwnProperty('keys')) {
-            customVar.keys = parseShortcut(topicValue);
             customVar.value = setValue;
+            this.updateShortCut(customVar, topicValue);
           } else {
             customVar.value = topicValue;
           }
@@ -2836,7 +2882,7 @@
           setPref(topic, setValue);
           customVar.value = setValue;
           if (customVar.hasOwnProperty('keys')) {
-            customVar.keys = parseShortcut(setValue);
+            this.updateShortCut(customVar, setValue);
           }
         }
         if (customVar.hasOwnProperty('onEnable') && topicValue != false &&
@@ -2954,6 +3000,7 @@
       this.observeTopic("treeTabs.style.customBackground", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.customSelectedTabStyle", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.panelHeaderTabCounter", null, true, isBoolean, true);
+      this.observeTopic("treeTabs.style.groupTabCounter", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.bookmarksToolbarReposition", null, true, isBoolean, true);
 
       // Trick to update styles when window uidensity changes
@@ -2998,6 +3045,15 @@
       setPref("browser.tabs.dragDrop.createGroup.enabled", false);
       setPref("browser.tabs.groups.smart.enabled", false);
       setPref("svg.context-properties.content.enabled", true);
+
+
+      const currentBrowserVersion = (AppConstants.MOZ_APP_NAME == "firefox") ? AppConstants.MOZ_APP_VERSION : Services.appinfo.version;
+      if (!isNewVersion(currentBrowserVersion, "154")) {
+        // Version < 154
+        setPref("treeTabs.browserVersion153", true);
+      } else {
+        clearUserPref("treeTabs.browserVersion153");
+      }
 
     },
 
@@ -5385,6 +5441,51 @@
       gBrowser.clearMultiSelectedTabs();
     },
 
+    groupCountUpdate: function(group) {
+      let counter = group.querySelector(".group-tab-counter:not([default-group-type])");
+      let counter2 = group.querySelector(".group-tab-counter[default-group-type]");
+      let tabGroupLabel;
+
+      if (counter == null) {
+        counter = document.createElement("h1");
+        counter.setAttribute("class", "group-tab-counter");
+        tabGroupLabel = group.querySelector(".tab-group-label");
+        tabGroupLabel.appendChild(counter);
+      }
+      if (counter2 == null) {
+        counter2 = document.createElement("h1");
+        counter2.setAttribute("class", "group-tab-counter");
+        counter2.setAttribute("default-group-type", "");
+        tabGroupLabel = (tabGroupLabel == null) ? group.querySelector(".tab-group-label") : tabGroupLabel;
+        tabGroupLabel.after(counter2);
+      }
+      if (counter != null) {
+        counter.innerText = `(${group.tabs.length})`;
+      }
+      if (counter2 != null) {
+        counter2.innerText = `(${group.tabs.length})`;
+      }
+      if (group.updateCounter !== true) {
+        // Catch rename which removes/adds new label nodes 
+        group.updateCounter = true;
+        const observer = new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            if (m.attributeName === "label") {
+              this.groupCountUpdate(group);
+            }
+          }
+        });
+
+        observer.observe(group, {
+          attributes: true,
+          subtree: false
+        });
+        this.observersList.push(observer);
+      }
+
+
+    },
+
     panelHeaderCountUpdate: function() {
       counter = document.getElementById('tab-panels-counter');
       if (counter == null) return;
@@ -7225,8 +7326,13 @@
       let p = tabContextMenupopup.querySelector("#moveTo-panel-" + panelId.toString());
       //Timeout exists so context item which removes itself won't get stuck
       setTimeout(() => {
-        if (p)
-          tabContextMenupopup.removeChild(p);
+        if (p) {
+          try {
+            tabContextMenupopup.removeChild(p);
+          } catch (error) {
+            console.error(error);
+          }
+        }
       }, 10);
     }
   }
@@ -7295,10 +7401,10 @@
 
   function nestTabs(label) {
     let contextTab = nativeTreeTabs.contextTab;
-    let tabs = (multiSelected(contextTab)) ?
-      gBrowser.selectedTabs : [contextTab];
+    let tabs = contextTab.length > 1 ? contextTab : (multiSelected(contextTab)) ?
+      gBrowser.selectedTabs : contextTab;
     let multi = (tabs.length > 1) ? true : false;
-    let contextTabRoot = getRootTab(contextTab);
+    let contextTabRoot = getRootTab(contextTab[0]);
     let ancestorRoot = contextTabRoot;
 
     while (ancestorRoot && !multiSelected(ancestorRoot)) {
@@ -7314,15 +7420,15 @@
 
     if (contextTabRoot) {
       if (!multiSelected(contextTabRoot)) {
-        tabIndex = contextTab;
-        nestDepth = getTreeDepth(contextTab);
+        tabIndex = contextTab[0];
+        nestDepth = getTreeDepth(contextTab[0]);
       } else {
         tabIndex = contextTabRoot;
         nestDepth = getTreeDepth(contextTabRoot);
       }
     } else {
-      tabIndex = contextTab;
-      nestDepth = getTreeDepth(contextTab);
+      tabIndex = contextTab[0];
+      nestDepth = getTreeDepth(contextTab[0]);
     }
 
     let nestTab = window.gBrowser.addTab(
@@ -7692,8 +7798,10 @@
       return originalNestContextRemove.apply(this, arguments);
     }
     nestContext.addEventListener("click", (aEvent) => {
+      let contextTabs = TabContextMenu.contextTabs;
       let contextTab = TabContextMenu.contextTab;
-      nativeTreeTabs.contextTab = contextTab;
+
+      nativeTreeTabs.contextTab = contextTabs;
       menupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
       makePopupStayOpen(menupopup, null);
       let textbox = menupopup.querySelector("input");
@@ -7705,26 +7813,28 @@
     });
 
     setIconNestContext.addEventListener("click", (aEvent) => {
-      let contextTab = TabContextMenu.contextTab;
-      nativeTreeTabs.contextTab = contextTab;
+      let contextTabs = TabContextMenu.contextTab;
+      nativeTreeTabs.contextTab = contextTabs;
       nativeTreeTabs.setIconAndColorPopup.openIconAndColorSelector(contextTab, "NestTab", contextTab);
     });
 
     setColorNestContext.addEventListener("click", (aEvent) => {
-      let contextTab = TabContextMenu.contextTab;
+      let contextTabs = TabContextMenu.contextTab;
       nativeTreeTabs.contextTab = contextTab;
       nativeTreeTabs.setIconAndColorPopup.openIconAndColorSelector(contextTab, "NestTabColor", contextTab);
     });
 
     setColorTabContext.addEventListener("click", (aEvent) => {
-      let contextTab = TabContextMenu.contextTab;
-      nativeTreeTabs.contextTab = contextTab;
+      let contextTabs = TabContextMenu.contextTab;
+      nativeTreeTabs.contextTab = contextTabs;
       nativeTreeTabs.setIconAndColorPopup.openIconAndColorSelector(contextTab, "NestTabColor", contextTab);
     });
 
     renameNestContext.addEventListener("click", (aEvent) => {
+      let contextTabs = TabContextMenu.contextTabs;
       let contextTab = TabContextMenu.contextTab;
-      nativeTreeTabs.contextTab = contextTab;
+
+      nativeTreeTabs.contextTab = contextTabs;
       renameNestMenupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
       makePopupStayOpen(renameNestMenupopup, null);
       let textbox = renameNestMenupopup.querySelector("input");
@@ -11724,8 +11834,9 @@
       createCheckBox("treeTabs.style.customText", "Tab text styling", extra);
       let customTabBackground = createCheckBox("treeTabs.style.customBackground", "Tab background styling", extra);
       createCheckBox("treeTabs.style.customSelectedTabStyle", "Style selected tab", extra, customTabBackground);
+      createCheckBox("treeTabs.style.panelHeaderTabCounter", "Active Panel tab counter", extra);
+      createCheckBox("treeTabs.style.groupTabCounter", "Group tab counter", extra);
       createCheckBox("treeTabs.style.addColorTabContext", "Context menu option to change tab color", extra);
-      createCheckBox("treeTabs.style.panelHeaderTabCounter", "Tab Panel Header tab counter", extra);
       createSelectBox("treeTabs.style.customGroups", "Tab Groups style", [{
         label: "Default",
         value: 0
@@ -12571,7 +12682,7 @@
     let labelFontSize = nativeTreeTabs.checkOrSetPref("treeTabs.labelFontSize", "13.4");
     let tabBorderRadius = nativeTreeTabs.checkOrSetPref("treeTabs.tabBorderRadius", tryToGetComputedStyle(document.querySelector(["tab"]), '--tab-border-radius', 8));
     let tabHeight = nativeTreeTabs.checkOrSetPref("treeTabs.tabHeight", "30");
-    let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", 0);
+    let tabIconStart = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabIconStart", 2);
     let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
     let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
     let childCounterSize = nativeTreeTabs.checkOrSetPref("treeTabs.style.childCounterSize", 13);
@@ -12707,23 +12818,23 @@
         padding-top: var(--root-tab-top-margin) !important;
         margin-bottom: 0!important;
     }
-    #tabbrowser-tabs[expanded] 
     #tabbrowser-tabs tab-split-view-wrapper{
       padding:0!important;
+      padding-top:0!important;
     }
     #tabbrowser-tabs[expanded] 
-    #tabbrowser-arrowscrollbox[orient="vertical"]  tab-split-view-wrapper tab{
+    #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper tab{
       padding:0!important;
       margin-inline: 0!important;
     }
     #tabbrowser-tabs[expanded] 
-    #tabbrowser-arrowscrollbox[orient="vertical"]  tab-split-view-wrapper tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]){
+    #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper tab:not(collapsed, [pinned], [hidden-child], [tabPanel-hidden],[tree-depth="0"]){
       margin-top: var(--branch-tab-top-margin)!important;
     }
 
     #tabbrowser-arrowscrollbox[orient="vertical"] {
         /*TOP tab margin from top*/
-        tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab,tab-split-view-wrapper tab)[tree-depth="0"] {
+        tab:not(collapsed, [pinned], [tabPanel-hidden], tab-group tab, tab-split-view-wrapper tab)[tree-depth="0"] {
             padding-top: 6px!important;
         }
         /*Other tabs with zero depth level margin from top*/
@@ -12733,7 +12844,7 @@
         tab:not(collapsed, [pinned], [tabPanel-hidden])[tree-depth="0"]~tab:not(collapsed, [pinned], [tabPanel-hidden],tab-split-view-wrapper tab)[tree-depth="0"] {
             padding-top: var(--root-tab-top-margin) !important;
         }
-        tab-split-view-wrapper:not(:has(tab[tabPanel-hidden="true"])) ,
+        tab-split-view-wrapper:not(:has(tab[tabPanel-hidden="true"])),
         tab:not(collapsed, [pinned], [tabPanel-hidden]),
         tab-group:not(:has(tab[tabPanel-hidden="true"])){
           + tab-split-view-wrapper tab:not(collapsed, [tabPanel-hidden])[tree-depth="0"]{
@@ -12745,6 +12856,21 @@
           padding-top: var(--root-tab-top-margin) !important;
         }
     }
+
+    #tabbrowser-tabs[orient="vertical"]:not([expanded]){
+        tab-split-view-wrapper:not(:has(tab[tabPanel-hidden="true"])),
+        tab:not(collapsed, [pinned], [tabPanel-hidden]),
+        tab-group:not(:has(tab[tabPanel-hidden="true"])){
+          + tab-split-view-wrapper tab:not(collapsed, [tabPanel-hidden],:first-child)[tree-depth="0"]{
+            margin-top: 0!important;
+          }
+        }
+        tab-group tab-split-view-wrapper + 
+        tab:not(collapsed, [pinned], [tabPanel-hidden],:first-child))[tree-depth="0"]{
+          padding-top: var(--root-tab-top-margin) !important;
+        }
+    }
+
     #vertical-tabs tab:not([pinned])
     .tab-close-button{
       max-height:var(--tab-height)!important;
@@ -13145,9 +13271,6 @@
     }
     .tab-group-line{
       display: none!important;
-    } 
-    .tab-group-label {
-      margin-block:0!important;
     }
     .tab-group-label-container {
       #tabbrowser-tabs[orient="vertical"] tab-group:not([collapsed]) > &::after, #tabbrowser-tabs[orient="vertical"] tab-group[collapsed][hasactivetab]:not([movingtabgroup]) > &::after{
@@ -13155,7 +13278,23 @@
       }
     }
 
+    @media -moz-pref("treeTabs.style.customGroups",1),
+     -moz-pref("treeTabs.style.customGroups",2),
+     -moz-pref("treeTabs.style.customGroups",3),
+     -moz-pref("treeTabs.style.customGroups",4)
+    {
+      .tab-group-label {
+        margin-block: 0!important;
+      }
+    }
+
+    .tab-group-label-container {
+      #tabbrowser-tabs[expanded] & {
+        margin-block-start: var( --root-tab-top-margin)!important;
+      }
+    }
     @media not -moz-pref("treeTabs.style.customGroups",0){
+
       .tab-group-label-hover-highlight {
         block-size: clamp(0, 16px, calc( var(--tab-height) - var(--tab-close-button-padding) )) auto!important;
         #tabbrowser-tabs[orient="vertical"][expanded] & {
@@ -13166,7 +13305,6 @@
       .tab-group-label-container {
         #tabbrowser-tabs[expanded] & {
         margin-block-end: 0!Important;
-        margin-block-start: var( --root-tab-top-margin)!important;
         margin-right:0!important;
         margin-inline-start: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
         margin-inline-end: var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))!important;
@@ -13269,17 +13407,173 @@
         }
       }
     }
-    @media -moz-pref("treeTabs.style.customGroups",5){
-    .tab-group-label{ #tabbrowser-tabs[expanded] & {
-          line-height: calc( var(--tab-group-label-size) - 4px )!important;
-          border-radius:6px!important;
-          border-end-start-radius:4px!important;
-          border: 1px solid light-dark( var(--tab-group-color),white)!important;
-          color:light-dark(black,white)!important;
-          @media (prefers-color-scheme: light) {
-            background-color:color-mix( in srgb, var(--tab-group-color) 10%, transparent)!important;
+    @media -moz-pref("browser.nova.enabled"){
+      @media -moz-pref("treeTabs.style.customGroups", 5){
+        .tab-group-label{ #tabbrowser-tabs[expanded] & {
+            line-height: calc( var(--tab-group-label-size) - 4px )!important;
+            border-radius:6px!important;
+            border-end-start-radius:4px!important;
+            border: 1px solid light-dark( var(--tab-group-color),white)!important;
+            color:light-dark(black,white)!important;
+            @media (prefers-color-scheme: light) {
+              background-color:color-mix( in srgb, var(--tab-group-color) 10%, transparent)!important;
+            }
           }
         }
+      }
+    }
+
+    @media -moz-pref("treeTabs.style.groupTabCounter") {
+      #tabbrowser-tabs[expanded]{
+        .group-tab-counter{
+          flex-shrink: 1;
+          font-size: 13px;
+          --f: calc( var(--tab-child-counter-size) + 2px - 11px);
+          font-size: calc( 11px + var(--f)/1.5 )!important;
+          max-height: 20px;
+          text-wrap: nowrap;
+        }
+        .tab-group-label {
+         margin-inline-end: 0px!important;
+        }
+        @media -moz-pref("treeTabs.style.customGroups", 0),
+              -moz-pref("treeTabs.style.customGroups", 5)
+        {
+          .tab-group-label{
+            overflow: clip;
+            text-overflow: "...";
+            border-bottom-right-radius: 0!important;
+            border-top-right-radius: 0!important;
+            display: block!important;
+          }
+          .tab-group-label-hover-highlight[pack="center"] {
+            display:flex;
+            flex-direction: row;
+            justify-content: left !important;
+          }
+          .group-tab-counter:not([default-group-type]){
+            display:none;
+          }
+          .group-tab-counter[default-group-type]{
+              margin: auto 0;
+              align-self: center;
+              background-color: var(--tab-group-background-color);
+              height: var(--tab-group-label-size);
+              min-height: auto;
+              color: var(--tab-group-text-color);
+              margin-left: 0;
+              max-height: unset;
+              border-start-end-radius: calc(var(--tab-group-label-size) / 2);
+              border-end-end-radius: calc(var(--tab-group-label-size) / 2);
+              padding-right: 5px;
+              line-height: var(--tab-group-label-size);
+          }
+
+          @media not -moz-pref("browser.nova.enabled"),
+          -moz-pref("treeTabs.style.customGroups", 5)
+          {
+            .group-tab-counter[default-group-type]{
+              box-sizing: border-box;
+              background-color: var(--tab-group-color);
+              /* 153 */
+              @media -moz-pref("treeTabs.browserVersion153"){
+                background-color: light-dark(var(--tab-group-color), var(--tab-group-color-invert));
+              }
+              border: 1px solid light-dark(var(--tab-group-color), var(--tab-group-color-pale));
+              height:var(--tab-group-label-size)!important;
+              border-left-width: 0!important;
+              color: light-dark(var(--tab-group-color-pale), var(--tab-group-label-text-dark));
+            }
+            @media not -moz-pref("treeTabs.style.customGroups", 5){
+              tab-group[collapsed] .group-tab-counter[default-group-type]{
+                background-color: var(--tab-group-color-invert);
+                color: light-dark(var(--tab-group-color), var(--tab-group-color-pale));
+              }
+            }
+            tab-group[collapsed] .group-tab-counter[default-group-type]{
+              background-color: var(--tab-group-color-invert);
+              @media -moz-pref("treeTabs.browserVersion153"){
+               background-color: light-dark(var(--tab-group-color-pale), var(--tab-group-color));
+              }
+              color: light-dark(var(--tab-group-color), var(--tab-group-color-pale));
+            }
+            .tab-group-label{
+              outline:none!important;
+              border: 1px solid light-dark(var(--tab-group-color), var(--tab-group-color-pale))!important;
+              border-right:none!important;
+            }
+            tab-group[collapsed] .tab-group-label{
+              border-right:none!important;
+              outline:none!important;
+            }
+          }
+          @media -moz-pref("browser.nova.enabled")
+          {
+            .tab-group-label-hover-highlight:has(.tab-group-label:hover) 
+            .group-tab-counter[default-group-type]{
+              background-color: var(--tab-group-background-color-hover);
+            }
+            tab-group[collapsed] .tab-group-label-hover-highlight:hover 
+            .group-tab-counter[default-group-type]{
+              background-color: var(--tab-group-background-color-hover);
+            }
+            tab-group[previewpanelactive]
+            .group-tab-counter[default-group-type]{
+              background-color: var(--tab-group-background-color-hover);
+            }
+            @media -moz-pref("treeTabs.style.customGroups",5){
+              .group-tab-counter[default-group-type]{
+                line-height: calc( var(--tab-group-label-size) - 4px ) !important;
+                @media (prefers-color-scheme: light) {
+                  background-color:color-mix( in srgb, var(--tab-group-color) 10%, transparent)!important;
+                }
+                @media -moz-pref("treeTabs.browserVersion153"){
+                  background-color: var(--tab-group-background-color);
+                  color: light-dark(black,white) !important;
+                }
+              }
+              tab-group[collapsed]:not([previewpanelactive]) .group-tab-counter[default-group-type]{
+                background-color: var(--tab-group-background-color);
+                color: light-dark(var(--tab-group-color), var(--tab-group-color-pale));
+              }
+              tab-group[previewpanelactive]
+              .group-tab-counter[default-group-type]{
+                background-color:var(--tab-group-background-color-hover);
+              }
+            }
+          }
+        }
+        @media -moz-pref("treeTabs.style.customGroups",1),
+          -moz-pref("treeTabs.style.customGroups",2),
+          -moz-pref("treeTabs.style.customGroups",3),
+          -moz-pref("treeTabs.style.customGroups",4){
+          .tab-group-label {
+            display: inline-block !important;
+            padding-right: 35px!important;
+          }
+          .group-tab-counter[default-group-type]{
+            display:none!important;
+          }
+          .group-tab-counter{
+            position:absolute;
+            right:0;
+            top:0;
+            margin-top:0;
+            --margin-left: calc( var(--tab-padding-inline, var(--tab-inline-padding)) - var(--tab-margin-inline-inner, var(--tab-inner-inline-margin))); 
+            margin-right: var( --margin-left, 6px);
+            margin-left: auto;
+          }
+        }
+      }
+      #tabbrowser-tabs:not([expanded]){
+        .group-tab-counter{
+          display:none!important;
+        }
+      }
+    }
+    @media not -moz-pref("treeTabs.style.groupTabCounter") {
+      .group-tab-counter{
+        display:none!important;
       }
     }
     /*******Tab Groups End ***********/
