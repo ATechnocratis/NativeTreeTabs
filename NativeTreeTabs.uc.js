@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.5.0
+// @version        0.4.5.1
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -68,6 +68,7 @@
     selectedTab: null,
     clickedActiveTab: null,
     contextTab: null,
+    contextTabs: null,
     setIconAndColorPopup: {
       setRandomIcon: null,
       initPanelWithIcon: null,
@@ -188,8 +189,10 @@
       this.domElements.push(...nestTabElements);
 
       //Check if tabs existed before initialization
-      gBrowser.tabs.forEach(this.attachTabListeners, this);
-      gBrowser.tabs.forEach(this.initTab, this);
+      gBrowser.tabs.forEach((tab) => {
+        this.initTab(tab);
+        this.attachTabListeners(tab);
+      }, this);
 
       //Add listeners
       //Tab events
@@ -235,7 +238,7 @@
       modifyCustomizePage.start();
 
       //add Always Display Tab functionality
-      let [alwaysOnElements] = initAlwayDisplayTab();
+      let [alwaysOnElements] = initAlwaysDisplayTab();
       this.domElements.push(...alwaysOnElements);
 
       //add media play/pause button on every tab
@@ -309,12 +312,15 @@
       this.customStyle.forEach(function(style) {
         styleSvc.unregisterSheet(style[0], style[1]);
       });
+      this.customStyle = new Array();
+
       //Remove custom elements
       this.domElements.forEach(function(element) {
         if (element) {
           element.remove();
         }
       });
+      this.domElements = new Array();
 
       this.observersList.forEach(
         (observer) => {
@@ -2414,7 +2420,7 @@
 
     initTab: function(aTab) {
 
-      if (aTab._nttInitialized) {
+      if (aTab._nttInitialized || aTab.closing) {
         //already initialized
         return;
       }
@@ -2422,7 +2428,7 @@
       let dragged = getCustomTabValue(aTab, "draggedFromWindow");
       let openerFound = false;
 
-      if ((aTab.hasAttribute("tree-id") && dragged == "") || aTab.closing) {
+      if ((aTab.hasAttribute("tree-id") && dragged == "")) {
         //already initialized
         // return;
       } else {
@@ -6152,6 +6158,9 @@
   }
 
   function setPanel(aTab, panel, window) {
+    if (aTab.closing) {
+      return;
+    }
     aTab.removeAttribute("panel-id-pending");
     const panelId = panel.id.toString();
     let decrease = false;
@@ -7401,10 +7410,9 @@
 
   function nestTabs(label) {
     let contextTab = nativeTreeTabs.contextTab;
-    let tabs = contextTab.length > 1 ? contextTab : (multiSelected(contextTab)) ?
-      gBrowser.selectedTabs : contextTab;
+    let tabs = nativeTreeTabs.contextTabs;
     let multi = (tabs.length > 1) ? true : false;
-    let contextTabRoot = getRootTab(contextTab[0]);
+    let contextTabRoot = getRootTab(contextTab);
     let ancestorRoot = contextTabRoot;
 
     while (ancestorRoot && !multiSelected(ancestorRoot)) {
@@ -7420,15 +7428,15 @@
 
     if (contextTabRoot) {
       if (!multiSelected(contextTabRoot)) {
-        tabIndex = contextTab[0];
-        nestDepth = getTreeDepth(contextTab[0]);
+        tabIndex = contextTab;
+        nestDepth = getTreeDepth(contextTab);
       } else {
         tabIndex = contextTabRoot;
         nestDepth = getTreeDepth(contextTabRoot);
       }
     } else {
-      tabIndex = contextTab[0];
-      nestDepth = getTreeDepth(contextTab[0]);
+      tabIndex = contextTab;
+      nestDepth = getTreeDepth(contextTab);
     }
 
     let nestTab = window.gBrowser.addTab(
@@ -7456,6 +7464,7 @@
         aTab = aTab.splitview;
       }
       if (aTab.hasAttribute("moving-to-nest")) {
+        //keep only root tabs from the selected
         return;
       }
       tabsToMove.push(aTab);
@@ -7463,6 +7472,7 @@
       let aTabDepth = getTreeDepth(aTab);
       let nextTab = getNextTab(aTab);
       while (nextTab) {
+        //mark the tree to avoid picking them
         let nextTabDepth = getTreeDepth(nextTab);
         if (nextTabDepth != null && nextTabDepth <= aTabDepth) {
           break;
@@ -7473,7 +7483,6 @@
     });
 
     tabsToMove.reverse().forEach(function(aTab) {
-
       let aTabDepth = getTreeDepth(aTab);
       let nextTab = getNextTab(aTab);
       let nextTabDepth = (nextTab) ? getTreeDepth(nextTab) : null;
@@ -7514,7 +7523,7 @@
     });
 
     let setNestAsOpener = function() {
-      tabs.forEach(function(aTab) {
+      tabsToMove.forEach(function(aTab) {
         setOpener(aTab, nestTab);
       });
     }
@@ -7797,11 +7806,14 @@
       tabContextMenu.removeEventListener("popupshowing", updateTabContextMenu);
       return originalNestContextRemove.apply(this, arguments);
     }
+
     nestContext.addEventListener("click", (aEvent) => {
       let contextTabs = TabContextMenu.contextTabs;
       let contextTab = TabContextMenu.contextTab;
 
-      nativeTreeTabs.contextTab = contextTabs;
+      nativeTreeTabs.contextTab = contextTab;
+      nativeTreeTabs.contextTabs = contextTabs;
+
       menupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
       makePopupStayOpen(menupopup, null);
       let textbox = menupopup.querySelector("input");
@@ -7813,28 +7825,26 @@
     });
 
     setIconNestContext.addEventListener("click", (aEvent) => {
-      let contextTabs = TabContextMenu.contextTab;
-      nativeTreeTabs.contextTab = contextTabs;
+      let contextTab = TabContextMenu.contextTab;
+      nativeTreeTabs.contextTab = contextTab;
       nativeTreeTabs.setIconAndColorPopup.openIconAndColorSelector(contextTab, "NestTab", contextTab);
     });
 
     setColorNestContext.addEventListener("click", (aEvent) => {
-      let contextTabs = TabContextMenu.contextTab;
+      let contextTab = TabContextMenu.contextTab;
       nativeTreeTabs.contextTab = contextTab;
       nativeTreeTabs.setIconAndColorPopup.openIconAndColorSelector(contextTab, "NestTabColor", contextTab);
     });
 
     setColorTabContext.addEventListener("click", (aEvent) => {
-      let contextTabs = TabContextMenu.contextTab;
-      nativeTreeTabs.contextTab = contextTabs;
+      let contextTab = TabContextMenu.contextTab;
+      nativeTreeTabs.contextTab = contextTab;
       nativeTreeTabs.setIconAndColorPopup.openIconAndColorSelector(contextTab, "NestTabColor", contextTab);
     });
 
     renameNestContext.addEventListener("click", (aEvent) => {
-      let contextTabs = TabContextMenu.contextTabs;
       let contextTab = TabContextMenu.contextTab;
-
-      nativeTreeTabs.contextTab = contextTabs;
+      nativeTreeTabs.contextTab = contextTab;
       renameNestMenupopup.openPopup(contextTab, "before_start", 25, 100, false, false);
       makePopupStayOpen(renameNestMenupopup, null);
       let textbox = renameNestMenupopup.querySelector("input");
@@ -9429,7 +9439,7 @@
     }
   }
 
-  function initAlwayDisplayTab() {
+  function initAlwaysDisplayTab() {
     //Have a tab always side by side with the active/selected tab
 
     let elementsCreated = new Array();
