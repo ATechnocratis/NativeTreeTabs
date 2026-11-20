@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.5.2
+// @version        0.4.5.3
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -2564,7 +2564,7 @@
           deleteCustomTabValue(aTab, "panel-id");
           deleteCustomTabValue(aTab, "panel-icon");
           deleteCustomTabValue(aTab, "panel-label");
-          //if opener was not dragged together to new window
+          // if opener was not dragged together to new window
           if (!openerFound)
             deleteCustomTabValue(aTab, "opener-id");
         }
@@ -2585,6 +2585,7 @@
             }
 
             let forceShow;
+            // open Panel in bottom
             panel = this.tabPanelOpen(null, restorePanelLabel, panelId, forceShow = false, -1);
 
             let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
@@ -2593,12 +2594,6 @@
             }
           } else {
             //Panel exists
-            // if (restorePaneldId === '0' && panel.icon == null) {
-            //   let restorePanelIcon = getCustomTabValue(aTab, "panel-icon");
-            //   if (restorePanelIcon) {
-            //     this.setPanelIcon(panel, restorePanelIcon);
-            //   }
-            // }
             if (!findPanelInMenu(panel)) {
               //usually for the first Tab Panel
               let checkIt;
@@ -2640,10 +2635,8 @@
         }
 
         if (foundPanel === false) {
-
           //Check if selected Panel actually exists
           this.makeSureSelectedPanelExists();
-
           if (this.tabPanels.length == 0 || this.selectedPanel == null) {
             // No Tab Panel is open => Open default one
             let label;
@@ -2652,19 +2645,12 @@
               if (label == null) {
                 label = "Default Panel";
               }
-            }
-            let defPanel = this.tabPanelOpen([aTab], label);
-            // if (aTab.selected) {
-            //   this.tabPanelShow(defPanel, false);
-            // }
-            this.tabPanelShow(defPanel);
-          } else {
-            setPanel(aTab, this.selectedPanel, window);
-            unHideTab(aTab);
-            // if (aTab.selected) {
-            //   this.tabPanelShow(this.selectedPanel, false);
-            // }
+            } 
+            let defPanel = this.tabPanelOpen(null, label, getNextAvailableId(this.tabPanels));
+            this.tabPanelShow(defPanel, false);
           }
+          setPanel(aTab, this.selectedPanel, window);
+          unHideTab(aTab);
         }
       }
       let aTabPanelId = aTab.getAttribute("panel-id");
@@ -3326,6 +3312,29 @@
             let findTab = findPossibleSwitch(aTab, switchOnClose);
             if (findTab != null) {
               gBrowser.setSuccessor(aTab, findTab);
+            } else {
+              // possible last tab on active Panel case
+              // show previous active Panel on close
+              let nextTab = getNextTab(aTab);
+              let nextTabNextTab = (nextTab) ? getNextTab(nextTab) : null;
+              if (aTab._nttInitialized && nextTab && !nextTab._nttInitialized && (nextTabNextTab == null || nextTabNextTab._nttInitialized)) {
+                // (avoid messing in tab replaced case)
+              } else {
+                let toShow = null;
+                if (nativeTreeTabs.previousSelectedPanel != null && nativeTreeTabs.tabPanels.includes(nativeTreeTabs.previousSelectedPanel)) {
+                  // focus previous active Panel (if existing)
+                  toShow = nativeTreeTabs.previousSelectedPanel;
+                } else if (nativeTreeTabs.tabPanels.length > 0) {
+                  // focus previous in array or first one
+                  let possibleIndex = removedPanelIndex - 1;
+                  // (only no-negative check is actually necessary)
+                  possibleIndex = (possibleIndex >= 0 && possibleIndex < nativeTreeTabs.tabPanels.length) ? possibleIndex : 0;
+                  toShow = nativeTreeTabs.tabPanels[possibleIndex];
+                }
+                if (toShow != null) {
+                  nativeTreeTabs.tabPanelShow(toShow);
+                }
+              }
             }
           }
 
@@ -4919,6 +4928,7 @@
         removePanelFromMenu(panelId);
       }
       if (this.selectedPanel != null && this.selectedPanel === panel) {
+        // WONT EVER BE TRUE => will already switch Panel on tab remove
         // Panel is the active one
         let toShow = null;
         if (this.previousSelectedPanel != null && this.tabPanels.includes(this.previousSelectedPanel)) {
@@ -4996,7 +5006,7 @@
       this.tabPanels.push(newPanel);
       addNewPanelInMenu(newPanel, checkPanel);
 
-      // check if selected Exists
+      // check if selected Panel Exists
       this.makeSureSelectedPanelExists();
 
       if (id != null && index != -1 && this.tabPanels.length > 1) {
