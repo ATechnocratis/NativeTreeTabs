@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Native Tree Tabs
-// @version        0.4.5.3
+// @version        0.4.6.0
 // @supports       153+
 // @branch         main
 // ==/UserScript==
@@ -226,6 +226,9 @@
         this.customStyle.push(loadNTTstyle());
       }
 
+      // domain based tab colors
+      updateDomainColorRulesStyle();
+
       //add keyboard shortcuts
       this.addKeyboardShortcuts();
       window.addEventListener("keydown", this, true);
@@ -312,6 +315,9 @@
       this.customStyle.forEach(function(style) {
         styleSvc.unregisterSheet(style[0], style[1]);
       });
+      let unRegisterOnly = true;
+      updateDomainColorRulesStyle(unRegisterOnly);
+
       this.customStyle = new Array();
 
       //Remove custom elements
@@ -1882,87 +1888,92 @@
 
     tabSelected: function(aTab) {
 
-      // function protectSelection() {
-      if (aTab && (aTab.hasAttribute("nestTab") || getCustomTabValue(aTab, "nestTab") != "")) {
-        if (nativeTreeTabs.selectedTab.hasAttribute("hidden-child") && nativeTreeTabs.selectedTab.getAttribute("hidden-child-rootID") == aTab.getAttribute("tree-id")) {
-          aTab.setAttribute("skipUntwist", "");
-        }
-        let pSTab = nativeTreeTabs.selectedTab;
-        while (pSTab.hasAttribute("nestTab")) {
-          pSTab = nativeTreeTabs.previousSelectedTab.pop();
-        }
-        if (window.gBrowser.tabs.includes(pSTab) && pSTab.closing == false) {
-          if (!pSTab.splitview) {
-            gBrowser.selectedTab = pSTab;
-          } else {
-            setTimeout(() => {
+      // run when tab is initialized  
+      setupDynamicWatcher(aTab, '_nttInitialized', initiallizedTabSelected, [aTab], this);
+
+      function initiallizedTabSelected(aTab) {
+        // don't allow nest tabs to be selected
+        if (aTab && (aTab.hasAttribute("nestTab") || getCustomTabValue(aTab, "nestTab") != "")) {
+          if (nativeTreeTabs.selectedTab.hasAttribute("hidden-child") && nativeTreeTabs.selectedTab.getAttribute("hidden-child-rootID") == aTab.getAttribute("tree-id")) {
+            aTab.setAttribute("skipUntwist", "");
+          }
+          let pSTab = nativeTreeTabs.selectedTab;
+          while (pSTab.hasAttribute("nestTab")) {
+            pSTab = nativeTreeTabs.previousSelectedTab.pop();
+          }
+          if (window.gBrowser.tabs.includes(pSTab) && pSTab.closing == false) {
+            if (!pSTab.splitview) {
               gBrowser.selectedTab = pSTab;
-            }, 10);
-          }
-        }
-        return;
-      }
-      //nested tabs hidden children might be show =>hide it
-      if (this.selectedTab && this.selectedTab != aTab && this.selectedTab.hasAttribute("hidden-child-rootID") && !this.selectedTab.hasAttribute("hidden-child")) {
-        this.selectedTab.setAttribute("hidden-child", true);
-        setCustomTabValue(this.selectedTab, "hidden-child", 'true');
-      }
-
-      if (this.collapseTreesAutomatically.value && this.selectedTab && this.selectedTab != aTab) {
-        //collapse previous active tab tree (if different from current true)
-        let previousActiveTreeRoot = getTreeRoot(this.selectedTab);
-        let currentTreeRoot = getTreeRoot(aTab);
-        if (currentTreeRoot != previousActiveTreeRoot) {
-          if (!previousActiveTreeRoot.hasAttribute("twisted-root")) {
-            this.toggleTwist(previousActiveTreeRoot);
-          }
-        }
-      }
-      if (this.collapseGroupsAutomatically.value && this.selectedTab && this.selectedTab != aTab) {
-        //collapse previous active tab group
-        if (this.selectedTab.group && this.selectedTab.group != aTab.group) {
-          this.selectedTab.group.collapsed = true;
-        }
-      }
-
-      //Select previous selected tab when current selected tab is clicked
-      if (aTab !== this.selectedTab) {
-        if (this.selectedTab != null && (this.previousSelectedTab.length == 0 || this.previousSelectedTab[this.previousSelectedTab.length - 1] != this.selectedTab)) {
-          this.previousSelectedTab.push(this.selectedTab);
-          if (this.previousSelectedTab.length > MAX_STACK_SIZE) {
-            this.previousSelectedTab = this.previousSelectedTab.slice(1);
-          }
-        }
-        if (this.selectedTab != null) {
-          this.selectedTab.removeEventListener("click", this.previousSwitch, true);
-        }
-        this.selectedTab = aTab;
-      }
-
-      aTab.addEventListener("click", this.previousSwitch, true);
-
-      //Hidden tab selected unravel root
-      if (aTab.hasAttribute("hidden-child")) {
-        this.hiddenSelected(aTab);
-      }
-
-      if (aTab.hasAttribute("panel-id")) {
-        let panelId = aTab.getAttribute("panel-id");
-        //Tab Panel is hidden => show
-        if (aTab.hasAttribute("tabPanel-hidden")) {
-          let changeSelectedTab;
-          this.tabPanelShow(panelId, changeSelectedTab = false);
-        }
-        // Update Panel last-selected tab
-        let panel = this.tabPanels.find(x => x.id.toString() === panelId);
-        if (panel) {
-          if (panel.selectedTab != null && (panel.previousSelectedTab.length == 0 || panel.previousSelectedTab[panel.previousSelectedTab.length - 1] != panel.selectedTab)) {
-            panel.previousSelectedTab.push(panel.selectedTab);
-            if (panel.previousSelectedTab.length > MAX_STACK_SIZE) {
-              panel.previousSelectedTab = panel.previousSelectedTab.slice(1);
+            } else {
+              setTimeout(() => {
+                gBrowser.selectedTab = pSTab;
+              }, 10);
             }
           }
-          panel.selectedTab = aTab;
+          return;
+        }
+        //nested tabs hidden children might be show => hide it
+        if (this.selectedTab && this.selectedTab != aTab && this.selectedTab.hasAttribute("hidden-child-rootID") && !this.selectedTab.hasAttribute("hidden-child")) {
+          this.selectedTab.setAttribute("hidden-child", true);
+          setCustomTabValue(this.selectedTab, "hidden-child", 'true');
+        }
+
+        if (this.collapseTreesAutomatically.value && this.selectedTab && this.selectedTab != aTab) {
+          //collapse previous active tab tree (if different from current true)
+          let previousActiveTreeRoot = getTreeRoot(this.selectedTab);
+          let currentTreeRoot = getTreeRoot(aTab);
+          if (currentTreeRoot != previousActiveTreeRoot) {
+            if (!previousActiveTreeRoot.hasAttribute("twisted-root")) {
+              this.toggleTwist(previousActiveTreeRoot);
+            }
+          }
+        }
+        if (this.collapseGroupsAutomatically.value && this.selectedTab && this.selectedTab != aTab) {
+          //collapse previous active tab group
+          if (this.selectedTab.group && this.selectedTab.group != aTab.group) {
+            this.selectedTab.group.collapsed = true;
+          }
+        }
+
+        //Select previous selected tab when current selected tab is clicked
+        if (aTab !== this.selectedTab) {
+          if (this.selectedTab != null && (this.previousSelectedTab.length == 0 || this.previousSelectedTab[this.previousSelectedTab.length - 1] != this.selectedTab)) {
+            this.previousSelectedTab.push(this.selectedTab);
+            if (this.previousSelectedTab.length > MAX_STACK_SIZE) {
+              this.previousSelectedTab = this.previousSelectedTab.slice(1);
+            }
+          }
+          if (this.selectedTab != null) {
+            this.selectedTab.removeEventListener("click", this.previousSwitch, true);
+          }
+          this.selectedTab = aTab;
+        }
+
+        aTab.addEventListener("click", this.previousSwitch, true);
+
+        //Hidden tab selected unravel root
+        if (aTab.hasAttribute("hidden-child")) {
+          this.hiddenSelected(aTab);
+        }
+
+        if (aTab.hasAttribute("panel-id")) {
+          let panelId = aTab.getAttribute("panel-id");
+          //Tab Panel is hidden => show
+          if (aTab.hasAttribute("tabPanel-hidden")) {
+            let changeSelectedTab;
+            this.tabPanelShow(panelId, changeSelectedTab = false);
+          }
+          // Update Panel last-selected tab
+          let panel = this.tabPanels.find(x => x.id.toString() === panelId);
+          if (panel) {
+            if (panel.selectedTab != null && (panel.previousSelectedTab.length == 0 || panel.previousSelectedTab[panel.previousSelectedTab.length - 1] != panel.selectedTab)) {
+              panel.previousSelectedTab.push(panel.selectedTab);
+              if (panel.previousSelectedTab.length > MAX_STACK_SIZE) {
+                panel.previousSelectedTab = panel.previousSelectedTab.slice(1);
+              }
+            }
+            panel.selectedTab = aTab;
+          }
         }
       }
     },
@@ -2390,7 +2401,6 @@
     },
 
     tabOpen: function(aTab) {
-      // setPanelLite(aTab, window.nativeTreeTabs.selectedPanel, window);
       this.initTreeDepth(aTab);
       this.observeTab(aTab, ["pending", "bursting", "open"], this.initTab);
     },
@@ -2609,11 +2619,13 @@
               this.tabPanelShow(panel, changeSelectedTab = false);
             }
           }
+
           if (this.selectedPanel === panel) {
             unHideTab(aTab);
-          } else if (!aTab.selected) {
+          } else {
             hideTab(aTab);
           }
+
         } else {
           let prvPanel = aTab.getAttribute("panel-id");
           if (prvPanel != null) {
@@ -2645,14 +2657,17 @@
               if (label == null) {
                 label = "Default Panel";
               }
-            } 
+            }
             let defPanel = this.tabPanelOpen(null, label, getNextAvailableId(this.tabPanels));
-            this.tabPanelShow(defPanel, false);
+            setPanel(aTab, this.selectedPanel, window);
+            this.tabPanelShow(this.selectedPanel);
+          } else {
+            setPanel(aTab, this.selectedPanel, window);
+            unHideTab(aTab);
           }
-          setPanel(aTab, this.selectedPanel, window);
-          unHideTab(aTab);
         }
       }
+
       let aTabPanelId = aTab.getAttribute("panel-id");
       let movedBefore = false;
       let movedAfter = false;
@@ -2698,7 +2713,7 @@
       }
       let nextTab = getNextTab(aTab);
 
-      if (isTab(nextTab) && !nextTab.hasAttribute("panel-id-pending") && nextTab.hasAttribute("panel-id") && nextTab.getAttribute("panel-id") != aTabPanelId) {
+      if (isTab(nextTab) && nextTab.hasAttribute("panel-id") && nextTab.getAttribute("panel-id") != aTabPanelId) {
         checkPosition = true;
         // Opened at (top) and there are another Panel tabs between the opened tab and its Panel tabs 
         // edge case (unless open new tab at top from script settings is enabled, this shouldn't happen)
@@ -2827,6 +2842,12 @@
           return;
         }
 
+        if (name === "treeTabs.style.domainColorRules") {
+          updateDomainColorRulesStyle();
+          return;
+        }
+
+
         let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
           Ci.nsIStyleSheetService
         );
@@ -2836,6 +2857,7 @@
         nativeTreeTabs.customStyle = new Array();
         nativeTreeTabs.customStyle.push(loadTabPanelsstyle());
         nativeTreeTabs.customStyle.push(loadNTTstyle());
+
       }
     },
 
@@ -3020,6 +3042,9 @@
       this.observeTopic("treeTabs.style.panelHeaderTabCounter", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.groupTabCounter", null, true, isBoolean, true);
       this.observeTopic("treeTabs.style.bookmarksToolbarReposition", null, true, isBoolean, true);
+      this.observeTopic("treeTabs.style.colorPerUsercontextId", null, true, isBoolean, true);
+      this.observeTopic("treeTabs.style.domainColorRules");
+      this.observeTopic("treeTabs.style.customColorIntensity");
 
       // Trick to update styles when window uidensity changes
       // (used for Personal toolbar repositioning)
@@ -4957,6 +4982,13 @@
       if (this.selectedPanel != null && !this.tabPanels.includes(this.selectedPanel)) {
         this.removePanel(this.selectedPanel);
         console.error("Selected Panel not found:", new Error().stack);
+        if (this.tabPanels.lenght != 0 && gBrowser.selectedTab && gBrowser.selectedTab.hasAttribute("panel-id")) {
+          let selectedTabTabPanelId = gBrowser.selectedTab.getAttribute("panel-id");
+          let newSelected = this.tabPanels.find(x => x.id.toString() === id);
+          if (newSelected) {
+            this.tabPanelShow(newSelected, false);
+          }
+        }
       }
     },
 
@@ -5015,7 +5047,6 @@
         let first = (previousPanelIndex == null) ? true : false;
         this.movePanelObjectAfterAnother(this.tabPanels.length - 1, previousPanelIndex, newPanelId, index, first)
       }
-
 
       if ((show && id == null) || (this.tabPanels.length == 1)) {
         this.changeSelectedPanel(newPanel);
@@ -5242,7 +5273,7 @@
     tabPanelGetId: function(panel) {
       //receive id or Panel object return id to string 
       let panelId;
-      if (panel.id) {
+      if (panel.id != null) {
         if (!this.tabPanels.includes(panel)) {
           panel = null;
         } else {
@@ -5264,8 +5295,8 @@
         return;
       }
       if (reverse)
-        return gBrowser.tabs.filter(t => t.getAttribute("panel-id") != panelId && !t.hasAttribute("panel-id-pending"));
-      return gBrowser.tabs.filter(t => t.getAttribute("panel-id") == panelId && !t.hasAttribute("panel-id-pending"));
+        return gBrowser.tabs.filter(t => t.hasAttribute("panel-id") && t.getAttribute("panel-id") != panelId);
+      return gBrowser.tabs.filter(t => t.hasAttribute("panel-id") && t.getAttribute("panel-id") == panelId);
     },
 
     getTabPaneGroups: function(panel) {
@@ -5273,7 +5304,7 @@
       if (panelId == -1) {
         return;
       }
-      return gBrowser.tabGroups.filter(g => g.tabs[0].getAttribute("panel-id") == panelId && !g.tabs[0].hasAttribute("panel-id-pending"));
+      return gBrowser.tabGroups.filter(g => g.tabs[0].hasAttribute("panel-id") && g.tabs[0].getAttribute("panel-id") == panelId);
     },
 
     tabPanelClose: function(panel) {
@@ -5342,7 +5373,7 @@
 
     tabPanelShow: function(panel, changeSelectedTab = true) {
       let panelId;
-      if (panel.id) {
+      if (panel.id != null) {
         if (!this.tabPanels.includes(panel)) {
           panel = null;
         } else {
@@ -5352,7 +5383,7 @@
         panelId = panel.toString();
         panel = this.tabPanels.find(x => x.id.toString() === panelId);
       }
-      if (!panel) {
+      if (panel == null) {
         return;
       }
       // The first tab of the Panel
@@ -5373,12 +5404,11 @@
                 gBrowser.reloadTab(aTab);
               }
             }
-          } else if (!aTab.hasAttribute("tabPanel-hidden")) {
+          } else if (!aTab.hasAttribute("tabPanel-hidden") && aTab.hasAttribute("panel-id")) {
             hideTab(aTab);
           }
         }
       }, this);
-
       if (changeSelectedTab) {
         //Show the last selected tab of the Panel if it exists
         // else show the first (top) tab of the Panel
@@ -6227,21 +6257,10 @@
     return aTab.hasAttribute("tree-depth");
   }
 
-  function setPanelLite(aTab, panel, window) {
-    const panelId = panel.id.toString();
-    aTab.setAttribute("panel-id", panelId);
-    aTab.setAttribute("panel-id-pending", panelId);
-    window.nativeTreeTabs.panelIncreaseCount(panel);
-    if (aTab.selected && !gBrowser.tabs.includes(panel.selectedTab)) {
-      panel.selectedTab = aTab;
-    }
-  }
-
   function setPanel(aTab, panel, window) {
     if (aTab.closing) {
       return;
     }
-    aTab.removeAttribute("panel-id-pending");
     const panelId = panel.id.toString();
     let decrease = false;
     let previousPanel;
@@ -6574,7 +6593,8 @@
     try {
       //BrowserUtils.formatURIForDisplay(uri));
       if (baked) {
-        aTab.setAttribute("domain", spec.split(":")[0]);
+        aTab.setAttribute("domain", uri.specIgnoringRef);
+        // aTab.setAttribute("domain", spec.split(":")[0]);
       } else {
         let host = uri.host.replace("www.", "");
         aTab.setAttribute("domain", host);
@@ -6844,7 +6864,7 @@
     let previousPanelIndex = (previousPanelId != null) ? nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === previousPanelId) : null;
 
     let nextTab = getNextTab(aTab);
-    let nextPanelId = (nextTab != null && !nextTab.hasAttribute("panel-id-pending")) ? nextTab.getAttribute("panel-id") : null;
+    let nextPanelId = (nextTab != null && nextTab.hasAttribute("panel-id")) ? nextTab.getAttribute("panel-id") : null;
     let nextPanelIndex = (nextPanelId != null) ? nativeTreeTabs.tabPanels.findIndex(x => x.id.toString() === nextPanelId) : null;
 
     // Check for Tab Panel order mismatch by comparing Tab Panel of the tab  with previous and next tabs, Tab Panels.
@@ -7114,7 +7134,10 @@
     return id.toString();
   }
 
-  function setupDynamicWatcher(obj, key, action, args) {
+  function setupDynamicWatcher(obj, key, action, args, thisContext) {
+    if (thisContext == null) {
+      thisContext = this;
+    }
     if (typeof key !== 'string' || key.trim() === '') {
       console.error('Key name cannot be empty');
       return;
@@ -7122,7 +7145,7 @@
     let lastValue = obj[key];
     // Already set?
     if (lastValue !== undefined) {
-      action.call(this, ...args);
+      action.call(thisContext, ...args);
       return;
     }
     let isWatching = true;
@@ -7137,7 +7160,7 @@
           lastValue = value;
           if (isWatching) {
             isWatching = false;
-            action.call(this, ...args);
+            action.call(thisContext, ...args);
           }
         } else if (originalSet) {
           originalSet.call(obj, value);
@@ -7149,6 +7172,24 @@
       enumerable: true,
       configurable: true,
     });
+  }
+
+  function runWithDelay(element, liveUpdate, delay, action, args = null) {
+    if (element.onChangeTimerTimerStart == null) {
+      clearTimeout(element.onChangeTimer);
+      element.onChangeTimerTimerStart = Date.now();
+      action.call(this, args);
+    } else if ((Date.now() - element.onChangeTimerTimerStart > liveUpdate)) {
+      clearTimeout(element.onChangeTimer);
+      action.call(this, args);
+      element.onChangeTimerTimerStart = Date.now();
+    } else {
+      clearTimeout(element.onChangeTimer);
+      element.onChangeTimer = setTimeout(() => {
+        element.onChangeTimerTimerStart = Date.now();
+        action.call(this, args);
+      }, delay);
+    }
   }
 
   function getNameFromInput(input, panel) {
@@ -11498,6 +11539,80 @@
         return hbox;
       }
 
+      function createSliderInput(pref, options, label, parent) {
+        let hbox = doc.createXULElement("hbox");
+        hbox.setAttribute("class", "ntt-input");
+
+        let labelElement = doc.createElement("label");
+        labelElement.textContent = label;
+
+        let div = doc.createElement("div");
+        div.setAttribute("class", "input-container");
+
+        let input = doc.createElement("input");
+        input.setAttribute("class", "ntt-slider");
+
+        input.setAttribute("type", "range");
+        input.setAttribute("min", options.min);
+        input.setAttribute("step", options.step);
+        input.setAttribute("max", options.max);
+
+        let output = doc.createElement("output");
+
+        function checkAndSetPref() {
+          //max decimals 2 ,rounds up
+          // removes unwanted zeros  2.00  => 2
+          let value = (+parseFloat(input.value).toFixed(1)).toString();
+
+          if (isNaN(value) || value < options.min || value > options.max) {
+            //check limits
+            input.value = getPref(pref);
+            output.value = input.value;
+
+          } else {
+            input.value = value;
+            output.value = value;
+            setPref(pref, value);
+          }
+        }
+
+        // Run with a small delay to avoid
+        // unnecessary reloading the style
+        input.addEventListener("input", (aEvent) => {
+          runWithDelay(input, 100, 200, checkAndSetPref);
+        });
+
+        function resetVal(aEvent) {
+          clearUserPref(pref);
+          input.value = getPref(pref);
+          output.value = input.value;
+        }
+
+        modifyCustomizePage.observeTopic(pref, input);
+
+        let b3 = doc.createElement("button");
+        b3.setAttribute("class", "extra-button restore-button");
+        b3.addEventListener("click", (aEvent) => resetVal(aEvent));
+        b3.title = "Restore to Default";
+        b3.setAttribute("label", "Restore to Default");
+
+        if (pref != null) {
+          let prefValue = getPref(pref);
+          if (prefValue != null) {
+            input.setAttribute("value", prefValue);
+            output.value = input.value;
+          }
+        }
+
+        hbox.appendChild(labelElement);
+        div.appendChild(input);
+        div.appendChild(output);
+        div.appendChild(b3);
+        hbox.appendChild(div);
+        parent.appendChild(hbox);
+        return hbox;
+      }
+
       function createNumberInputBox(pref, options, label, parent) {
         let hbox = doc.createXULElement("hbox");
         hbox.setAttribute("class", "ntt-input");
@@ -11898,6 +12013,233 @@
         return checkBox;
       }
 
+      /*  Domain Color Rules Functions  */
+      function addDomainColorRulesSettings(container) {
+        let section = document.createElement("div");
+        section.id = "domain-rules-section";
+
+        let header = document.createElement("div");
+        header.className = "domain-rules-header";
+        header.textContent = "Per Domain Tab Colors";
+        header.addEventListener("click", () => {
+          section.classList.toggle("expanded");
+        });
+
+        let content = document.createElement("div");
+        content.className = "domain-rules-content";
+
+        let listContainer = document.createElement("div");
+        listContainer.id = "domain-rules-list";
+
+        let addBtn = document.createElement("button");
+        addBtn.className = "domain-rules-add-btn";
+        addBtn.textContent = "Add Rule";
+        addBtn.addEventListener("click", () => {
+          addDomainRuleRow(listContainer);
+        });
+
+        content.appendChild(listContainer);
+        content.appendChild(addBtn);
+
+        section.appendChild(header);
+        createSliderInput("treeTabs.style.customColorIntensity", {
+          min: 1,
+          step: 1,
+          max: 100
+        }, "Color Intensity:", section);
+        createCheckBox("treeTabs.style.colorPerUsercontextId", "Container coloring", section);
+
+        section.appendChild(content);
+        container.appendChild(section);
+
+        loadDomainRulesToUI(listContainer);
+      }
+
+      function addDomainRuleRow(listContainer, rule = null) {
+
+        let row = document.createElement("div");
+        row.className = "domain-rule-item";
+
+        let domainDiv = document.createElement("div");
+        domainDiv.className = "domain-wrapper";
+
+        let select = document.createElement("select");
+        select.className = "domain-operator ntt-select";
+        let opt1 = document.createElement("option");
+        opt1.value = "startswith";
+        opt1.textContent = "Starts with:";
+        let opt2 = document.createElement("option");
+        opt2.value = "endswith";
+        opt2.textContent = "Ends with:";
+        select.appendChild(opt1);
+        select.appendChild(opt2);
+        if (rule) select.value = rule.operator || "startswith";
+
+        let domainInput = document.createElement("input");
+        domainInput.type = "text";
+        domainInput.className = "domain-input";
+        domainInput.placeholder = "example.com";
+        domainInput.value = rule ? rule.domain : "";
+
+        domainDiv.appendChild(select);
+        domainDiv.appendChild(domainInput);
+
+        // Background Wrapper (Checkbox + Color Input)
+        let backgroundWrapper = document.createElement("div");
+        backgroundWrapper.textContent = "Background:";
+        backgroundWrapper.className = "check-color-wrapper";
+
+        let enableBgCheck = document.createElement("input");
+        enableBgCheck.type = "checkbox";
+        enableBgCheck.className = "enable-background";
+        enableBgCheck.title = "Enable Background Color";
+        // Default true
+        enableBgCheck.checked = (rule != null) ? (!rule.bgColorDisabled) ? false : rule.bgColor : true;
+
+        let bgColorInput = document.createElement("input");
+        bgColorInput.type = "color";
+        bgColorInput.className = "bg-color";
+        bgColorInput.value = rule ? rule.bgColor : "#0a84ff";
+        bgColorInput.title = "Background Color";
+
+        enableBgCheck.addEventListener("change", () => {
+          bgColorInput.disabled = !enableBgCheck.checked;
+          saveDomainRulesFromUI(listContainer);
+        });
+
+        backgroundWrapper.appendChild(enableBgCheck);
+        backgroundWrapper.appendChild(bgColorInput);
+
+        // Border Wrapper (Checkbox + Color Input)
+        let borderWrapper = document.createElement("div");
+        borderWrapper.className = "check-color-wrapper";
+        borderWrapper.textContent = "Outline:";
+
+        let enableBorderCheck = document.createElement("input");
+        enableBorderCheck.type = "checkbox";
+        enableBorderCheck.className = "enable-border";
+        enableBorderCheck.title = "Enable Outline Color";
+        // Default to false/unchecked
+        enableBorderCheck.checked = (rule != null) ? (!rule.borderColorDisabled) ? false : rule.borderColor : false;
+
+        let borderColorInput = document.createElement("input");
+        borderColorInput.type = "color";
+        borderColorInput.className = "border-color";
+        borderColorInput.value = (rule && rule.borderColor) ? rule.borderColor : "#bf9f1e";
+        borderColorInput.disabled = !enableBorderCheck.checked; // Disabled by default
+        borderColorInput.title = "Outline Color";
+
+        enableBorderCheck.addEventListener("change", () => {
+          borderColorInput.disabled = !enableBorderCheck.checked;
+          saveDomainRulesFromUI(listContainer);
+        });
+
+        borderWrapper.appendChild(enableBorderCheck);
+        borderWrapper.appendChild(borderColorInput);
+
+        let removeBtn = document.createElement("button");
+        removeBtn.className = "remove-rule-btn";
+        removeBtn.textContent = "Remove";
+        removeBtn.addEventListener("click", () => {
+          row.remove();
+          saveDomainRulesFromUI(listContainer);
+        });
+
+        function moveItem(aEvent, dir) {
+          let item = getClosest(aEvent.target, ".domain-rule-item");
+          if (item) {
+            let sibling;
+            if (dir == 1) {
+              sibling = item.nextSibling;
+              if (sibling)
+                sibling.after(item);
+            } else {
+              sibling = item.previousSibling;
+              if (sibling)
+                listContainer.insertBefore(item, sibling);
+            }
+            saveDomainRulesFromUI(listContainer);
+          }
+        }
+
+        let buttonOrderWrapper = document.createElement("div");
+        buttonOrderWrapper.className = "domain-button-row";
+
+        let b1 = doc.createElement("button");
+        b1.addEventListener("click", (aEvent) => moveItem(aEvent, -1));
+        b1.setAttribute('class', 'extra-button moveup-button');
+        let b2 = doc.createElement("button");
+        b2.addEventListener("click", (aEvent) => moveItem(aEvent, 1));
+        b2.setAttribute('class', 'extra-button movedown-button');
+
+        // Save and reload stylesheet on any change
+        // Avoid running for any small change
+        // and run when the change is finalized
+        // performance friendly :D
+        [select, domainInput, bgColorInput, borderColorInput].forEach(el => {
+          el.addEventListener("change", () => runWithDelay(el, 200, 400, saveDomainRulesFromUI, listContainer));
+          el.addEventListener("input", () => runWithDelay(el, 200, 400, saveDomainRulesFromUI, listContainer));
+        });
+
+        buttonOrderWrapper.appendChild(b1);
+        buttonOrderWrapper.appendChild(removeBtn);
+        buttonOrderWrapper.appendChild(b2);
+        row.appendChild(domainDiv);
+        row.appendChild(backgroundWrapper);
+        row.appendChild(borderWrapper);
+        row.appendChild(buttonOrderWrapper);
+        listContainer.appendChild(row);
+      }
+
+      function saveDomainRulesFromUI(listContainer) {
+        let rules = [];
+        let rows = listContainer.querySelectorAll(".domain-rule-item");
+
+        rows.forEach(row => {
+          let select = row.querySelector(".domain-operator");
+          let domain = row.querySelector(".domain-input").value.trim();
+          if (!domain) return;
+
+          let enableBgCheck = row.querySelector(".enable-background");
+          let bgColorInput = row.querySelector(".bg-color");
+
+          let enableBorderCheck = row.querySelector(".enable-border");
+          let borderColorInput = row.querySelector(".border-color");
+
+          let ruleObj = {
+            operator: select.value,
+            domain: domain,
+            bgColor: bgColorInput.value,
+            borderColor: borderColorInput.value,
+            bgColorDisabled: enableBgCheck.checked,
+            borderColorDisabled: enableBorderCheck.checked,
+          };
+
+          rules.push(ruleObj);
+        });
+
+        setPref("treeTabs.style.domainColorRules", JSON.stringify(rules));
+        // No need to reload stylesheet immediately
+        // will run on pref observer
+        // updateDomainColorRulesStyle(); 
+      }
+
+      function loadDomainRulesToUI(listContainer) {
+        listContainer.innerHTML = "";
+        let rulesStr = getPref("treeTabs.style.domainColorRules", "[]");
+        let rules = [];
+        try {
+          rules = JSON.parse(rulesStr);
+        } catch (e) {}
+
+        if (rules == null || rules.length === 0) {
+          // Add one empty row by default
+          addDomainRuleRow(listContainer);
+        } else {
+          rules.forEach(rule => addDomainRuleRow(listContainer, rule));
+        }
+      }
+
       let stateCheckBox = createCheckBox("treeTabs.enabled", "Enabled", extra);
       modifyCustomizePage.observeTopic("treeTabs.loading", stateCheckBox);
 
@@ -12087,6 +12429,11 @@
         value: 8
     }], "number", extra);
 
+
+      addDomainColorRulesSettings(extra);
+
+      // ---------- Keyboard shortcuts----------
+
       createTitleDiv("Keyboard Shortcuts", "(click to change)", extra);
       createKeyInputBox("treeTabs.shortcuts.createPanel", "Create new Tab Panel:", extra);
       createKeyInputBox("treeTabs.shortcuts.cycleTabPanels", "Select next Panel:", extra);
@@ -12097,6 +12444,7 @@
       createKeyInputBox("treeTabs.shortcuts.indentTab", "Outdent tab:", extra);
       createKeyInputBox("treeTabs.shortcuts.flipActive", "Switch to last active tab:", extra);
       createKeyInputBox("treeTabs.shortcuts.toggleAlwaysOnTab", "Toggle Always On Tab", extra);
+
       // ---------- Update section----------
       createTitleDiv("Tree Tab Updates", null, extra);
 
@@ -12179,7 +12527,7 @@
             content: ${versionString};
             visibility: visible;
             font:menu;
-            color:LinkText
+            color:LinkText;
             text-decoration: underline;
           }
           .ntt-select{
@@ -12260,6 +12608,18 @@
             opacity:0.7;
             font-style: italic!important;
           }
+          .ntt-input input[type="range"]{
+            min-width:50px;
+          }
+          .input-container:has(input[type="range"]){
+            max-width:calc( 100% - 120px)!important;
+            margin-right:8px;
+            background-color:transparent;
+            min-width:55%;
+          }
+          .ntt-input .input-container output{
+            padding-inline:8px;
+          }
           .ntt-input button{
             background-color: rgba(0,0,0,0.2)!important;
             appearance:none!important;
@@ -12273,9 +12633,9 @@
             padding-inline-end: 4px;
             text-align:center!important;
           }
+          .domain-rule-item .extra-button,
           .ntt-input .extra-button{
-            order: 2;
-            margin-left:5px;
+            appearance: none;
             background-repeat: no-repeat;
             background-size: 13px;
              background-position: center;
@@ -12285,6 +12645,10 @@
             fill:currentColor;
             background-color: color-mix(in srgb, var(--button-background-color-active) 25%, transparent)!important;
             opacity:0.7;
+          }
+          .ntt-input .extra-button{
+            order: 2;
+            margin-left:5px;
           }
           .ntt-input .restore-button{
             background-image: url("chrome://global/skin/icons/undo.svg")!important;
@@ -12413,16 +12777,27 @@
           .ntt-list .input-container {
             background-color:transparent!important;
           }
+          #domain-rules-list .extra-button,
           .ntt-list-item .extra-button{
             background-repeat:no-repeat;
             border:1px solid transparent!important;
             border-radius:30px;
+            padding-inline:12px;
           }
+          #domain-rules-list .moveup-button,
           .ntt-list-item .moveup-button{
             background-image: url("chrome://global/skin/icons/arrow-up.svg");
           }
+          #domain-rules-list .movedown-button,
           .ntt-list-item .movedown-button{
             background-image: url("chrome://global/skin/icons/arrow-down.svg");
+          }
+          .domain-button-row{
+            display:flex;
+            flex:1;
+            flex-wrap:nowrap;
+            gap: 8px;
+            justify-content: center;
           }
           .ntt-list-item:first-child{
             border-top:1px solid var(--panel-separator-color);
@@ -12538,7 +12913,142 @@
           }
           #inputs{
               background-color: color-mix(in srgb ,var(--sidebar-box-background) 70%,transparent)!important;
-            }
+          }
+
+          /* Domain Color Rules Settings UI */
+
+         #domain-rules-section {
+           margin-block: 12px;
+           border: 1px solid var(--panel-separator-color, rgba(0,0,0,0.1));
+           border-radius: 6px;
+           overflow: hidden;
+         }
+         .domain-rules-header {
+           display: flex;
+           align-items: center;
+           cursor: pointer;
+           font-weight: 600;
+           padding: 8px 12px;
+           background: var(--arrowpanel-dimmed, rgba(0,0,0,0.05));
+           user-select: none;
+         }
+         .domain-rules-header::before {
+           content: "▶";
+           margin-right: 8px;
+           font-size: 0.8em;
+           transition: transform 0.2s ease;
+           display: inline-block;
+         }
+         #domain-rules-section.expanded .domain-rules-header::before {
+           transform: rotate(90deg);
+         }
+         #domain-rules-section:not(.expanded) > *:not(.domain-rules-header){
+          display: none!important;
+         }
+         #domain-rules-section
+         .ntt-checkbox{
+          margin-left:10px;
+         }
+         .domain-rules-content {
+           padding-block: 12px;
+           padding-inline: 4px;
+         }
+         #domain-rules-section.expanded .domain-rules-content {
+           display: block;
+         }
+         .domain-rule-item {
+           display: flex;
+           flex-wrap: wrap;
+           gap: 2px;
+           align-items: center;
+           margin-bottom: 8px;
+           padding: 8px;
+           border-radius: 4px;
+           border: 1px solid var(--panel-separator-color, rgba(0,0,0,0.1));
+         }
+         .domain-rule-item > *:not(button){
+            min-width:100%;
+         }
+         .domain-wrapper{
+          display:flex;
+          flex-wrap:nowrap;
+          align-items:center;
+          gap:5px;
+         }
+         .domain-operator,
+         .domain-rule-item input[type="text"] {
+           flex: 1;
+           padding: 0px 7px;
+           border-radius: 4px!important;
+         }
+         .domain-operator{
+          max-width: 30%;
+          min-width: 70px;
+          text-overflow: "..";
+         }
+         .domain-rule-item input[type="text"] {
+          background-color: color-mix(in srgb, var(--button-background-color-active) 15%, transparent)!important;
+          text-align:center;
+          border:none;
+          padding: 1px!important;
+          padding-left: 6px!important;
+          padding-right: 6px!important;
+          font-size:12px!important;
+          height:25px;
+         }
+         .domain-rule-item input[type="color"] {
+           width: 36px;
+           height: 32px;
+           margin-right: 8px!important;
+
+           border-radius: 4px!important;
+           padding: 2px;
+           cursor: pointer;
+           border:1px solid transparent!important;
+         }
+         .domain-rule-item .check-color-wrapper {
+           display: flex;
+           align-items: center;
+           gap: 4px;
+           padding: 4px 8px;
+           border-radius: 4px;
+           border:none!important;
+         }
+         .domain-rule-item .check-color-wrapper input[type="checkbox"] {
+           margin: 0;
+           margin-left: auto!important;
+           cursor: pointer;
+           border:none;
+         }
+         .domain-rule-item .check-color-wrapper input[type="color"]:disabled {
+           opacity: 0.4;
+           cursor: not-allowed;
+         }
+         .domain-rule-item button:not(.extra-button) {
+           padding: 4px 10px;
+           border-radius: 4px;
+           border: 1px solid var(--panel-separator-color, rgba(0,0,0,0.2));
+           cursor: pointer;
+         }
+         .domain-rule-item .remove-rule-btn{
+            min-width: 50%;
+         }
+         .domain-rule-item button:hover {
+           background-color: var(--arrowpanel-dimmed, rgba(0,0,0,0.1));
+         }
+         .domain-rules-add-btn {
+           width: 100%;
+           margin-top: 8px;
+           padding: 8px;
+           border-radius: 4px;
+           border: 1px dashed var(--panel-separator-color, rgba(0,0,0,0.3));
+           background: transparent;
+           cursor: pointer;
+           font-weight: 500;
+         }
+         .domain-rules-add-btn:hover {
+           background-color: var(--arrowpanel-dimmed, rgba(0,0,0,0.05));
+         }
     `;
 
       let styleURI = makeURI(
@@ -12600,6 +13110,58 @@
 /************************************************************/
 /*************         Main CSS segment         *************/
 /************************************************************/
+  function updateDomainColorRulesStyle(unregisterOnly = false) {
+
+    let styleSvc = Cc["@mozilla.org/content/style-sheet-service;1"].getService(Ci.nsIStyleSheetService);
+
+    // This is irrelevant to the other rules
+    // that is why, it loads/unloads separately
+    // Unregister old style if it exists
+    if (window.nativeTreeTabs._domainColorStyle) {
+      styleSvc.unregisterSheet(window.nativeTreeTabs._domainColorStyle[0], window.nativeTreeTabs._domainColorStyle[1]);
+      let index = window.nativeTreeTabs.customStyle.indexOf(window.nativeTreeTabs._domainColorStyle);
+      if (index > -1) {
+        window.nativeTreeTabs.customStyle.splice(index, 1);
+      }
+      window.nativeTreeTabs._domainColorStyle = null;
+    }
+
+    if (!unregisterOnly) {
+      let rulesStr = getPref("treeTabs.style.domainColorRules", "[]");
+      let rules = [];
+      try {
+        rules = JSON.parse(rulesStr);
+      } catch (e) {
+        rules = [];
+      }
+
+      if (rules == null || rules.length === 0) {
+        return;
+      }
+
+      // Auto-generate CSS stylesheet
+      let css = "#vertical-tabs {\n";
+      rules.forEach(rule => {
+        // if both checkboxes are unchecked skip
+        if (!rule.domain || (!rule.bgColorDisabled && !rule.borderColorDisabled)) {
+          return;
+        }
+        let operator = rule.operator === "endswith" ? "$=" : "^=";
+        // add background rule if enabled
+        let bgRule = rule.bgColorDisabled ? `--tree-domain-color: ${rule.bgColor}; ` : "";
+        // add border rule if enabled
+        let borderRule = rule.borderColorDisabled ? `--tree-domain-border-color: ${rule.borderColor}; ` : "";
+        css += `  tab[domain${operator}"${rule.domain}"] { ${bgRule}${borderRule}}\n`;
+      });
+      css += "}\n";
+
+      let uri = Services.io.newURI("data:text/css;charset=UTF=8," + encodeURIComponent(css), null, null);
+      // load stylesheet
+      styleSvc.loadAndRegisterSheet(uri, Ci.nsIStyleSheetService.USER_SHEET);
+      // save for future unload
+      window.nativeTreeTabs._domainColorStyle = [uri, Ci.nsIStyleSheetService.USER_SHEET];
+    }
+  }
 
   function loadTabPanelsstyle() {
 
@@ -12829,7 +13391,6 @@
       padding-inline-start:0!important;
       margin-left:auto!important;
     }
-
     `;
     let styleURI = makeURI(
       `data:text/css;charset=UTF=8,${encodeURIComponent(customCSS)}`
@@ -12838,6 +13399,7 @@
     if (!styleSvc.sheetRegistered(styleURI, styleSvc.AGENT_SHEET)) {
       styleSvc.loadAndRegisterSheet(styleURI, styleSvc.AGENT_SHEET);
     }
+
     return [styleURI, styleSvc.AGENT_SHEET];
 
   }
@@ -12875,6 +13437,9 @@
     let tabLeftRightPadding = nativeTreeTabs.checkOrSetPref("treeTabs.style.tabLeftRightPadding", 7);
     let pinnedTabWidth = nativeTreeTabs.checkOrSetPref("treeTabs.style.pinnedTabWidth", 40);
     let childCounterSize = nativeTreeTabs.checkOrSetPref("treeTabs.style.childCounterSize", 13);
+    let customColorIntensity = nativeTreeTabs.checkOrSetPref("treeTabs.style.customColorIntensity", 18);
+    let customColorIntensityLight = Math.min(100, parseInt(customColorIntensity, 10) * 1.4 + 10);
+    let customColorIntensityBorder = Math.min(100, parseInt(customColorIntensity, 10) * 1.5 + 30);
 
     if (perToolbarHeight == null || isNaN(perToolbarHeight)) {
       const perToolbar = document.getElementById("PersonalToolbar");
@@ -13084,9 +13649,18 @@
       --tab-group-label-padding:4px!important;
       --tab-content-button-size:24px!important;
     }
-    #vertical-tabs tab[pinned] .tab-background {
-      margin-block: 0!important;
+    /* Allow solo pinned tabs to have no block margin */
+    #vertical-tabs tab[pinned]{
+      container: pinned-Tab / inline-size;
     }
+    #vertical-tabs tab[pinned] {
+      @container  pinned-Tab (min-width: 100px) {
+        .tab-background {
+          margin-block: 0!important;
+        }
+      }
+    }
+
     #vertical-pinned-tabs-splitter{
       min-height:2px!important;
     }
@@ -13983,7 +14557,13 @@
     @media -moz-pref("treeTabs.style.customBackground") {
       @media (prefers-color-scheme: dark) {
         #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab],[customColor]) .tab-background {
-          background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, black)) 18%, rgba(100, 100, 100, 0.005))!important;
+          --bg-var1:  color-mix(in srgb, var(--tree-domain-color) 5%, color-mix(in srgb, var(--tree-domain-color) ${customColorIntensity}%, rgba(70, 70, 70, 0.1)));
+          // --bg-var1: color-mix(in srgb, var(--tree-domain-color) ${customColorIntensity}%, rgba(100, 100, 100, 0.005));
+          @media -moz-pref("treeTabs.style.colorPerUsercontextId") {
+            --bg-var2: color-mix(in srgb,  color-mix( in srgb,  var(--identity-icon-color) 60%, black ) ${customColorIntensity}%, rgba(100, 100, 100, 0.005));
+          }
+          --bg-var3: color-mix(in srgb,  color-mix( in srgb,  currentColor 40%, black ) 18%, rgba(100, 100, 100, 0.005));
+          background-color: var( --bg-var1, var(--bg-var2 , var(--bg-var3)))!important;
           border: 1px solid rgba(55, 55, 55, 0.3);
           border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(140, 120, 140)))) 15%, rgba(200, 200, 200, 0)) 90%, color-mix(in srgb, silver 15%, transparent))!important;
           backdrop-filter: blur(5px);
@@ -14003,7 +14583,14 @@
           #vertical-tabs tab[selected]:not([multiselected],[customColorPreview]) .tab-background {
             outline: none!important;
             border: 2px solid transparent!important;
-            background: linear-gradient( color-mix( in srgb, var(--custom-background-color, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, rgba(130, 120, 140)) 40%, rgb(20, 20, 20)))) 33%, rgba(2, 2, 2, 0.95))) padding-box, linear-gradient(96deg, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--identity-icon-color, rgba(255, 180, 240))) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent))) border-box!important;
+            --bg-var0: color-mix(in srgb, var(--custom-background-color) ${customColorIntensity}%, rgba(2, 2, 2, 0.95));
+            --bg-var1: color-mix(in srgb, var(--tree-domain-color) ${customColorIntensity}%, rgba(2, 2, 2, 0.95));
+            --bg-var2: color-mix(in srgb,  color-mix( in srgb,  var(--identity-icon-color) 40%, rgb(20, 20, 20) ) ${customColorIntensity}%, rgba(2, 2, 2, 0.95));
+            --bg-var3: color-mix(in srgb,  color-mix( in srgb,  rgba(130, 120, 140) 40%, rgb(20, 20, 20) ) 33%, rgba(2, 2, 2, 0.95));
+            --border-var1: color-mix( in srgb, color-mix( in srgb, var(--tree-domain-border-color) 90%, rgba(240, 240, 240, 0.3)) ${customColorIntensityBorder}%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb,  var(--tree-domain-border-color) 90%, rgba(240, 240, 240, 1)) ${customColorIntensityBorder}%, color-mix(in srgb, gold 60%, transparent));          
+            --border-var2: color-mix( in srgb, color-mix( in srgb, var(--identity-icon-color) 90%, rgba(240, 240, 240, 0.3)) ${customColorIntensityBorder}%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb,  var(--identity-icon-color) 90%, rgba(240, 240, 240, 1)) ${customColorIntensityBorder}%, color-mix(in srgb, gold 60%, transparent));
+            --border-var3: color-mix( in srgb, color-mix( in srgb, rgba(255, 180, 240) 70%, rgba(240, 240, 240, 0.3)) 40%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, color-mix( in srgb,  rgba(255, 180, 240) 70%, rgba(240, 240, 240, 1)) 60%, color-mix(in srgb, gold 60%, transparent));
+            background: linear-gradient( var(--bg-var0 , var(--bg-var1, var(--bg-var2 , var(--bg-var3))))) padding-box, linear-gradient(96deg, var(--border-var1 ,var(--border-var2 ,var(--border-var3)))) border-box!important;
           }
         }
         #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) .tab-background:not([selected]) {
@@ -14014,7 +14601,12 @@
 
       @media (prefers-color-scheme: light) {
         #vertical-tabs tab:not([selected],[hidden-child],[tabPanel-hidden],[nestTab],[customColor]) .tab-background {
-          background-color: color-mix(in srgb, var( --tree-domain-color, color-mix( in srgb, var(--identity-icon-color, currentColor) 40%, white)) 8%, rgba(250, 250, 250, 0.005))!important;
+          --bg-var1:  color-mix(in srgb, var(--tree-domain-color) ${customColorIntensityLight}%, rgba(232, 232, 232, 0.01));
+          @media -moz-pref("treeTabs.style.colorPerUsercontextId") {
+            --bg-var2: color-mix(in srgb,  color-mix( in srgb,  var(--identity-icon-color) 70%, white ) ${customColorIntensityLight}%, rgba(250, 250, 250, 0.005));
+          }
+          --bg-var3: color-mix(in srgb,  color-mix( in srgb,  currentColor 40%, white ) 4%, rgba(250, 250, 250, 0.005));
+          background-color: var( --bg-var1, var(--bg-var2 , var(--bg-var3)))!important;
           backdrop-filter: blur(5px);
           border: 1px solid rgba(55, 55, 55, 0.3);
           border-color: color-mix( in srgb, color-mix( in srgb, var( --tree-domain-border-color, var(--tree-domain-color, var(--identity-icon-color, rgba(20, 20, 20)))) 15%, rgba(200, 200, 200, 0)) 20%, color-mix(in srgb, silver 45%, transparent))!important;
@@ -14028,7 +14620,16 @@
         @media -moz-pref("treeTabs.style.customSelectedTabStyle") {
           #vertical-tabs tab[selected]:not([multiselected],[customColor]) .tab-background {
             outline: none!important;
-            border: 2px solid transparent!important;
+            border: 1px solid transparent!important;
+            --bg-var0: color-mix(in srgb, var(--custom-background-color)  3%, var(--tab-background-color-selected ,white));
+            --bg-var1: color-mix(in srgb, var(--tree-domain-color) 3%, var(--tab-background-color-selected ,white) );
+            --bg-var2: color-mix(in srgb,  color-mix( in srgb,  var(--identity-icon-color) 40%, rgb(220, 220, 220) ) 3%, var(--tab-background-color-selected ,white));
+            --bg-var3: var(--tab-background-color-selected ,white);
+            --border-var1: color-mix( in srgb, var(--tree-domain-border-color) ${customColorIntensityBorder}%, color-mix(in srgb, silver 70%, transparent)) 50%, color-mix( in srgb, var(--tree-domain-border-color) ${customColorIntensityBorder}%, color-mix(in srgb, gold 60%, transparent));          
+            --border-var2: color-mix( in srgb, var(--identity-icon-color) 75%,  rgb(0,0,0)) 50%, color-mix( in srgb, var(--identity-icon-color)  80%, rgb(100,100,100));
+            --border-var3: color-mix(  rgba(50, 50, 50) 40%, color-mix(in srgb, silver 90%, transparent)) 50%, color-mix( rgba(70, 70, 70) 50%, color-mix(in srgb, gold 90%, transparent));
+            background: linear-gradient( var(--bg-var0 , var(--bg-var1, var(--bg-var2 , var(--bg-var3))))) padding-box, linear-gradient(96deg, var(--border-var1 ,var(--border-var2 ,var(--border-var3)))) border-box!important;
+
           }
         }
         #tabbrowser-arrowscrollbox[orient="vertical"] tab-split-view-wrapper:has([selected]) {
@@ -14131,7 +14732,6 @@
     .tab-media-button {
         -moz-context-properties: fill;
         fill: currentColor;
-        background: transparent !important;
         border: none !important;
         cursor: pointer;
         width: 16px;
@@ -14148,15 +14748,16 @@
         display: none;
         #sidebar-container[sidebar-launcher-expanded] tab[mediaPlaying="playingChild"] & {
             display: flex;
-            list-style-image: url("chrome://global/skin/media/pause-fill.svg");
+            background-image: url("chrome://global/skin/media/pause-fill.svg"), url("resource://content-accessible/media/pause-fill.svg");
         }
         tab[mediaPlaying="playing"] & {
             display: flex;
-            list-style-image: url("chrome://global/skin/media/pause-fill.svg");
+           background-image: url("chrome://global/skin/media/pause-fill.svg"), url("resource://content-accessible/media/pause-fill.svg");
         }
         #sidebar-container[sidebar-launcher-expanded] tab[mediaPlaying="paused"] & {
             display: flex;
-            list-style-image: url("chrome://global/skin/media/play-fill.svg");
+            background-image: url("chrome://global/skin/media/play-fill.svg"), url("resource://content-accessible/media/play-fill.svg");
+
         }
         tab:is([muted], [soundplaying]) & {
             margin-left: 3px;
@@ -14384,21 +14985,6 @@
         }
       }
     }
-
-    /* Add custom tab colors based on domain, uncomment and add your sites and color */
-    /*
-    #vertical-tabs{
-      tab[domain^="example.com"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
-      tab[domain^="youtube.com"] { --tree-domain-color: rgba(240,0,0,0.8);  --tree-domain-border-color: rgb(250,10,30);}
-      tab[domain^="reddit.com"] { --tree-domain-color: rgba(80,120,150,0.8); }
-      tab[domain$="github.com"] { --tree-domain-color: rgba(0,0,20,0.8); --tree-domain-border-color: darkblue;}
-      tab[domain$="ycombinator.com"] { --tree-domain-color: rgba(120,120,70,0.8); --tree-domain-border-color: yellow;}
-      tab[domain^="about"] { --tree-domain-color: rgba(120,10,120,0.8); }
-      tab[domain^="chrome"] { --tree-domain-color: rgba(120,170,170,0.9); }
-      tab[domain^="moz-extension"] { --tree-domain-color: rgba(60,55,60,0.8);--tree-domain-border-color: rgb(150,0,0); }
-    }
-     */
-
     `;
     let styleURI = makeURI(
       `data:text/css;charset=UTF=8,${encodeURIComponent(customCSS)}`
